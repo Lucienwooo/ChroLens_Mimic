@@ -17,4 +17,4 @@
 
 💸[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/B0B51FBVA8)💸
 
-👉如果你有任何問題、想法或建議，請加入我的 [Discord－ChroLens_](https://discord.gg/72Kbs4WPPn)
+👉如果你有任何問題、想法或建議，請加入我的 [Discord－ChroLens](https://discord.gg/72Kbs4WPPn)
