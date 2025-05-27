@@ -1,4 +1,5 @@
 #ChroLens Studio - Lucienwooo
+#pyinstaller --noconsole --onefile --icon=觸手眼鏡貓.ico --add-data "觸手眼鏡貓.ico;." ChroLens_Mimic.py
 import ttkbootstrap as tb
 from ttkbootstrap.constants import *
 import tkinter as tk
@@ -7,6 +8,7 @@ import keyboard, mouse
 import ctypes
 import win32api
 import tkinter.filedialog
+import sys
 
 # ====== 滑鼠控制函式放在這裡 ======
 def move_mouse_abs(x, y):
@@ -104,7 +106,12 @@ class RecorderApp(tb.Window):
 
         self.title("ChroLens_Mimic_2.0")
         try:
-            self.iconbitmap("觸手眼鏡貓.ico")
+            import sys, os
+            if getattr(sys, 'frozen', False):
+                icon_path = os.path.join(sys._MEIPASS, "觸手眼鏡貓.ico")
+            else:
+                icon_path = "觸手眼鏡貓.ico"
+            self.iconbitmap(icon_path)
         except Exception as e:
             print(f"無法設定 icon: {e}")
 
@@ -740,6 +747,10 @@ class RecorderApp(tb.Window):
                 self.tiny_window.overrideredirect(True)
                 self.tiny_window.resizable(False, False)
                 self.tiny_window.attributes("-topmost", True)
+                try:
+                    self.tiny_window.iconbitmap("觸手眼鏡貓.ico")
+                except Exception as e:
+                    print(f"無法設定 TinyMode icon: {e}")
                 self.tiny_btns = []
                 # 拖曳功能
                 self.tiny_window.bind("<ButtonPress-1>", self._start_move_tiny)
