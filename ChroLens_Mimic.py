@@ -1,5 +1,6 @@
 #ChroLens Studio - Lucienwooo
-#pyinstaller --noconsole --onefile --icon=觸手眼鏡貓.ico --add-data "觸手眼鏡貓.ico;." ChroLens_Mimic.py
+#pyinstaller --noconsole --onedir --icon=觸手眼鏡貓.ico --add-data "觸手眼鏡貓.ico;." ChroLens_Mimic.py
+#--onefile 單一檔案，啟動時間過久，改以"--onedir "方式打包，啟動較快
 import ttkbootstrap as tb
 from ttkbootstrap.constants import *
 import tkinter as tk
@@ -232,13 +233,13 @@ class RecorderApp(tb.Window):
         self.log_text.config(yscrollcommand=log_scroll.set)
 
         # ====== 其餘初始化 ======
-        self.after(50, self._delayed_init)  # 50ms後再補功能
+        self.after(1500, self._delayed_init)  
 
     def _delayed_init(self):
-        self.after(0, self._register_hotkeys)         # 立即註冊熱鍵
-        self.after(100, self.refresh_script_list)      # 100ms後載入腳本清單
-        self.after(200, self.load_last_script)         # 200ms後載入上次腳本
-        self.after(300, self.update_mouse_pos)         # 300ms後開始更新滑鼠座標
+        self.after(1600, self._register_hotkeys)         
+        self.after(1700, self.refresh_script_list)      
+        self.after(1800, self.load_last_script)         
+        self.after(1900, self.update_mouse_pos)         
 
     def save_config(self):
         self.user_config["skin"] = self.theme_var.get()
