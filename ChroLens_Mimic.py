@@ -90,6 +90,42 @@ class Tooltip:
             self.tipwindow = None
 
 class RecorderApp(tb.Window):
+    def show_about_dialog(self):
+        about_win = tb.Toplevel(self)
+        about_win.title("關於 ChroLens_Mimic")
+        about_win.geometry("450x300")
+        about_win.resizable(False, False)
+        about_win.grab_set()
+        # 置中顯示
+        self.update_idletasks()
+        x = self.winfo_x() + (self.winfo_width() // 2) - 175
+        y = self.winfo_y() + 80
+        about_win.geometry(f"+{x}+{y}")
+
+        # 設定icon與主程式相同
+        try:
+            import sys, os
+            if getattr(sys, 'frozen', False):
+                icon_path = os.path.join(sys._MEIPASS, "觸手眼鏡貓.ico")
+            else:
+                icon_path = "觸手眼鏡貓.ico"
+            about_win.iconbitmap(icon_path)
+        except Exception as e:
+            print(f"無法設定 about 視窗 icon: {e}")
+
+        frm = tb.Frame(about_win, padding=20)
+        frm.pack(fill="both", expand=True)
+
+        tb.Label(frm, text="ChroLens_Mimic\n可以將此工具理解為按鍵精靈/操作錄製/掛機工具\n可以解決重複性很高的作業內容或動作", font=("Microsoft JhengHei", 11,)).pack(anchor="w", pady=(0, 6))
+        link = tk.Label(frm, text="ChroLens_模擬器討論區", font=("Microsoft JhengHei", 10, "underline"), fg="#5865F2", cursor="hand2")
+        link.pack(anchor="w")
+        link.bind("<Button-1>", lambda e: os.startfile("https://discord.gg/72Kbs4WPPn"))
+        github = tk.Label(frm, text="查看更多工具(GitHub)", font=("Microsoft JhengHei", 10, "underline"), fg="#24292f", cursor="hand2")
+        github.pack(anchor="w", pady=(8, 0))
+        github.bind("<Button-1>", lambda e: os.startfile("https://github.com/"))
+        tb.Label(frm, text="Creat By Lucienwooo", font=("Microsoft JhengHei", 11,)).pack(anchor="w", pady=(0, 6))
+        tb.Button(frm, text="關閉", command=about_win.destroy, width=8, bootstyle=SECONDARY).pack(anchor="e", pady=(16, 0))
+
     def __init__(self):
         self.user_config = load_user_config()
         skin = self.user_config.get("skin", "darkly")
@@ -166,12 +202,19 @@ class RecorderApp(tb.Window):
         theme_combo.grid(row=0, column=8, padx=(0, 4), sticky="e")
         theme_combo.bind("<<ComboboxSelected>>", lambda e: self.change_theme())
 
-        # TinyMode 按鈕（粗體，skin下拉選單左側）
+        # TinyMode 按鈕（skin下拉選單左側）
         self.tiny_mode_btn = tb.Button(
             frm_top, text="TinyMode", style="TinyBold.TButton",
             command=self.toggle_tiny_mode, width=10
         )
         self.tiny_mode_btn.grid(row=0, column=7, padx=(0, 4), sticky="e")
+
+        # ====== 新增「關於」按鈕（skin下拉選單右側） ======
+        self.about_btn = tb.Button(
+            frm_top, text="關於", width=6, style="My.TButton",
+            command=self.show_about_dialog, bootstyle=SECONDARY
+        )
+        self.about_btn.grid(row=0, column=9, padx=(0, 2), sticky="e")
 
         # ====== 下方操作區 ======
         frm_bottom = tb.Frame(self, padding=(10, 0, 10, 5))
