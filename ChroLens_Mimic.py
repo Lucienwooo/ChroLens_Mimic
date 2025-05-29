@@ -178,7 +178,7 @@ class RecorderApp(tb.Window):
         tb.Label(frm_bottom, text="回放速度:", style="My.TLabel").grid(row=0, column=0, padx=(0,2))
         self.speed_var = tk.StringVar(value=self.user_config.get("speed", "1.0"))
         tb.Entry(frm_bottom, textvariable=self.speed_var, width=6, style="My.TEntry").grid(row=0, column=1, padx=2)
-        tb.Button(frm_bottom, text="預設路徑", command=self.use_default_script_dir, bootstyle=SECONDARY, width=10, style="My.TButton").grid(row=0, column=3, padx=4)
+        tb.Button(frm_bottom, text="腳本路徑", command=self.use_default_script_dir, bootstyle=SECONDARY, width=10, style="My.TButton").grid(row=0, column=3, padx=4)
         tb.Button(frm_bottom, text="快捷鍵", command=self.open_hotkey_settings, bootstyle=SECONDARY, width=10, style="My.TButton").grid(row=0, column=4, padx=4)
 
         # ====== 重複次數設定 ======
@@ -232,13 +232,13 @@ class RecorderApp(tb.Window):
         self.log_text.config(yscrollcommand=log_scroll.set)
 
         # ====== 其餘初始化 ======
-        self.after(100, self._delayed_init)
+        self.after(50, self._delayed_init)  # 50ms後再補功能
 
     def _delayed_init(self):
-        self._register_hotkeys()
-        self.refresh_script_list()
-        self.after(100, self.load_last_script)
-        self.after(200, self.update_mouse_pos)
+        self.after(0, self._register_hotkeys)         # 立即註冊熱鍵
+        self.after(100, self.refresh_script_list)      # 100ms後載入腳本清單
+        self.after(200, self.load_last_script)         # 200ms後載入上次腳本
+        self.after(300, self.update_mouse_pos)         # 300ms後開始更新滑鼠座標
 
     def save_config(self):
         self.user_config["skin"] = self.theme_var.get()
@@ -292,6 +292,8 @@ class RecorderApp(tb.Window):
             self.log(f"[{format_time(time.time())}] {mode}{state}。")
 
     def _record_thread(self):
+        import keyboard
+        from pynput.mouse import Controller, Listener
         try:
             self._mouse_events = []
             self._recording_mouse = True
@@ -300,7 +302,6 @@ class RecorderApp(tb.Window):
             # 先啟動 keyboard 與 mouse 監聽
             keyboard.start_recording()
 
-            from pynput.mouse import Controller
             mouse_ctrl = Controller()
             last_pos = mouse_ctrl.position
 
@@ -399,6 +400,8 @@ class RecorderApp(tb.Window):
             self.auto_save_script()
 
     def play_record(self):
+        import keyboard
+        import mouse
         if self.playing or not self.events:
             return
         try:
@@ -589,6 +592,7 @@ class RecorderApp(tb.Window):
 
     def update_mouse_pos(self):
         try:
+            import mouse
             x, y = mouse.get_position()
             self.mouse_pos_label.config(text=f"( X:{x}, Y:{y} )")
         except Exception:
@@ -617,6 +621,7 @@ class RecorderApp(tb.Window):
                 f.write(new_name)
         except Exception as e:
             self.log(f"[{format_time(time.time())}] 更名失敗: {e}")
+        self.rename_var.set("")  # 更名後清空輸入框
 
     def open_scripts_dir(self):
         path = os.path.abspath(SCRIPTS_DIR)
