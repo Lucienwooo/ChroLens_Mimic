@@ -116,13 +116,13 @@ class RecorderApp(tb.Window):
         frm = tb.Frame(about_win, padding=20)
         frm.pack(fill="both", expand=True)
 
-        tb.Label(frm, text="ChroLens_Mimic\n可以將此工具理解為按鍵精靈/操作錄製/掛機工具\n可以解決重複性很高的作業內容或動作", font=("Microsoft JhengHei", 11,)).pack(anchor="w", pady=(0, 6))
+        tb.Label(frm, text="ChroLens_Mimic\n可理解為按鍵精靈/操作錄製/掛機工具\n解決重複性高的作業或動作", font=("Microsoft JhengHei", 11,)).pack(anchor="w", pady=(0, 6))
         link = tk.Label(frm, text="ChroLens_模擬器討論區", font=("Microsoft JhengHei", 10, "underline"), fg="#5865F2", cursor="hand2")
         link.pack(anchor="w")
         link.bind("<Button-1>", lambda e: os.startfile("https://discord.gg/72Kbs4WPPn"))
-        github = tk.Label(frm, text="查看更多工具(GitHub)", font=("Microsoft JhengHei", 10, "underline"), fg="#24292f", cursor="hand2")
+        github = tk.Label(frm, text="查看更多工具(巴哈)", font=("Microsoft JhengHei", 10, "underline"), fg="#24292f", cursor="hand2")
         github.pack(anchor="w", pady=(8, 0))
-        github.bind("<Button-1>", lambda e: os.startfile("https://github.com/"))
+        github.bind("<Button-1>", lambda e: os.startfile("https://home.gamer.com.tw/profile/index_creation.php?owner=umiwued&folder=523848"))
         tb.Label(frm, text="Creat By Lucienwooo", font=("Microsoft JhengHei", 11,)).pack(anchor="w", pady=(0, 6))
         tb.Button(frm, text="關閉", command=about_win.destroy, width=8, bootstyle=SECONDARY).pack(anchor="e", pady=(16, 0))
 
@@ -157,7 +157,7 @@ class RecorderApp(tb.Window):
         self.icon_tip_label.place(x=0, y=0)
         Tooltip(self.icon_tip_label, f"{self.title()}_By_Lucien")
 
-        self.geometry("900x500")
+        self.geometry("900x550")
         self.resizable(False, False)
         self.recording = False
         self.playing = False
@@ -209,13 +209,6 @@ class RecorderApp(tb.Window):
         )
         self.tiny_mode_btn.grid(row=0, column=7, padx=(0, 4), sticky="e")
 
-        # ====== 新增「關於」按鈕（skin下拉選單右側） ======
-        self.about_btn = tb.Button(
-            frm_top, text="關於", width=6, style="My.TButton",
-            command=self.show_about_dialog, bootstyle=SECONDARY
-        )
-        self.about_btn.grid(row=0, column=9, padx=(0, 2), sticky="e")
-
         # ====== 下方操作區 ======
         frm_bottom = tb.Frame(self, padding=(10, 0, 10, 5))
         frm_bottom.pack(fill="x")
@@ -224,6 +217,14 @@ class RecorderApp(tb.Window):
         tb.Entry(frm_bottom, textvariable=self.speed_var, width=6, style="My.TEntry").grid(row=0, column=1, padx=2)
         tb.Button(frm_bottom, text="腳本路徑", command=self.use_default_script_dir, bootstyle=SECONDARY, width=10, style="My.TButton").grid(row=0, column=3, padx=4)
         tb.Button(frm_bottom, text="快捷鍵", command=self.open_hotkey_settings, bootstyle=SECONDARY, width=10, style="My.TButton").grid(row=0, column=4, padx=4)
+
+        # ====== 新增「關於」按鈕（移到快捷鍵右側） ======
+        self.about_btn = tb.Button(
+            frm_bottom, text="關於", width=6, style="My.TButton",
+            command=self.show_about_dialog, bootstyle=SECONDARY
+        )
+        self.about_btn.grid(row=0, column=5, padx=(0, 2), sticky="e")
+
 
         # ====== 重複次數設定 ======
         frm_repeat = tb.Frame(self, padding=(10, 0, 10, 5))
