@@ -1,6 +1,17 @@
 #ChroLens Studio - Lucienwooo
 #pyinstaller --noconsole --onedir --icon=觸手眼鏡貓.ico --add-data "觸手眼鏡貓.ico;." ChroLens_Mimic.py
 #--onefile 單一檔案，啟動時間過久，改以"--onedir "方式打包，啟動較快
+
+1.程式在產生存檔之後，再次啟動程式時會跳出：Traceback (most recent call last):
+  File "ChroLens_Mimic.py", line 885, in <module>
+  File "ChroLens_Mimic.py", line 252, in init
+  File "ChroLens_Mimic.py", line 614, in on_script_selected
+  File "ChroLens_Mimic.py", line 301, in log
+  File "tkinter__init.py", line 2383, in getattr__
+AttributeError: '_tkinter.tkapp' object has no attribute 'log_text'
+
+2.快捷鍵設定擴大範圍，讓
+
 import ttkbootstrap as tb
 from ttkbootstrap.constants import *
 import tkinter as tk
@@ -277,6 +288,11 @@ class RecorderApp(tb.Window):
         self.log_text.config(yscrollcommand=log_scroll.set)
 
         # ====== 其餘初始化 ======
+        self.script_combo.bind("<<ComboboxSelected>>", self.on_script_selected)
+        self.refresh_script_list()
+        if self.script_var.get():
+            self.on_script_selected()
+
         self.after(1500, self._delayed_init)  
 
     def _delayed_init(self):
