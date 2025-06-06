@@ -1,13 +1,13 @@
-![ChroLens_Mimic v1.0](./ChroLens_Mimic.png)
+![ChroLens_Mimic](./ChroLens_Mimic2.1.png)
 
 
 
 
 ---
 # ChroLens Project</br>
-## [ChroLens_Portal v2.0](https://github.com/Lucienwooo/ChroLens_Portal)_批次開關分組的檔案、快捷鍵切換複數視窗。</br>
-## [ChroLens_Mimic v2.0](https://github.com/Lucienwooo/ChroLens_Mimic)_巨集錄製工具、鍵鼠模擬、按鍵精靈。</br>
-## [ChroLens_Clear v1.0](https://github.com/Lucienwooo/ChroLens_Clear)_自動關閉複數視窗/程式</br>
+## [ChroLens_Portal](https://github.com/Lucienwooo/ChroLens_Portal)_批次開關分組的檔案、快捷鍵切換複數視窗置頂顯示。</br>
+## [ChroLens_Mimic](https://github.com/Lucienwooo/ChroLens_Mimic)_巨集錄製工具、鍵鼠模擬、按鍵精靈。</br>
+## [ChroLens_Clear](https://github.com/Lucienwooo/ChroLens_Clear)_自動關閉複數視窗/程式</br>
 </br>
 
 預計開發：
