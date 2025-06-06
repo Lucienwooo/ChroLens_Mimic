@@ -1,17 +1,6 @@
 #ChroLens Studio - Lucienwooo
 #pyinstaller --noconsole --onedir --icon=觸手眼鏡貓.ico --add-data "觸手眼鏡貓.ico;." ChroLens_Mimic.py
 #--onefile 單一檔案，啟動時間過久，改以"--onedir "方式打包，啟動較快
-
-1.程式在產生存檔之後，再次啟動程式時會跳出：Traceback (most recent call last):
-  File "ChroLens_Mimic.py", line 885, in <module>
-  File "ChroLens_Mimic.py", line 252, in init
-  File "ChroLens_Mimic.py", line 614, in on_script_selected
-  File "ChroLens_Mimic.py", line 301, in log
-  File "tkinter__init.py", line 2383, in getattr__
-AttributeError: '_tkinter.tkapp' object has no attribute 'log_text'
-
-2.快捷鍵設定擴大範圍，讓
-
 import ttkbootstrap as tb
 from ttkbootstrap.constants import *
 import tkinter as tk
@@ -21,6 +10,13 @@ import ctypes
 import win32api
 import tkinter.filedialog
 import sys
+# ====== UI 介面 row 對應說明 ======
+# row 0 (frm_top):開始錄製（btn_start）、暫停/繼續（btn_pause）、停止（btn_stop）、回放（btn_play）、TinyMode（tiny_mode_btn）、skin下拉選單（theme_combo）、關於（about_btn）
+# row 1 (frm_bottom):回放速度（speed_var 輸入框）、腳本路徑（open_scripts_dir 按鈕）、快捷鍵（open_hotkey_settings 按鈕）、關於（about_btn）
+# row 2 (frm_repeat):重複次數（repeat_var 輸入框）、單位「次」
+# row 3 (frm_script):腳本選單（script_combo）、腳本重新命名輸入框（rename_entry）、修改腳本名稱（rename_script 按鈕）
+# row 4 (frm_log):滑鼠座標（mouse_pos_label）、錄製時間（time_label）、單次剩餘（countdown_label）、總運作時間（total_time_label）
+# 下方為日誌顯示區（log_text）
 
 # ====== 滑鼠控制函式放在這裡 ======
 def move_mouse_abs(x, y):
@@ -152,7 +148,7 @@ class RecorderApp(tb.Window):
         self.style.configure("My.TCheckbutton", font=("Microsoft JhengHei", 9))
         self.style.configure("TinyBold.TButton", font=("Microsoft JhengHei", 9, "bold"))
 
-        self.title("ChroLens_Mimic_2.0")
+        self.title("ChroLens_Mimic_2.1")
         try:
             import sys, os
             if getattr(sys, 'frozen', False):
@@ -238,12 +234,37 @@ class RecorderApp(tb.Window):
 
 
         # ====== 重複次數設定 ======
+        self.repeat_var = tk.StringVar(value=self.user_config.get("repeat", "1"))
         frm_repeat = tb.Frame(self, padding=(10, 0, 10, 5))
         frm_repeat.pack(fill="x")
         tb.Label(frm_repeat, text="重複次數:", style="My.TLabel").grid(row=0, column=0, padx=(0,2))
         self.repeat_var = tk.StringVar(value=self.user_config.get("repeat", "1"))
         tb.Entry(frm_repeat, textvariable=self.repeat_var, width=6, style="My.TEntry").grid(row=0, column=1, padx=2)
         tb.Label(frm_repeat, text="次", style="My.TLabel").grid(row=0, column=2, padx=(0,2))
+
+        # 新增重複時間欄位
+        self.repeat_time_var = tk.StringVar(value="00:00:00")
+        repeat_time_entry = tb.Entry(frm_repeat, textvariable=self.repeat_time_var, width=10, style="My.TEntry", justify="center")
+        repeat_time_entry.grid(row=0, column=3, padx=(10,2))
+        tb.Label(frm_repeat, text="重複時間", style="My.TLabel").grid(row=0, column=4, padx=(0,2))
+
+        # 只允許輸入數字與冒號
+        def validate_time_input(P):
+            import re
+            return re.fullmatch(r"[\d:]*", P) is not None
+        vcmd = (self.register(validate_time_input), "%P")
+        repeat_time_entry.config(validate="key", validatecommand=vcmd)
+
+        # 當重複時間變動時，更新總運作時間顯示
+        def on_repeat_time_change(*args):
+            t = self.repeat_time_var.get()
+            seconds = self._parse_time_to_seconds(t)
+            if seconds > 0:
+                self.update_total_time_label(seconds)
+            else:
+                # 若為 0 則恢復原本計算
+                self.update_total_time_label(0)
+        self.repeat_time_var.trace_add("write", on_repeat_time_change)
 
         # ====== 腳本選單區 ======
         frm_script = tb.Frame(self, padding=(10, 0, 10, 5))
@@ -288,7 +309,7 @@ class RecorderApp(tb.Window):
         self.log_text.config(yscrollcommand=log_scroll.set)
 
         # ====== 其餘初始化 ======
-        self.script_combo.bind("<<ComboboxSelected>>", self.on_script_selected)
+        # 這裡再呼叫 refresh_script_list 和 on_script_selected
         self.refresh_script_list()
         if self.script_var.get():
             self.on_script_selected()
@@ -469,23 +490,36 @@ class RecorderApp(tb.Window):
             self.speed = float(self.speed_var.get())
         except:
             self.speed = 1.0
+
+        # 取得重複時間（秒）
+        repeat_time_sec = self._parse_time_to_seconds(self.repeat_time_var.get())
+        self._repeat_time_limit = repeat_time_sec if repeat_time_sec > 0 else None
+
         try:
             repeat = int(self.repeat_var.get())
-            if repeat < 1:
+            if repeat == 0:
+                repeat = -1  # -1 代表無限次數
+            elif repeat < 0:
                 repeat = 1
         except:
             repeat = 1
-        if self.events:
+
+        # 設定總運作時間
+        if self._repeat_time_limit:
+            self._total_play_time = self._repeat_time_limit
+        elif self.events:
             total = (self.events[-1]['time'] - self.events[0]['time']) / self.speed
-            self._total_play_time = total * repeat
+            self._total_play_time = total * (99999 if repeat == -1 else repeat)
         else:
             self._total_play_time = 0
+
         self._play_start_time = time.time()
         self._play_total_time = self._total_play_time
         self.update_total_time_label(self._total_play_time)
         self.log(f"[{format_time(time.time())}] 開始回放，速度倍率: {self.speed}")
         self.playing = True
         self.paused = False
+        self._repeat_times = repeat
         threading.Thread(target=self._play_thread, daemon=True).start()
         self.after(100, self._update_play_time)
 
@@ -500,8 +534,12 @@ class RecorderApp(tb.Window):
             total = self.events[-1]['time'] - self.events[0]['time'] if self.events else 0
             remain = max(0, total - elapsed)
             self.countdown_label.config(text=f"{int(remain//60):02d}:{remain%60:04.1f}")
+            # 倒數顯示
             if hasattr(self, "_play_start_time"):
-                total_remain = max(0, self._total_play_time - (time.time() - self._play_start_time))
+                if self._repeat_time_limit:
+                    total_remain = max(0, self._repeat_time_limit - (time.time() - self._play_start_time))
+                else:
+                    total_remain = max(0, self._total_play_time - (time.time() - self._play_start_time))
                 self.update_total_time_label(total_remain)
             self.after(100, self._update_play_time)
         else:
@@ -517,13 +555,14 @@ class RecorderApp(tb.Window):
     def _play_thread(self):
         self.playing = True
         self.paused = False
-        try:
-            repeat = int(self.repeat_var.get())
-            if repeat < 1:
-                repeat = 1
-        except:
-            repeat = 1
-        for _ in range(repeat):
+        repeat = getattr(self, "_repeat_times", 1)
+        count = 0
+        play_start_time = time.time()
+        while self.playing and (repeat == -1 or count < repeat):
+            # 若有時間限制，檢查是否超時
+            if hasattr(self, "_repeat_time_limit") and self._repeat_time_limit:
+                if time.time() - play_start_time >= self._repeat_time_limit:
+                    break
             self._current_play_index = 0
             total_events = len(self.events)
             if total_events == 0 or not self.playing:
@@ -531,6 +570,12 @@ class RecorderApp(tb.Window):
             base_time = self.events[0]['time']
             play_start = time.time()
             while self._current_play_index < total_events:
+                # 若有時間限制，檢查是否超時
+                if hasattr(self, "_repeat_time_limit") and self._repeat_time_limit:
+                    if time.time() - play_start_time >= self._repeat_time_limit:
+                        self.log("重複時間到，已自動停止回放。")
+                        self.playing = False
+                        break
                 if not self.playing:
                     break  # 強制中斷回放
                 while self.paused:
@@ -546,6 +591,12 @@ class RecorderApp(tb.Window):
                 target_time = play_start + event_offset
                 while True:
                     now = time.time()
+                    # 若有時間限制，檢查是否超時
+                    if hasattr(self, "_repeat_time_limit") and self._repeat_time_limit:
+                        if now - play_start_time >= self._repeat_time_limit:
+                            self.log("重複時間到，已自動停止回放。")
+                            self.playing = False
+                            break
                     if not self.playing:
                         break  # 強制中斷回放
                     if now >= target_time:
@@ -580,6 +631,7 @@ class RecorderApp(tb.Window):
                 self._current_play_index += 1
             if not self.playing:
                 break  # 強制中斷回放
+            count += 1
         self.playing = False
         self.paused = False
         self.log(f"[{format_time(time.time())}] 回放結束。")
@@ -705,31 +757,34 @@ class RecorderApp(tb.Window):
         entries = {}
         row = 0
 
-        # 用於記錄目前按下的組合鍵
-        pressed_keys = {}
-
         def on_entry_key(event, key, var):
-            key_name = event.keysym.upper()
-            # 如果是 F1~F12，直接設為 F1~F12
-            if key_name in [f"F{i}" for i in range(1, 13)]:
+            # 只記錄實際按下的組合鍵或單鍵
+            keys = []
+            # 只在有修飾鍵時才加
+            if event.state & 0x0001: keys.append("shift")
+            if event.state & 0x0004: keys.append("ctrl")
+            if event.state & 0x0008: keys.append("alt")
+            key_name = event.keysym.lower()
+            # 避免 shift/ctrl/alt 單獨被記錄
+            if key_name not in ("shift_l", "shift_r", "control_l", "control_r", "alt_l", "alt_r"):
+                keys.append(key_name)
+            # 組合成快捷鍵字串
+            var.set("+".join(keys))
+            return "break"
+
+        def on_entry_release(event, key, var):
+            # 只記錄釋放時的單一鍵
+            key_name = event.keysym.lower()
+            # 避免 shift/ctrl/alt 單獨被記錄
+            if key_name not in ("shift_l", "shift_r", "control_l", "control_r", "alt_l", "alt_r"):
                 var.set(key_name)
-            else:
-                keys = []
-                if event.state & 0x0001: keys.append("SHIFT")
-                if event.state & 0x0004: keys.append("CTRL")
-                if event.state & 0x0008: keys.append("ALT")
-                # 避免重複加入
-                if key_name not in keys and key_name not in ("SHIFT", "CONTROL", "ALT", "CAPS_LOCK"):
-                    keys.append(key_name)
-                var.set("+".join(keys))
             return "break"
 
         def on_entry_focus_in(event, var):
-            var.set("請按下組合鍵")
+            var.set("輸入按鍵")
 
         def on_entry_focus_out(event, key, var):
-            # 若未輸入組合鍵則還原為原本設定
-            if var.get() == "請按下組合鍵" or not var.get():
+            if var.get() == "輸入按鍵" or not var.get():
                 var.set(self.hotkey_map[key])
 
         for key, label in labels.items():
@@ -740,7 +795,7 @@ class RecorderApp(tb.Window):
             vars[key] = var
             entries[key] = entry
             # 綁定事件
-            entry.bind("<KeyPress>", lambda e, k=key, v=var: on_entry_key(e, k, v))
+            entry.bind("<KeyRelease>", lambda e, k=key, v=var: on_entry_release(e, k, v))
             entry.bind("<FocusIn>", lambda e, v=var: on_entry_focus_in(e, v))
             entry.bind("<FocusOut>", lambda e, k=key, v=var: on_entry_focus_out(e, k, v))
             row += 1
@@ -748,23 +803,12 @@ class RecorderApp(tb.Window):
         def save_and_apply():
             for key in self.hotkey_map:
                 val = vars[key].get()
-                # TinyMode 可任意組合，其餘僅允許 F1~F12
-                if key != "tiny":
-                    # 僅允許 F1~F12，且不能有組合鍵
-                    if val and val != "請按下組合鍵":
-                        if val.upper() in [f"F{i}" for i in range(1, 13)]:
-                            self.hotkey_map[key] = val.upper()
-                        else:
-                            self.log(f"{labels[key]} 只能設定為 F1~F12，請重新設定。")
-                            return
-                else:
-                    # TinyMode 可任意組合
-                    if val and val != "請按下組合鍵":
-                        self.hotkey_map[key] = val.upper()
+                if val and val != "輸入按鍵":
+                    self.hotkey_map[key] = val.lower()
             self._register_hotkeys()
             self._update_hotkey_labels()
             self.log("快捷鍵設定已更新。")
-            win.destroy()  # 確保最後才關閉視窗
+            win.destroy()
 
         tb.Button(win, text="儲存", command=save_and_apply, width=10, bootstyle=SUCCESS).grid(row=row, column=0, columnspan=2, pady=16)
 
