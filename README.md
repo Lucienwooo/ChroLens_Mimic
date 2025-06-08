@@ -13,15 +13,13 @@
 ### 更新計劃：
 1.加入日文、英文版本
 2025.06.08
+
 ---
 # ChroLens Project</br>
 ## [ChroLens_Portal](https://github.com/Lucienwooo/ChroLens_Portal)_批次開關分組的檔案、快捷鍵切換複數視窗置頂顯示。</br>
 ## [ChroLens_Mimic](https://github.com/Lucienwooo/ChroLens_Mimic)_巨集錄製工具、鍵鼠模擬、按鍵精靈。</br>
 ## [ChroLens_Clear](https://github.com/Lucienwooo/ChroLens_Clear)_自動關閉複數視窗/程式</br>
 </br>
-
-預計開發：
-1.自訂系統排成工具：更簡便和直覺的方式去設定Windows的工作排成器，可能再新增別的個人化功能，定時開啟/關閉某些程式
 
 ---
 #### 📄 授權資訊 (Licensing) </br>
