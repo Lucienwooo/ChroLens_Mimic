@@ -1,6 +1,8 @@
 #ChroLens Studio - Lucienwooo
 #pyinstaller --noconsole --onedir --icon=觸手眼鏡貓.ico --add-data "觸手眼鏡貓.ico;." ChroLens_Mimic.py
 #--onefile 單一檔案，啟動時間過久，改以"--onedir "方式打包，啟動較快
+# 考慮加入快捷鍵切換腳本
+# 腳本模組化、可視化
 import ttkbootstrap as tb
 from ttkbootstrap.constants import *
 import tkinter as tk
