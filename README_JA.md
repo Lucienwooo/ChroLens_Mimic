@@ -48,9 +48,9 @@
 ---
 
 ### 💸 サポートする / Support the Creator / 支持作者💸
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/B0B51FBVA8)
-このツールで浮いた時間、ちょっとだけ投げ銭して？お金ちょうだい！
-These scripts saved you time—share a bit and donate. Give me money!
-這些程式幫你省下的時間，分一點來抖內吧！給我錢錢！
-
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/B0B51FBVA8)</br>
+このツールで浮いた時間、ちょっとだけ投げ銭して？お金ちょうだい！</br>
+These scripts saved you time—share a bit and donate. Give me money!</br>
+這些程式幫你省下的時間，分一點來抖內吧！給我錢錢！</br>
+</br>
 👉 ご質問、アイデア、ご提案がありましたら、私の [Discord ChroLens](https://discord.gg/72Kbs4WPPn) にご参加ください。

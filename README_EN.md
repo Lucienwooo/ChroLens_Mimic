@@ -48,9 +48,9 @@ This code is provided for general reference and use only. The author assumes no 
 ---
 
 ### 💸 Support the Creator / 作者を応援する / 支持作者💸
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/B0B51FBVA8)
-These scripts saved you time—share a bit and donate. Give me money!
-このツールで浮いた時間、ちょっとだけ投げ銭して？お金ちょうだい！
-這些程式幫你省下的時間，分一點來抖內吧！給我錢錢！
-
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/B0B51FBVA8)</br>
+These scripts saved you time—share a bit and donate. Give me money!</br>
+このツールで浮いた時間、ちょっとだけ投げ銭して？お金ちょうだい！</br>
+這些程式幫你省下的時間，分一點來抖內吧！給我錢錢！</br>
+</br>
 👉 If you have any questions, ideas, or suggestions, please join my [Discord ChroLens](https://discord.gg/72Kbs4WPPn)
