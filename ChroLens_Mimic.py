@@ -97,6 +97,25 @@ class Tooltip:
             self.tipwindow = None
 
 class RecorderApp(tb.Window):
+
+    def _parse_time_to_seconds(self, t):
+        """將 00:00:00 或 00:00 格式字串轉為秒數"""
+        if not t or not isinstance(t, str):
+            return 0
+        parts = t.strip().split(":")
+        try:
+            if len(parts) == 3:
+                h, m, s = map(int, parts)
+                return h * 3600 + m * 60 + s
+            elif len(parts) == 2:
+                m, s = map(int, parts)
+                return m * 60 + s
+            elif len(parts) == 1:
+                return int(parts[0])
+        except Exception:
+            return 0
+        return 0
+
     def show_about_dialog(self):
         about_win = tb.Toplevel(self)
         about_win.title("關於 ChroLens_Mimic")
@@ -484,7 +503,10 @@ class RecorderApp(tb.Window):
     def play_record(self):
         import keyboard
         import mouse
-        if self.playing or not self.events:
+        if self.playing:
+            return
+        if not self.events:
+            self.log("沒有可回放的事件，請先錄製或載入腳本。")
             return
         try:
             self.speed = float(self.speed_var.get())
