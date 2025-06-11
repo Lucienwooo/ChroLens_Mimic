@@ -18,7 +18,7 @@
 
 ---
 
-# ChroLens Project
+# [ChroLens Project](https://home.gamer.com.tw/artwork.php?sn=6150515)</br>
 
 ## [ChroLens_Portal](https://github.com/Lucienwooo/ChroLens_Portal)
 Batch opening/closing grouped files, hotkey switching for multiple windows to stay on top.
@@ -33,17 +33,7 @@ Automatically closes multiple windows/applications.
 
 #### 📄 Licensing
 
-The code for this project is released under the GNU General Public License v3.0 (GPLv3). This means you are free to use, study, modify, and distribute this code, but you must comply with all the terms of the license.
-
-If you wish to use this code in a closed-source project, for commercial sale, or require dedicated commercial support services, please contact.
-
-For details, please refer to the [LICENSE file](LICENSE) in the project root.
-
----
-
-#### 📄 Disclaimer
-
-This code is provided for general reference and use only. The author assumes no responsibility for any damages incurred from the use or inability to use this code. Use of this code is at the user's own risk.
+[LICENSE file](LICENSE) in the project root.
 
 ---
 

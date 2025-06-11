@@ -16,24 +16,16 @@
 2025.06.08
 
 ---
-# ChroLens Project</br>
+# [ChroLens Project](https://home.gamer.com.tw/artwork.php?sn=6150515)</br>
 ## [ChroLens_Portal](https://github.com/Lucienwooo/ChroLens_Portal)_批次開關分組的檔案、快捷鍵切換複數視窗置頂顯示。</br>
 ## [ChroLens_Mimic](https://github.com/Lucienwooo/ChroLens_Mimic)_巨集錄製工具、鍵鼠模擬、按鍵精靈。</br>
 ## [ChroLens_Clear](https://github.com/Lucienwooo/ChroLens_Clear)_自動關閉複數視窗/程式</br>
-</br>
+## [ChroLens_Orbit](https://github.com/Lucienwooo/ChroLens_Orbit)_簡易版工作排程器，支援開啟捷徑.lnk檔案</br>
 
 ---
 #### 📄 授權資訊 (Licensing) </br>
 
-本專案的程式碼依循 GNU General Public License v3.0 (GPLv3) 發布。這表示你可以自由地使用、學習、修改及分發本程式碼，但請務必遵守該許可證的所有條款。 </br>
-如果你希望將本程式碼用於閉源專案、商業販售，或需要專門的商業支援服務，請聯繫。 </br>
-詳情請參閱專案根目錄下的 [LICENSE 檔案](LICENSE)。 
-
----
-
-#### 📄 免責聲明 </br>
-
-此程式碼僅供一般參考及用途。作者不對因使用或無法使用此程式碼所造成的任何損害承擔責任。使用本程式碼的風險由使用者自行承擔。 
+[LICENSE](LICENSE)
 
 ---
 
