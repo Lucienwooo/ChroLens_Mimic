@@ -232,7 +232,7 @@ class RecorderApp(tb.Window):
 
         # TinyMode 按鈕（skin下拉選單左側）
         self.tiny_mode_btn = tb.Button(
-            frm_top, text="TinyMode", style="TinyBold.TButton",
+            frm_top, text="TinyMode", style="My.TButton",
             command=self.toggle_tiny_mode, width=10
         )
         self.tiny_mode_btn.grid(row=0, column=7, padx=(0, 4), sticky="e")
@@ -300,9 +300,7 @@ class RecorderApp(tb.Window):
         tb.Button(frm_script, text="修改腳本名稱", command=self.rename_script, bootstyle=WARNING, width=12, style="My.TButton").grid(row=0, column=3, padx=4)
 
         self.script_combo.bind("<<ComboboxSelected>>", self.on_script_selected)
-        self.refresh_script_list()
-        if self.script_var.get():
-            self.on_script_selected()
+
 
         # ====== 日誌顯示區 ======
         frm_log = tb.Frame(self, padding=(10, 0, 10, 10))
@@ -330,7 +328,6 @@ class RecorderApp(tb.Window):
         self.log_text.config(yscrollcommand=log_scroll.set)
 
         # ====== 其餘初始化 ======
-        # 這裡再呼叫 refresh_script_list 和 on_script_selected
         self.refresh_script_list()
         if self.script_var.get():
             self.on_script_selected()
@@ -362,9 +359,10 @@ class RecorderApp(tb.Window):
         self.log_text.configure(state="disabled")
 
     def update_time_label(self, seconds):
-        m = int(seconds // 60)
-        s = seconds % 60
-        self.time_label.config(text=f"{m:02d}:{s:04.1f}")
+        h = int(seconds // 3600)
+        m = int((seconds % 3600) // 60)
+        s = int(seconds % 60)
+        self.time_label.config(text=f"錄製: {h:02d}:{m:02d}:{s:02d}")
 
     def start_record(self):
         if self.recording:
@@ -519,23 +517,24 @@ class RecorderApp(tb.Window):
         repeat_time_sec = self._parse_time_to_seconds(self.repeat_time_var.get())
         self._repeat_time_limit = repeat_time_sec if repeat_time_sec > 0 else None
 
-        try:
-            repeat = int(self.repeat_var.get())
-            if repeat == 0:
-                repeat = -1  # -1 代表無限次數
-            elif repeat < 0:
-                repeat = 1
-        except:
-            repeat = 1
-
-        # 設定總運作時間
+        # 只要有填寫重複時間，強制 repeat = -1（無限次數，讓時間控制）
         if self._repeat_time_limit:
+            repeat = -1
             self._total_play_time = self._repeat_time_limit
-        elif self.events:
-            total = (self.events[-1]['time'] - self.events[0]['time']) / self.speed
-            self._total_play_time = total * (99999 if repeat == -1 else repeat)
         else:
-            self._total_play_time = 0
+            try:
+                repeat = int(self.repeat_var.get())
+                if repeat == 0:
+                    repeat = -1  # -1 代表無限次數
+                elif repeat < 0:
+                    repeat = 1
+            except:
+                repeat = 1
+            if self.events:
+                total = (self.events[-1]['time'] - self.events[0]['time']) / self.speed
+                self._total_play_time = total * (99999 if repeat == -1 else repeat)
+            else:
+                self._total_play_time = 0
 
         self._play_start_time = time.time()
         self._play_total_time = self._total_play_time
@@ -555,9 +554,13 @@ class RecorderApp(tb.Window):
             else:
                 elapsed = self.events[idx-1]['time'] - self.events[0]['time']
             self.update_time_label(elapsed)
+            # 單次剩餘
             total = self.events[-1]['time'] - self.events[0]['time'] if self.events else 0
             remain = max(0, total - elapsed)
-            self.countdown_label.config(text=f"{int(remain//60):02d}:{remain%60:04.1f}")
+            h = int(remain // 3600)
+            m = int((remain % 3600) // 60)
+            s = int(remain % 60)
+            self.countdown_label.config(text=f"單次: {h:02d}:{m:02d}:{s:02d}")
             # 倒數顯示
             if hasattr(self, "_play_start_time"):
                 if self._repeat_time_limit:
@@ -568,13 +571,14 @@ class RecorderApp(tb.Window):
             self.after(100, self._update_play_time)
         else:
             self.update_time_label(0)
-            self.countdown_label.config(text="00:00.0")
+            self.countdown_label.config(text="單次: 00:00:00")
             self.update_total_time_label(0)
 
     def update_total_time_label(self, seconds):
-        m = int(seconds // 60)
-        s = seconds % 60
-        self.total_time_label.config(text=f"總運作: {m:02d}:{s:04.1f}")
+        h = int(seconds // 3600)
+        m = int((seconds % 3600) // 60)
+        s = int(seconds % 60)
+        self.total_time_label.config(text=f"總運作: {h:02d}:{m:02d}:{s:02d}")
 
     def _play_thread(self):
         self.playing = True
@@ -583,9 +587,11 @@ class RecorderApp(tb.Window):
         count = 0
         play_start_time = time.time()
         while self.playing and (repeat == -1 or count < repeat):
-            # 若有時間限制，檢查是否超時
+            # 強制時間到就結束所有動作
             if hasattr(self, "_repeat_time_limit") and self._repeat_time_limit:
                 if time.time() - play_start_time >= self._repeat_time_limit:
+                    self.log("重複時間到，已強制停止所有動作。")
+                    self.playing = False
                     break
             self._current_play_index = 0
             total_events = len(self.events)
@@ -594,10 +600,10 @@ class RecorderApp(tb.Window):
             base_time = self.events[0]['time']
             play_start = time.time()
             while self._current_play_index < total_events:
-                # 若有時間限制，檢查是否超時
+                # 強制時間到就結束所有動作
                 if hasattr(self, "_repeat_time_limit") and self._repeat_time_limit:
                     if time.time() - play_start_time >= self._repeat_time_limit:
-                        self.log("重複時間到，已自動停止回放。")
+                        self.log("重複時間到，已強制停止所有動作。")
                         self.playing = False
                         break
                 if not self.playing:
@@ -615,10 +621,10 @@ class RecorderApp(tb.Window):
                 target_time = play_start + event_offset
                 while True:
                     now = time.time()
-                    # 若有時間限制，檢查是否超時
+                    # 強制時間到就結束所有動作
                     if hasattr(self, "_repeat_time_limit") and self._repeat_time_limit:
                         if now - play_start_time >= self._repeat_time_limit:
-                            self.log("重複時間到，已自動停止回放。")
+                            self.log("重複時間到，已強制停止所有動作。")
                             self.playing = False
                             break
                     if not self.playing:
@@ -706,6 +712,15 @@ class RecorderApp(tb.Window):
             self.log(f"[{format_time(time.time())}] 腳本已載入：{script}，共 {len(self.events)} 筆事件。")
             with open(LAST_SCRIPT_FILE, "w", encoding="utf-8") as f:
                 f.write(script)
+            # 讀取腳本後，顯示單次腳本時間
+            if self.events:
+                total = self.events[-1]['time'] - self.events[0]['time']
+                h = int(total // 3600)
+                m = int((total % 3600) // 60)
+                s = int(total % 60)
+                self.countdown_label.config(text=f"單次: {h:02d}:{m:02d}:{s:02d}")
+            else:
+                self.countdown_label.config(text="單次: 00:00:00")
         self.save_config()
 
     def refresh_script_list(self):
