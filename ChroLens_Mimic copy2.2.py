@@ -1,5 +1,5 @@
 #ChroLens Studio - Lucienwooo
-#pyinstaller --noconsole --onedir --icon=觸手眼鏡貓.ico --add-data "觸手眼鏡貓.ico;." ChroLens_Mimic.py
+#pyinstaller --noconsole --onedir --icon=觸手眼鏡貓.ico --add-data "觸手眼鏡貓.ico;." ChroLens_Mimic2.1.py
 #--onefile 單一檔案，啟動時間過久，改以"--onedir "方式打包，啟動較快
 # 考慮加入快捷鍵切換腳本
 # 腳本模組化、可視化
@@ -99,6 +99,136 @@ class Tooltip:
             self.tipwindow = None
 
 class RecorderApp(tb.Window):
+    def open_merge_window(self):
+        import tkinter as tk
+        from tkinter import messagebox, simpledialog
+
+        win = tb.Toplevel(self)
+        win.title("腳本合併工具")
+        win.resizable(True, True)
+        win.grab_set()
+
+        # 置中顯示
+        self.update_idletasks()
+        w, h = 700, 500
+        x = self.winfo_x() + (self.winfo_width() // 2) - w // 2
+        y = self.winfo_y() + 60
+        win.geometry(f"{w}x{h}+{x}+{y}")
+
+        frm = tb.Frame(win, padding=10)
+        frm.pack(fill="both", expand=True)
+        frm.grid_rowconfigure(1, weight=1)
+        frm.grid_columnconfigure(0, weight=1)
+        frm.grid_columnconfigure(2, weight=1)
+
+        # 左側：所有腳本列表
+        tb.Label(frm, text="所有腳本", font=("Microsoft JhengHei", 10, "bold")).grid(row=0, column=0, sticky="w")
+        all_scripts = [f for f in os.listdir(self.script_dir) if f.endswith('.json')]
+        all_listbox = tk.Listbox(frm, selectmode=tk.MULTIPLE, font=("Consolas", 10))
+        for f in all_scripts:
+            all_listbox.insert("end", f)
+        all_listbox.grid(row=1, column=0, padx=(0, 8), pady=4, sticky="nsew")
+
+        # 右側：合併清單（顯示「檔名 x 次數」）
+        tb.Label(frm, text="合併清單（可拖曳排序，點擊次數可編輯）", font=("Microsoft JhengHei", 10, "bold")).grid(row=0, column=2, sticky="w")
+        merge_listbox = tk.Listbox(frm, selectmode=tk.BROWSE, font=("Consolas", 10))
+        merge_listbox.grid(row=1, column=2, padx=(8, 0), pady=4, sticky="nsew")
+
+        # 合併清單的資料結構：list of (filename, repeat)
+        merge_items = []
+
+        # 中間按鈕
+        btn_frame = tb.Frame(frm)
+        btn_frame.grid(row=1, column=1, sticky="ns")
+        def add_selected():
+            selected = all_listbox.curselection()
+            for idx in selected:
+                fname = all_listbox.get(idx)
+                merge_items.append([fname, 1])
+                merge_listbox.insert("end", f"{fname} x1")
+        def remove_selected():
+            sel = merge_listbox.curselection()
+            if sel:
+                merge_items.pop(sel[0])
+                merge_listbox.delete(sel[0])
+        def clear_merge():
+            merge_items.clear()
+            merge_listbox.delete(0, "end")
+        tb.Button(btn_frame, text="→ 加入 →", command=add_selected, width=10).pack(pady=8)
+        tb.Button(btn_frame, text="← 移除", command=remove_selected, width=10).pack(pady=8)
+        tb.Button(btn_frame, text="清空", command=clear_merge, width=10).pack(pady=8)
+
+        # 拖曳排序功能
+        def on_drag_start(event):
+            widget = event.widget
+            widget._drag_data = widget.nearest(event.y)
+        def on_drag_motion(event):
+            widget = event.widget
+            idx = widget.nearest(event.y)
+            if hasattr(widget, "_drag_data") and widget._drag_data != idx:
+                # 調整資料結構
+                item = merge_items.pop(widget._drag_data)
+                merge_items.insert(idx, item)
+                # 更新顯示
+                widget.delete(0, "end")
+                for fname, repeat in merge_items:
+                    widget.insert("end", f"{fname} x{repeat}")
+                widget._drag_data = idx
+        merge_listbox.bind("<Button-1>", on_drag_start)
+        merge_listbox.bind("<B1-Motion>", on_drag_motion)
+
+        # 點擊合併清單可編輯次數
+        def on_edit_repeat(event):
+            idx = merge_listbox.nearest(event.y)
+            if idx < 0 or idx >= len(merge_items):
+                return
+            fname, repeat = merge_items[idx]
+            new_repeat = simpledialog.askinteger("編輯重複次數", f"{fname} 重複次數", initialvalue=repeat, minvalue=1, parent=win)
+            if new_repeat:
+                merge_items[idx][1] = new_repeat
+                merge_listbox.delete(idx)
+                merge_listbox.insert(idx, f"{fname} x{new_repeat}")
+        merge_listbox.bind("<Double-Button-1>", on_edit_repeat)
+
+        # 下方：新腳本名稱
+        tb.Label(frm, text="新腳本名稱：", font=("Microsoft JhengHei", 10)).grid(row=2, column=0, pady=(16, 0), sticky="e")
+        new_name_var = tk.StringVar(value="merged_script.json")
+        tb.Entry(frm, textvariable=new_name_var, width=28).grid(row=2, column=2, pady=(16, 0), sticky="w")
+
+        # 合併並儲存
+        def do_merge_and_save():
+            if not merge_items:
+                messagebox.showwarning("提示", "請先將要合併的腳本加入清單。")
+                return
+            merged = []
+            for fname, repeat in merge_items:
+                try:
+                    with open(os.path.join(self.script_dir, fname), "r", encoding="utf-8") as f:
+                        events = json.load(f)
+                    for _ in range(repeat):
+                        merged.extend(events)
+                except Exception as e:
+                    messagebox.showerror("錯誤", f"讀取 {fname} 失敗: {e}")
+                    return
+            # 重新排序時間戳
+            merged.sort(key=lambda e: e.get("time", 0))
+            new_name = new_name_var.get().strip()
+            if not new_name.endswith(".json"):
+                new_name += ".json"
+            new_path = os.path.join(self.script_dir, new_name)
+            if os.path.exists(new_path):
+                messagebox.showerror("錯誤", "檔案已存在，請換個新名稱。")
+                return
+            try:
+                with open(new_path, "w", encoding="utf-8") as f:
+                    json.dump(merged, f, ensure_ascii=False, indent=2)
+                self.log(f"合併完成並儲存為：{new_name}，共 {len(merged)} 筆事件。")
+                self.refresh_script_list()
+                win.destroy()
+            except Exception as e:
+                messagebox.showerror("錯誤", f"儲存失敗: {e}")
+
+        tb.Button(frm, text="合併並儲存", command=do_merge_and_save, bootstyle=SUCCESS, width=16).grid(row=3, column=0, columnspan=3, pady=18)
 
     def _parse_time_to_seconds(self, t):
         """將 00:00:00 或 00:00 格式字串轉為秒數"""
@@ -298,6 +428,8 @@ class RecorderApp(tb.Window):
         self.rename_entry = tb.Entry(frm_script, textvariable=self.rename_var, width=20, style="My.TEntry")
         self.rename_entry.grid(row=0, column=2, padx=4)
         tb.Button(frm_script, text="修改腳本名稱", command=self.rename_script, bootstyle=WARNING, width=12, style="My.TButton").grid(row=0, column=3, padx=4)
+        # 新增合併按鈕
+        tb.Button(frm_script, text="合併", command=self.open_merge_window, bootstyle=INFO, width=8, style="My.TButton").grid(row=0, column=4, padx=4)
 
         self.script_combo.bind("<<ComboboxSelected>>", self.on_script_selected)
 
@@ -839,39 +971,30 @@ class RecorderApp(tb.Window):
             entry.bind("<FocusOut>", lambda e, k=key, v=var: on_entry_focus_out(e, k, v))
             row += 1
 
-        def save_and_apply():
-            for key in self.hotkey_map:
-                val = vars[key].get()
-                if val and val != "輸入按鍵":
-                    self.hotkey_map[key] = val.lower()
-            self._register_hotkeys()
-            self._update_hotkey_labels()
-            self.log("快捷鍵設定已更新。")
+        def save_and_close():
+            # 儲存快捷鍵設定
+            for key, var in vars.items():
+                hotkey = var.get().strip()
+                if hotkey:
+                    # 移除原有的快捷鍵
+                    if key in self._hotkey_handlers:
+                        keyboard.remove_hotkey(self._hotkey_handlers[key])
+                    # 設定新的快捷鍵
+                    try:
+                        handler = keyboard.add_hotkey(hotkey, getattr(self, {
+                            "start": "start_record",
+                            "pause": "toggle_pause",
+                            "stop": "stop_all",
+                            "play": "play_record",
+                            "tiny": "toggle_tiny_mode"  # <--- 加這行
+                        }[key]))
+                        self._hotkey_handlers[key] = handler
+                    except Exception as ex:
+                        self.log(f"快捷鍵 {hotkey} 註冊失敗: {ex}")
+            self.save_config()
             win.destroy()
 
-        tb.Button(win, text="儲存", command=save_and_apply, width=10, bootstyle=SUCCESS).grid(row=row, column=0, columnspan=2, pady=16)
-
-    # 不再需要 _make_hotkey_entry_handler
-
-    def _register_hotkeys(self):
-        for handler in self._hotkey_handlers.values():
-            try:
-                keyboard.remove_hotkey(handler)
-            except Exception:
-                pass
-        self._hotkey_handlers.clear()
-        for key, hotkey in self.hotkey_map.items():
-            try:
-                handler = keyboard.add_hotkey(hotkey, getattr(self, {
-                    "start": "start_record",
-                    "pause": "toggle_pause",
-                    "stop": "stop_all",
-                    "play": "play_record",
-                    "tiny": "toggle_tiny_mode"  # <--- 加這行
-                }[key]))
-                self._hotkey_handlers[key] = handler
-            except Exception as ex:
-                self.log(f"快捷鍵 {hotkey} 註冊失敗: {ex}")
+        tb.Button(win, text="儲存並關閉", command=save_and_close, bootstyle=SUCCESS, width=12).grid(row=row, column=0, columnspan=2, pady=12)
 
     def _update_hotkey_labels(self):
         self.btn_start.config(text=f"開始錄製 ({self.hotkey_map['start']})")
@@ -979,6 +1102,107 @@ def save_user_config(config):
             json.dump(config, f, ensure_ascii=False, indent=2)
     except Exception:
         pass
+
+
+        # 置中顯示
+        self.update_idletasks()
+        x = self.winfo_x() + (self.winfo_width() // 2) - 225
+        y = self.winfo_y() + 60
+        win.geometry(f"+{x}+{y}")
+
+        frm = tb.Frame(win, padding=10)
+        frm.pack(fill="both", expand=True)
+
+        # 左側：目前腳本
+        tb.Label(frm, text="目前腳本", font=("Microsoft JhengHei", 10, "bold")).grid(row=0, column=0, sticky="w")
+        current_script_text = tk.Text(frm, width=25, height=18, font=("Consolas", 9))
+        current_script_text.grid(row=1, column=0, padx=(0, 8), pady=4)
+        # 載入目前腳本內容
+        try:
+            current_json = json.dumps(self.events, ensure_ascii=False, indent=2)
+        except Exception:
+            current_json = ""
+        current_script_text.insert("1.0", current_json)
+        current_script_text.config(state="disabled")
+
+        # 右側：選擇要合併的腳本
+        tb.Label(frm, text="選擇合併腳本", font=("Microsoft JhengHei", 10, "bold")).grid(row=0, column=1, sticky="w")
+        merge_files = [f for f in os.listdir(self.script_dir) if f.endswith('.json') and f != self.script_var.get()]
+        merge_var = tk.StringVar(value=merge_files[0] if merge_files else "")
+        merge_combo = tb.Combobox(frm, textvariable=merge_var, values=merge_files, state="readonly", width=22)
+        merge_combo.grid(row=1, column=1, sticky="w", pady=(0, 4))
+
+        merge_script_text = tk.Text(frm, width=25, height=14, font=("Consolas", 9))
+        merge_script_text.grid(row=2, column=1, padx=(0, 8), pady=4)
+        def load_merge_preview(*args):
+            fname = merge_var.get()
+            if fname:
+                try:
+                    with open(os.path.join(self.script_dir, fname), "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    merge_script_text.config(state="normal")
+                    merge_script_text.delete("1.0", "end")
+                    merge_script_text.insert("1.0", json.dumps(data, ensure_ascii=False, indent=2))
+                    merge_script_text.config(state="disabled")
+                except Exception as e:
+                    merge_script_text.config(state="normal")
+                    merge_script_text.delete("1.0", "end")
+                    merge_script_text.insert("1.0", f"讀取失敗: {e}")
+                    merge_script_text.config(state="disabled")
+            else:
+                merge_script_text.config(state="normal")
+                merge_script_text.delete("1.0", "end")
+                merge_script_text.config(state="disabled")
+        merge_var.trace_add("write", lambda *a: load_merge_preview())
+        load_merge_preview()
+
+        # 下方：合併選項與儲存
+        tb.Label(frm, text="新腳本名稱：", font=("Microsoft JhengHei", 10)).grid(row=3, column=0, pady=(12, 0), sticky="e")
+        new_name_var = tk.StringVar(value="merged_script.json")
+        tb.Entry(frm, textvariable=new_name_var, width=24).grid(row=3, column=1, pady=(12, 0), sticky="w")
+
+        # 合併順序選擇
+        order_var = tk.StringVar(value="current_first")
+        tb.Radiobutton(frm, text="目前腳本在前", variable=order_var, value="current_first").grid(row=4, column=0, sticky="w", pady=(6, 0))
+        tb.Radiobutton(frm, text="合併腳本在前", variable=order_var, value="merge_first").grid(row=4, column=1, sticky="w", pady=(6, 0))
+
+        # 合併與儲存按鈕
+        def do_merge_and_save():
+            fname = merge_var.get()
+            if not fname:
+                self.log("請選擇要合併的腳本。")
+                return
+            try:
+                with open(os.path.join(self.script_dir, fname), "r", encoding="utf-8") as f:
+                    merge_events = json.load(f)
+            except Exception as e:
+                self.log(f"合併腳本讀取失敗: {e}")
+                return
+            # 合併
+            if order_var.get() == "current_first":
+                merged = self.events + merge_events
+            else:
+                merged = merge_events + self.events
+            # 重新排序時間戳
+            merged.sort(key=lambda e: e.get("time", 0))
+            # 儲存
+            new_name = new_name_var.get().strip()
+            if not new_name.endswith(".json"):
+                new_name += ".json"
+            new_path = os.path.join(self.script_dir, new_name)
+            if os.path.exists(new_path):
+                self.log("檔案已存在，請換個新名稱。")
+                return
+            try:
+                with open(new_path, "w", encoding="utf-8") as f:
+                    json.dump(merged, f, ensure_ascii=False, indent=2)
+                self.log(f"合併完成並儲存為：{new_name}，共 {len(merged)} 筆事件。")
+                self.refresh_script_list()
+                win.destroy()
+            except Exception as e:
+                self.log(f"儲存失敗: {e}")
+
+        tb.Button(frm, text="合併並儲存", command=do_merge_and_save, bootstyle=SUCCESS, width=16).grid(row=5, column=0, columnspan=2, pady=18)
 
 if __name__ == "__main__":
     app = RecorderApp()
