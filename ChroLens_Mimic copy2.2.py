@@ -1,8 +1,6 @@
 #ChroLens Studio - Lucienwooo
 #pyinstaller --noconsole --onedir --icon=觸手眼鏡貓.ico --add-data "觸手眼鏡貓.ico;." ChroLens_Mimic2.1.py
 #--onefile 單一檔案，啟動時間過久，改以"--onedir "方式打包，啟動較快
-# 考慮加入快捷鍵切換腳本
-# 腳本模組化、可視化
 import ttkbootstrap as tb
 from ttkbootstrap.constants import *
 import tkinter as tk
@@ -12,59 +10,10 @@ import ctypes
 import win32api
 import tkinter.filedialog
 import sys
-# ====== UI 介面 row 對應說明 ======
-# row 0 (frm_top):開始錄製（btn_start）、暫停/繼續（btn_pause）、停止（btn_stop）、回放（btn_play）、TinyMode（tiny_mode_btn）、skin下拉選單（theme_combo）、關於（about_btn）
-# row 1 (frm_bottom):回放速度（speed_var 輸入框）、腳本路徑（open_scripts_dir 按鈕）、快捷鍵（open_hotkey_settings 按鈕）、關於（about_btn）
-# row 2 (frm_repeat):重複次數（repeat_var 輸入框）、單位「次」
-# row 3 (frm_script):腳本選單（script_combo）、腳本重新命名輸入框（rename_entry）、修改腳本名稱（rename_script 按鈕）
-# row 4 (frm_log):滑鼠座標（mouse_pos_label）、錄製時間（time_label）、單次剩餘（countdown_label）、總運作時間（total_time_label）
-# 下方為日誌顯示區（log_text）
 
-# ====== 滑鼠控制函式放在這裡 ======
-def move_mouse_abs(x, y):
-    ctypes.windll.user32.SetCursorPos(int(x), int(y))
-
-def mouse_event_win(event, x=0, y=0, button='left', delta=0):
-    user32 = ctypes.windll.user32
-    if not button:
-        button = 'left'
-    if event == 'down' or event == 'up':
-        flags = {'left': (0x0002, 0x0004), 'right': (0x0008, 0x0010), 'middle': (0x0020, 0x0040)}
-        flag = flags.get(button, (0x0002, 0x0004))[0 if event == 'down' else 1]
-        class MOUSEINPUT(ctypes.Structure):
-            _fields_ = [("dx", ctypes.c_long),
-                        ("dy", ctypes.c_long),
-                        ("mouseData", ctypes.c_ulong),
-                        ("dwFlags", ctypes.c_ulong),
-                        ("time", ctypes.c_ulong),
-                        ("dwExtraInfo", ctypes.POINTER(ctypes.c_ulong))]
-        class INPUT(ctypes.Structure):
-            _fields_ = [("type", ctypes.c_ulong),
-                        ("mi", MOUSEINPUT)]
-        inp = INPUT()
-        inp.type = 0
-        inp.mi = MOUSEINPUT(0, 0, 0, flag, 0, None)
-        user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(inp))
-    elif event == 'wheel':
-        class MOUSEINPUT(ctypes.Structure):
-            _fields_ = [("dx", ctypes.c_long),
-                        ("dy", ctypes.c_long),
-                        ("mouseData", ctypes.c_ulong),
-                        ("dwFlags", ctypes.c_ulong),
-                        ("time", ctypes.c_ulong),
-                        ("dwExtraInfo", ctypes.POINTER(ctypes.c_ulong))]
-        class INPUT(ctypes.Structure):
-            _fields_ = [("type", ctypes.c_ulong),
-                        ("mi", MOUSEINPUT)]
-        inp = INPUT()
-        inp.type = 0
-        inp.mi = MOUSEINPUT(0, 0, int(delta * 120), 0x0800, 0, None)
-        user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(inp))
-
-# ====== RecorderApp 類別與其餘程式碼 ======
 SCRIPTS_DIR = "scripts"
 LAST_SCRIPT_FILE = "last_script.txt"
-LAST_SKIN_FILE = "last_skin.txt"  # 新增這行
+LAST_SKIN_FILE = "last_skin.txt"
 MOUSE_SAMPLE_INTERVAL = 0.01  # 10ms
 
 def format_time(ts):
@@ -99,168 +48,325 @@ class Tooltip:
             self.tipwindow = None
 
 class RecorderApp(tb.Window):
+    def _parse_time_to_seconds(self, time_str):
+        try:
+            parts = [int(x) for x in time_str.strip().split(":")]
+            if len(parts) == 3:
+                h, m, s = parts
+            elif len(parts) == 2:
+                h = 0
+                m, s = parts
+            elif len(parts) == 1:
+                h = 0
+                m = 0
+                s = parts[0]
+            else:
+                return 0
+            return h * 3600 + m * 60 + s
+        except Exception:
+            return 0
+
+    def use_default_script_dir(self):
+        import tkinter.filedialog
+        path = tkinter.filedialog.askdirectory(title="選擇腳本資料夾")
+        if path:
+            self.script_dir = path
+            self.refresh_script_list()
+            self.save_config()
+
+    # TinyMode 完整功能
+    def toggle_tiny_mode(self):
+        if not hasattr(self, "tiny_mode_on"):
+            self.tiny_mode_on = False
+        self.tiny_mode_on = not self.tiny_mode_on
+        if self.tiny_mode_on:
+            if getattr(self, "tiny_window", None) is None or not self.tiny_window.winfo_exists():
+                self.tiny_window = tb.Toplevel(self)
+                self.tiny_window.title("ChroLens_Mimic TinyMode")
+                self.tiny_window.geometry("470x40")
+                self.tiny_window.overrideredirect(True)
+                self.tiny_window.resizable(False, False)
+                self.tiny_window.attributes("-topmost", True)
+                try:
+                    self.tiny_window.iconbitmap("觸手眼鏡貓.ico")
+                except Exception as e:
+                    print(f"無法設定 TinyMode icon: {e}")
+                self.tiny_btns = []
+                self.tiny_window.bind("<ButtonPress-1>", self._start_move_tiny)
+                self.tiny_window.bind("<B1-Motion>", self._move_tiny)
+                btn_defs = [
+                    ("⏺", "start"),
+                    ("⏸", "pause"),
+                    ("⏹", "stop"),
+                    ("▶︎", "play"),
+                    ("⤴︎", "tiny")
+                ]
+                for i, (icon, key) in enumerate(btn_defs):
+                    btn = tb.Button(
+                        self.tiny_window,
+                        text=f"{icon} {self.hotkey_map[key]}",
+                        width=7, style="My.TButton",
+                        command=getattr(self, {
+                            "start": "start_record",
+                            "pause": "toggle_pause",
+                            "stop": "stop_all",
+                            "play": "play_record",
+                            "tiny": "toggle_tiny_mode"
+                        }[key])
+                    )
+                    btn.grid(row=0, column=i, padx=2, pady=5)
+                    self.tiny_btns.append((btn, icon, key))
+                self.tiny_window.protocol("WM_DELETE_WINDOW", self._close_tiny_mode)
+                self.withdraw()
+        else:
+            self._close_tiny_mode()
+
+    def _close_tiny_mode(self):
+        if getattr(self, "tiny_window", None) and self.tiny_window.winfo_exists():
+            self.tiny_window.destroy()
+        self.tiny_mode_on = False
+        self.deiconify()
+
+    def _start_move_tiny(self, event):
+        self._tiny_drag_x = event.x
+        self._tiny_drag_y = event.y
+
+    def _move_tiny(self, event):
+        x = self.tiny_window.winfo_x() + event.x - self._tiny_drag_x
+        y = self.tiny_window.winfo_y() + event.y - self._tiny_drag_y
+        self.tiny_window.geometry(f"+{x}+{y}")
+
     def open_merge_window(self):
-        import tkinter as tk
-        from tkinter import messagebox, simpledialog
-
+        import tkinter.messagebox
+        lang_map = LANG_MAP[self.language_var.get()]
         win = tb.Toplevel(self)
-        win.title("腳本合併工具")
-        win.resizable(True, True)
-        win.grab_set()
+        win.title(lang_map["腳本合併工具"])
+        win.geometry("1100x650")
+        win.resizable(False, False)
+        win.configure(bg=self.style.colors.bg)
 
-        # 置中顯示
-        self.update_idletasks()
-        w, h = 700, 500
-        x = self.winfo_x() + (self.winfo_width() // 2) - w // 2
-        y = self.winfo_y() + 60
-        win.geometry(f"{w}x{h}+{x}+{y}")
+        main_frame = tb.Frame(win, padding=20)
+        main_frame.pack(fill="both", expand=True)
 
-        frm = tb.Frame(win, padding=10)
-        frm.pack(fill="both", expand=True)
-        frm.grid_rowconfigure(1, weight=1)
-        frm.grid_columnconfigure(0, weight=1)
-        frm.grid_columnconfigure(2, weight=1)
-
-        # 左側：所有腳本列表
-        tb.Label(frm, text="所有腳本", font=("Microsoft JhengHei", 10, "bold")).grid(row=0, column=0, sticky="w")
-        all_scripts = [f for f in os.listdir(self.script_dir) if f.endswith('.json')]
-        all_listbox = tk.Listbox(frm, selectmode=tk.MULTIPLE, font=("Consolas", 10))
-        for f in all_scripts:
+        # 左側：所有腳本清單
+        left_frame = tb.Frame(main_frame)
+        left_frame.grid(row=0, column=0, sticky="ns", padx=(0, 10))
+        tb.Label(left_frame, text=lang_map["所有腳本"], font=("Microsoft JhengHei", 11, "bold")).pack(anchor="w")
+        all_files = [f for f in os.listdir(self.script_dir) if f.endswith('.json')]
+        all_listbox = tk.Listbox(left_frame, selectmode="extended", width=32, height=22, font=("Consolas", 10))
+        for f in all_files:
             all_listbox.insert("end", f)
-        all_listbox.grid(row=1, column=0, padx=(0, 8), pady=4, sticky="nsew")
-
-        # 右側：合併清單（顯示「檔名 x 次數」）
-        tb.Label(frm, text="合併清單（可拖曳排序，點擊次數可編輯）", font=("Microsoft JhengHei", 10, "bold")).grid(row=0, column=2, sticky="w")
-        merge_listbox = tk.Listbox(frm, selectmode=tk.BROWSE, font=("Consolas", 10))
-        merge_listbox.grid(row=1, column=2, padx=(8, 0), pady=4, sticky="nsew")
-
-        # 合併清單的資料結構：list of (filename, repeat)
-        merge_items = []
+        all_listbox.pack(fill="y", expand=True, pady=(6, 0))
 
         # 中間按鈕
-        btn_frame = tb.Frame(frm)
-        btn_frame.grid(row=1, column=1, sticky="ns")
-        def add_selected():
+        btn_frame = tb.Frame(main_frame)
+        btn_frame.grid(row=0, column=1, sticky="ns")
+        btn_add = tb.Button(btn_frame, text="加入 →", width=10)
+        btn_add.pack(pady=(60, 10))
+        btn_remove = tb.Button(btn_frame, text="← 移除", width=10)
+        btn_remove.pack(pady=10)
+
+        # 右側：合併清單（可重複、可編輯次數與延遲）
+        right_frame = tb.Frame(main_frame)
+        right_frame.grid(row=0, column=2, sticky="ns", padx=(10, 0))
+        tb.Label(right_frame, text="合併清單（可重複、可編輯）", font=("Microsoft JhengHei", 11, "bold")).pack(anchor="w")
+
+        merge_canvas = tk.Canvas(right_frame, width=600, height=500, bg="#23272e", highlightthickness=0)
+        merge_scroll = tb.Scrollbar(right_frame, orient="vertical", command=merge_canvas.yview)
+        merge_frame = tb.Frame(merge_canvas, bg="#23272e")
+        merge_frame.bind(
+            "<Configure>",
+            lambda e: merge_canvas.configure(scrollregion=merge_canvas.bbox("all"))
+        )
+        merge_canvas.create_window((0, 0), window=merge_frame, anchor="nw")
+        merge_canvas.configure(yscrollcommand=merge_scroll.set)
+        merge_canvas.pack(side="left", fill="both", expand=True)
+        merge_scroll.pack(side="right", fill="y")
+
+        merge_items = []  # 每一項: {"fname":..., "repeat_var":..., "delay_var":..., "widgets":...}
+
+        def refresh_merge_list():
+            # 清除現有
+            for widget in merge_frame.winfo_children():
+                widget.destroy()
+            for idx, item in enumerate(merge_items):
+                bg = "#23272e" if idx % 2 == 0 else "#2e323a"
+                row = tb.Frame(merge_frame, bg=bg)
+                row.pack(fill="x", pady=1)
+                # 檔名
+                lbl = tb.Label(row, text=item["fname"], width=32, font=("Consolas", 10), background=bg, foreground="#e0e0e0")
+                lbl.pack(side="left", padx=(2, 4))
+                # 重複次數
+                tb.Label(row, text="重複", background=bg, foreground="#e0e0e0").pack(side="left")
+                entry_repeat = tb.Entry(row, textvariable=item["repeat_var"], width=5)
+                entry_repeat.pack(side="left", padx=(2, 8))
+                # 延遲
+                tb.Label(row, text="延遲(s)", background=bg, foreground="#e0e0e0").pack(side="left")
+                entry_delay = tb.Entry(row, textvariable=item["delay_var"], width=5)
+                entry_delay.pack(side="left", padx=(2, 8))
+                # 上下移
+                def move_up(idx=idx):
+                    if idx > 0:
+                        merge_items[idx-1], merge_items[idx] = merge_items[idx], merge_items[idx-1]
+                        refresh_merge_list()
+                def move_down(idx=idx):
+                    if idx < len(merge_items)-1:
+                        merge_items[idx+1], merge_items[idx] = merge_items[idx], merge_items[idx+1]
+                        refresh_merge_list()
+                btn_up = tb.Button(row, text="↑", width=2, command=move_up)
+                btn_up.pack(side="left", padx=2)
+                btn_down = tb.Button(row, text="↓", width=2, command=move_down)
+                btn_down.pack(side="left", padx=2)
+                # 選取刪除
+                btn_del = tb.Button(row, text="移除", width=5, command=lambda i=idx: remove_merge_item(i))
+                btn_del.pack(side="left", padx=6)
+                item["widgets"] = (row, entry_repeat, entry_delay, btn_up, btn_down, btn_del)
+
+        def add_merge_item(fname):
+            merge_items.append({
+                "fname": fname,
+                "repeat_var": tk.IntVar(value=1),
+                "delay_var": tk.IntVar(value=0),
+                "widgets": None
+            })
+            refresh_merge_list()
+            update_preview()
+
+        def remove_merge_item(idx):
+            merge_items.pop(idx)
+            refresh_merge_list()
+            update_preview()
+
+        def do_add():
             selected = all_listbox.curselection()
-            for idx in selected:
-                fname = all_listbox.get(idx)
-                merge_items.append([fname, 1])
-                merge_listbox.insert("end", f"{fname} x1")
-        def remove_selected():
-            sel = merge_listbox.curselection()
-            if sel:
-                merge_items.pop(sel[0])
-                merge_listbox.delete(sel[0])
-        def clear_merge():
-            merge_items.clear()
-            merge_listbox.delete(0, "end")
-        tb.Button(btn_frame, text="→ 加入 →", command=add_selected, width=10).pack(pady=8)
-        tb.Button(btn_frame, text="← 移除", command=remove_selected, width=10).pack(pady=8)
-        tb.Button(btn_frame, text="清空", command=clear_merge, width=10).pack(pady=8)
+            for i in selected:
+                fname = all_listbox.get(i)
+                add_merge_item(fname)
+            update_preview()
+        btn_add.config(command=do_add)
 
-        # 拖曳排序功能
-        def on_drag_start(event):
-            widget = event.widget
-            widget._drag_data = widget.nearest(event.y)
-        def on_drag_motion(event):
-            widget = event.widget
-            idx = widget.nearest(event.y)
-            if hasattr(widget, "_drag_data") and widget._drag_data != idx:
-                # 調整資料結構
-                item = merge_items.pop(widget._drag_data)
-                merge_items.insert(idx, item)
-                # 更新顯示
-                widget.delete(0, "end")
-                for fname, repeat in merge_items:
-                    widget.insert("end", f"{fname} x{repeat}")
-                widget._drag_data = idx
-        merge_listbox.bind("<Button-1>", on_drag_start)
-        merge_listbox.bind("<B1-Motion>", on_drag_motion)
+        def do_remove():
+            # 移除合併清單中最後一個選取的
+            if merge_items:
+                remove_merge_item(len(merge_items)-1)
+        btn_remove.config(command=do_remove)
 
-        # 點擊合併清單可編輯次數
-        def on_edit_repeat(event):
-            idx = merge_listbox.nearest(event.y)
-            if idx < 0 or idx >= len(merge_items):
-                return
-            fname, repeat = merge_items[idx]
-            new_repeat = simpledialog.askinteger("編輯重複次數", f"{fname} 重複次數", initialvalue=repeat, minvalue=1, parent=win)
-            if new_repeat:
-                merge_items[idx][1] = new_repeat
-                merge_listbox.delete(idx)
-                merge_listbox.insert(idx, f"{fname} x{new_repeat}")
-        merge_listbox.bind("<Double-Button-1>", on_edit_repeat)
+        # 預覽區
+        preview_frame = tb.Frame(win, padding=(20, 0, 20, 10))
+        preview_frame.pack(fill="both", expand=True)
+        tb.Label(preview_frame, text="合併預覽", font=("Microsoft JhengHei", 11, "bold")).pack(anchor="w")
+        preview_text = tk.Text(preview_frame, width=99, height=8, font=("Consolas", 9), bg="#23272e", fg="#e0e0e0", insertbackground="#e0e0e0")
+        preview_text.pack(fill="both", expand=True, pady=(6, 0))
 
-        # 下方：新腳本名稱
-        tb.Label(frm, text="新腳本名稱：", font=("Microsoft JhengHei", 10)).grid(row=2, column=0, pady=(16, 0), sticky="e")
+        # 新腳本名稱
+        options_frame = tb.Frame(win, padding=(20, 0, 20, 10))
+        options_frame.pack(fill="x")
+        tb.Label(options_frame, text=lang_map["新腳本名稱："], font=("Microsoft JhengHei", 10)).grid(row=0, column=0, sticky="e")
         new_name_var = tk.StringVar(value="merged_script.json")
-        tb.Entry(frm, textvariable=new_name_var, width=28).grid(row=2, column=2, pady=(16, 0), sticky="w")
+        tb.Entry(options_frame, textvariable=new_name_var, width=32).grid(row=0, column=1, sticky="w", padx=(4, 8))
 
-        # 合併並儲存
-        def do_merge_and_save():
-            if not merge_items:
-                messagebox.showwarning("提示", "請先將要合併的腳本加入清單。")
-                return
+        # 合併與儲存按鈕
+        def update_preview():
             merged = []
-            for fname, repeat in merge_items:
+            for item in merge_items:
                 try:
-                    with open(os.path.join(self.script_dir, fname), "r", encoding="utf-8") as f:
+                    repeat = max(1, min(9999, int(item["repeat_var"].get())))
+                    delay = max(0, min(9999, int(item["delay_var"].get())))
+                except Exception:
+                    repeat = 1
+                    delay = 0
+                try:
+                    with open(os.path.join(self.script_dir, item["fname"]), "r", encoding="utf-8") as f:
                         events = json.load(f)
                     for _ in range(repeat):
-                        merged.extend(events)
+                        merged += events
+                        if delay > 0 and merged:
+                            # 插入延遲事件（假設格式為 {"type": "delay", "seconds": delay}）
+                            merged.append({"type": "delay", "seconds": delay})
+                except Exception:
+                    pass
+            preview_text.config(state="normal")
+            preview_text.delete("1.0", "end")
+            preview_text.insert("1.0", json.dumps(merged[:50], ensure_ascii=False, indent=2) + ("\n...（僅顯示前50筆）" if len(merged) > 50 else ""))
+            preview_text.config(state="disabled")
+
+        def do_merge_and_save():
+            merged = []
+            for item in merge_items:
+                try:
+                    repeat = max(1, min(9999, int(item["repeat_var"].get())))
+                    delay = max(0, min(9999, int(item["delay_var"].get())))
+                except Exception:
+                    repeat = 1
+                    delay = 0
+                try:
+                    with open(os.path.join(self.script_dir, item["fname"]), "r", encoding="utf-8") as f:
+                        events = json.load(f)
+                    for _ in range(repeat):
+                        merged += events
+                        if delay > 0 and merged:
+                            merged.append({"type": "delay", "seconds": delay})
                 except Exception as e:
-                    messagebox.showerror("錯誤", f"讀取 {fname} 失敗: {e}")
+                    tkinter.messagebox.showerror("錯誤", f"讀取 {item['fname']} 失敗: {e}")
                     return
-            # 重新排序時間戳
-            merged.sort(key=lambda e: e.get("time", 0))
             new_name = new_name_var.get().strip()
             if not new_name.endswith(".json"):
                 new_name += ".json"
             new_path = os.path.join(self.script_dir, new_name)
             if os.path.exists(new_path):
-                messagebox.showerror("錯誤", "檔案已存在，請換個新名稱。")
+                tkinter.messagebox.showerror("錯誤", "檔案已存在，請換個新名稱。")
                 return
             try:
                 with open(new_path, "w", encoding="utf-8") as f:
                     json.dump(merged, f, ensure_ascii=False, indent=2)
-                self.log(f"合併完成並儲存為：{new_name}，共 {len(merged)} 筆事件。")
+                tkinter.messagebox.showinfo("成功", f"合併完成並儲存為：{new_name}\n共 {len(merged)} 筆事件。")
                 self.refresh_script_list()
                 win.destroy()
             except Exception as e:
-                messagebox.showerror("錯誤", f"儲存失敗: {e}")
+                tkinter.messagebox.showerror("錯誤", f"儲存失敗: {e}")
 
-        tb.Button(frm, text="合併並儲存", command=do_merge_and_save, bootstyle=SUCCESS, width=16).grid(row=3, column=0, columnspan=3, pady=18)
+        tb.Button(options_frame, text="合併", command=do_merge_and_save, bootstyle=SUCCESS, width=18).grid(row=0, column=2, padx=12)
+        update_preview()
 
-    def _parse_time_to_seconds(self, t):
-        """將 00:00:00 或 00:00 格式字串轉為秒數"""
-        if not t or not isinstance(t, str):
-            return 0
-        parts = t.strip().split(":")
-        try:
-            if len(parts) == 3:
-                h, m, s = map(int, parts)
-                return h * 3600 + m * 60 + s
-            elif len(parts) == 2:
-                m, s = map(int, parts)
-                return m * 60 + s
-            elif len(parts) == 1:
-                return int(parts[0])
-        except Exception:
-            return 0
-        return 0
+    def change_language(self, event=None):
+        lang = self.language_var.get()
+        lang_map = LANG_MAP.get(lang, LANG_MAP["繁體中文"])
+        self.btn_start.config(text=lang_map["開始錄製"] + f" ({self.hotkey_map['start']})")
+        self.btn_pause.config(text=lang_map["暫停/繼續"] + f" ({self.hotkey_map['pause']})")
+        self.btn_stop.config(text=lang_map["停止"] + f" ({self.hotkey_map['stop']})")
+        self.btn_play.config(text=lang_map["回放"] + f" ({self.hotkey_map['play']})")
+        self.tiny_mode_btn.config(text=lang_map["TinyMode"])
+        self.btn_script_dir.config(text=lang_map["腳本路徑"])
+        self.btn_hotkey.config(text=lang_map["快捷鍵"])
+        self.about_btn.config(text=lang_map["關於"])
+        self.lbl_repeat.config(text=lang_map["重複次數:"])
+        self.lbl_times.config(text=lang_map["次"])
+        self.lbl_interval.config(text=lang_map["重複時間"])
+        self.lbl_script.config(text=lang_map["腳本選單:"])
+        self.btn_rename.config(text=lang_map["修改腳本名稱"])
+        self.btn_merge.config(text=lang_map["合併"])
+        self.language_combo.config(values=list(LANG_MAP.keys()))
+        # row1/row4
+        self.lbl_speed.config(text=lang_map["回放速度:"] if "回放速度:" in lang_map else "回放速度:")
+        self.total_time_label.config(text=lang_map["總運作:"] + " 00:00.0" if "總運作:" in lang_map else "總運作: 00:00.0")
+        self.countdown_label.config(text=lang_map["單次:"] + " 00:00.0" if "單次:" in lang_map else "單次: 00:00.0")
+        self.time_label.config(text=lang_map["錄製:"] + " 00:00.0" if "錄製:" in lang_map else "錄製: 00:00.0")
+        self.save_config()
+        self.update_idletasks()
+        width = max(self.winfo_reqwidth() - 50, 400)
+        self.geometry(f"{width}x{self.winfo_height()}")
 
+    # 完整 About 視窗
     def show_about_dialog(self):
         about_win = tb.Toplevel(self)
         about_win.title("關於 ChroLens_Mimic")
         about_win.geometry("450x300")
         about_win.resizable(False, False)
         about_win.grab_set()
-        # 置中顯示
         self.update_idletasks()
         x = self.winfo_x() + (self.winfo_width() // 2) - 175
         y = self.winfo_y() + 80
         about_win.geometry(f"+{x}+{y}")
-
-        # 設定icon與主程式相同
         try:
             import sys, os
             if getattr(sys, 'frozen', False):
@@ -270,10 +376,8 @@ class RecorderApp(tb.Window):
             about_win.iconbitmap(icon_path)
         except Exception as e:
             print(f"無法設定 about 視窗 icon: {e}")
-
         frm = tb.Frame(about_win, padding=20)
         frm.pack(fill="both", expand=True)
-
         tb.Label(frm, text="ChroLens_Mimic\n可理解為按鍵精靈/操作錄製/掛機工具\n解決重複性高的作業或動作", font=("Microsoft JhengHei", 11,)).pack(anchor="w", pady=(0, 6))
         link = tk.Label(frm, text="ChroLens_模擬器討論區", font=("Microsoft JhengHei", 10, "underline"), fg="#5865F2", cursor="hand2")
         link.pack(anchor="w")
@@ -291,7 +395,6 @@ class RecorderApp(tb.Window):
         self._hotkey_handlers = {}
         self.tiny_window = None
 
-        # 統一字體 style
         self.style.configure("My.TButton", font=("Microsoft JhengHei", 9))
         self.style.configure("My.TLabel", font=("Microsoft JhengHei", 9))
         self.style.configure("My.TEntry", font=("Microsoft JhengHei", 9))
@@ -310,12 +413,15 @@ class RecorderApp(tb.Window):
         except Exception as e:
             print(f"無法設定 icon: {e}")
 
-        # 在左上角建立一個小label作為icon區域的懸浮觸發點
         self.icon_tip_label = tk.Label(self, width=2, height=1, bg=self.cget("background"))
         self.icon_tip_label.place(x=0, y=0)
         Tooltip(self.icon_tip_label, f"{self.title()}_By_Lucien")
 
-        self.geometry("900x550")
+        # 主視窗寬度自動調整
+        self.update_idletasks()
+        width = self.winfo_reqwidth() + 20
+        height = 550
+        self.geometry(f"{width}x{height}")
         self.resizable(False, False)
         self.recording = False
         self.playing = False
@@ -326,12 +432,10 @@ class RecorderApp(tb.Window):
         self._play_start_time = None
         self._total_play_time = 0
 
-        # 設定腳本資料夾
         self.script_dir = self.user_config.get("script_dir", SCRIPTS_DIR)
         if not os.path.exists(self.script_dir):
             os.makedirs(self.script_dir)
 
-        # 快捷鍵設定，新增 tiny
         self.hotkey_map = {
             "start": "F10",
             "pause": "F11",
@@ -353,14 +457,12 @@ class RecorderApp(tb.Window):
         self.btn_play = tb.Button(frm_top, text=f"回放 ({self.hotkey_map['play']})", command=self.play_record, bootstyle=SUCCESS, width=10, style="My.TButton")
         self.btn_play.grid(row=0, column=3, padx=4)
 
-        # ====== skin下拉選單 ======
         themes = ["darkly", "cyborg", "superhero", "journal","minty", "united", "morph", "lumen"]
         self.theme_var = tk.StringVar(value=self.style.theme_use())
         theme_combo = tb.Combobox(frm_top, textvariable=self.theme_var, values=themes, state="readonly", width=6, style="My.TCombobox")
         theme_combo.grid(row=0, column=8, padx=(0, 4), sticky="e")
         theme_combo.bind("<<ComboboxSelected>>", lambda e: self.change_theme())
 
-        # TinyMode 按鈕（skin下拉選單左側）
         self.tiny_mode_btn = tb.Button(
             frm_top, text="TinyMode", style="My.TButton",
             command=self.toggle_tiny_mode, width=10
@@ -370,69 +472,52 @@ class RecorderApp(tb.Window):
         # ====== 下方操作區 ======
         frm_bottom = tb.Frame(self, padding=(10, 0, 10, 5))
         frm_bottom.pack(fill="x")
-        tb.Label(frm_bottom, text="回放速度:", style="My.TLabel").grid(row=0, column=0, padx=(0,2))
-        self.speed_var = tk.StringVar(value=self.user_config.get("speed", "1.0"))
+        self.lbl_speed = tb.Label(frm_bottom, text="回放速度:", style="My.TLabel")
+        self.lbl_speed.grid(row=0, column=0, padx=(0,2))
+        self.speed_var = tk.StringVar(value="100")
         tb.Entry(frm_bottom, textvariable=self.speed_var, width=6, style="My.TEntry").grid(row=0, column=1, padx=2)
-        tb.Button(frm_bottom, text="腳本路徑", command=self.use_default_script_dir, bootstyle=SECONDARY, width=10, style="My.TButton").grid(row=0, column=3, padx=4)
-        tb.Button(frm_bottom, text="快捷鍵", command=self.open_hotkey_settings, bootstyle=SECONDARY, width=10, style="My.TButton").grid(row=0, column=4, padx=4)
-
-        # ====== 新增「關於」按鈕（移到快捷鍵右側） ======
-        self.about_btn = tb.Button(
-            frm_bottom, text="關於", width=6, style="My.TButton",
-            command=self.show_about_dialog, bootstyle=SECONDARY
-        )
+        self.btn_script_dir = tb.Button(frm_bottom, text="腳本路徑", command=self.use_default_script_dir, bootstyle=SECONDARY, width=10, style="My.TButton")
+        self.btn_script_dir.grid(row=0, column=3, padx=4)
+        self.btn_hotkey = tb.Button(frm_bottom, text="快捷鍵", command=self.open_hotkey_settings, bootstyle=SECONDARY, width=10, style="My.TButton")
+        self.btn_hotkey.grid(row=0, column=4, padx=4)
+        self.about_btn = tb.Button(frm_bottom, text="關於", width=6, style="My.TButton", command=self.show_about_dialog, bootstyle=SECONDARY)
         self.about_btn.grid(row=0, column=5, padx=(0, 2), sticky="e")
-
+        self.language_var = tk.StringVar(value="繁體中文")
+        lang_combo = tb.Combobox(frm_bottom, textvariable=self.language_var, values=["繁體中文", "日本語", "English"], state="readonly", width=10, style="My.TCombobox")
+        lang_combo.grid(row=0, column=6, padx=(0, 2), sticky="e")
+        lang_combo.bind("<<ComboboxSelected>>", self.change_language)
+        self.language_combo = lang_combo
 
         # ====== 重複次數設定 ======
-        self.repeat_var = tk.StringVar(value=self.user_config.get("repeat", "1"))
         frm_repeat = tb.Frame(self, padding=(10, 0, 10, 5))
         frm_repeat.pack(fill="x")
-        tb.Label(frm_repeat, text="重複次數:", style="My.TLabel").grid(row=0, column=0, padx=(0,2))
-        self.repeat_var = tk.StringVar(value=self.user_config.get("repeat", "1"))
+        self.lbl_repeat = tb.Label(frm_repeat, text="重複次數:", style="My.TLabel")
+        self.lbl_repeat.grid(row=0, column=0, padx=(0,2))
+        self.repeat_var = tk.StringVar(value="1")
         tb.Entry(frm_repeat, textvariable=self.repeat_var, width=6, style="My.TEntry").grid(row=0, column=1, padx=2)
-        tb.Label(frm_repeat, text="次", style="My.TLabel").grid(row=0, column=2, padx=(0,2))
-
-        # 新增重複時間欄位
+        self.lbl_times = tb.Label(frm_repeat, text="次", style="My.TLabel")
+        self.lbl_times.grid(row=0, column=2, padx=(0,2))
         self.repeat_time_var = tk.StringVar(value="00:00:00")
         repeat_time_entry = tb.Entry(frm_repeat, textvariable=self.repeat_time_var, width=10, style="My.TEntry", justify="center")
         repeat_time_entry.grid(row=0, column=3, padx=(10,2))
-        tb.Label(frm_repeat, text="重複時間", style="My.TLabel").grid(row=0, column=4, padx=(0,2))
-
-        # 只允許輸入數字與冒號
-        def validate_time_input(P):
-            import re
-            return re.fullmatch(r"[\d:]*", P) is not None
-        vcmd = (self.register(validate_time_input), "%P")
-        repeat_time_entry.config(validate="key", validatecommand=vcmd)
-
-        # 當重複時間變動時，更新總運作時間顯示
-        def on_repeat_time_change(*args):
-            t = self.repeat_time_var.get()
-            seconds = self._parse_time_to_seconds(t)
-            if seconds > 0:
-                self.update_total_time_label(seconds)
-            else:
-                # 若為 0 則恢復原本計算
-                self.update_total_time_label(0)
-        self.repeat_time_var.trace_add("write", on_repeat_time_change)
+        self.lbl_interval = tb.Label(frm_repeat, text="重複時間", style="My.TLabel")
+        self.lbl_interval.grid(row=0, column=4, padx=(0,2))
 
         # ====== 腳本選單區 ======
         frm_script = tb.Frame(self, padding=(10, 0, 10, 5))
         frm_script.pack(fill="x")
-        tb.Label(frm_script, text="腳本選單:", style="My.TLabel").grid(row=0, column=0, sticky="w")
-        self.script_var = tk.StringVar(value=self.user_config.get("last_script", ""))
+        self.lbl_script = tb.Label(frm_script, text="腳本選單:", style="My.TLabel")
+        self.lbl_script.grid(row=0, column=0, sticky="w")
+        self.script_var = tk.StringVar(value="")
         self.script_combo = tb.Combobox(frm_script, textvariable=self.script_var, width=30, state="readonly", style="My.TCombobox")
         self.script_combo.grid(row=0, column=1, sticky="w", padx=4)
         self.rename_var = tk.StringVar()
         self.rename_entry = tb.Entry(frm_script, textvariable=self.rename_var, width=20, style="My.TEntry")
         self.rename_entry.grid(row=0, column=2, padx=4)
-        tb.Button(frm_script, text="修改腳本名稱", command=self.rename_script, bootstyle=WARNING, width=12, style="My.TButton").grid(row=0, column=3, padx=4)
-        # 新增合併按鈕
-        tb.Button(frm_script, text="合併", command=self.open_merge_window, bootstyle=INFO, width=8, style="My.TButton").grid(row=0, column=4, padx=4)
-
-        self.script_combo.bind("<<ComboboxSelected>>", self.on_script_selected)
-
+        self.btn_rename = tb.Button(frm_script, text="修改腳本名稱", command=self.rename_script, bootstyle=WARNING, width=12, style="My.TButton")
+        self.btn_rename.grid(row=0, column=3, padx=4)
+        self.btn_merge = tb.Button(frm_script, text="合併", command=self.open_merge_window, bootstyle=INFO, width=8, style="My.TButton")
+        self.btn_merge.grid(row=0, column=4, padx=4)
 
         # ====== 日誌顯示區 ======
         frm_log = tb.Frame(self, padding=(10, 0, 10, 10))
@@ -445,32 +530,40 @@ class RecorderApp(tb.Window):
             font=("Consolas", 12, "bold"),
             foreground="#668B9B"
         )
-        self.mouse_pos_label.pack(side="left", padx=8)
-        self.time_label = tb.Label(log_title_frame, text="錄製: 00:00.0", font=("Consolas", 12, ), foreground="#15D3BD")
-        self.time_label.pack(side="right", padx=8)
-        self.countdown_label = tb.Label(log_title_frame, text="單次: 00:00.0", font=("Consolas", 12, ), foreground="#DB0E59")
-        self.countdown_label.pack(side="right", padx=8)
-        self.total_time_label = tb.Label(log_title_frame, text="總共: 00:00.0", font=("Consolas", 12, ), foreground="#FF95CA")
-        self.total_time_label.pack(side="right", padx=8)
+        self.mouse_pos_label.pack(side="left", padx=0)  # 取消間隔
 
-        self.log_text = tb.Text(frm_log, height=24, width=110, state="disabled", font=("Microsoft JhengHei", 9))
+        # 右側時間區用一個Frame包起來，讓三個時間靠右且彼此緊湊
+        time_frame = tb.Frame(log_title_frame)
+        time_frame.pack(side="right", padx=0)  # 取消間隔
+
+        self.time_label = tb.Label(time_frame, text="錄製: 00:00.00", font=("Consolas", 12), foreground="#15D3BD")
+        self.time_label.pack(side="right", padx=0)
+        self.countdown_label = tb.Label(time_frame, text="單次: 00:00.00", font=("Consolas", 12), foreground="#DB0E59")
+        self.countdown_label.pack(side="right", padx=0)
+        self.total_time_label = tb.Label(time_frame, text="總運作: 00:00.00", font=("Consolas", 12), foreground="#FF95CA")
+        self.total_time_label.pack(side="right", padx=0)
+
+        self.log_text = tb.Text(frm_log, height=8, width=95, state="disabled", font=("Microsoft JhengHei", 9))  # 高度縮短
         self.log_text.pack(fill="both", expand=True, pady=(4,0))
         log_scroll = tb.Scrollbar(frm_log, command=self.log_text.yview)
         log_scroll.pack(side="left", fill="y")
         self.log_text.config(yscrollcommand=log_scroll.set)
 
-        # ====== 其餘初始化 ======
         self.refresh_script_list()
         if self.script_var.get():
             self.on_script_selected()
 
-        self.after(1500, self._delayed_init)  
+        self.after(1500, self._delayed_init)
+        self.update_idletasks()
+        width = max(self.winfo_reqwidth() - 50, 400)  # 寬度減少50，最小400
+        height = int(self.winfo_reqheight() * 2 / 3) + 100  # 高度縮短1/3再+100
+        self.geometry(f"{width}x{height}")
 
     def _delayed_init(self):
-        self.after(1600, self._register_hotkeys)         
-        self.after(1700, self.refresh_script_list)      
-        self.after(1800, self.load_last_script)         
-        self.after(1900, self.update_mouse_pos)         
+        # self.after(1600, self._register_hotkeys)  # ←移除這行
+        self.after(1700, self.refresh_script_list)
+        self.after(1800, self.load_last_script)
+        self.after(1900, self.update_mouse_pos)
 
     def save_config(self):
         self.user_config["skin"] = self.theme_var.get()
@@ -641,9 +734,14 @@ class RecorderApp(tb.Window):
             self.log("沒有可回放的事件，請先錄製或載入腳本。")
             return
         try:
-            self.speed = float(self.speed_var.get())
+            speed_input = int(self.speed_var.get())
+            if speed_input < 1 or speed_input > 1000:
+                speed_input = 100
+                self.speed_var.set("100")
         except:
-            self.speed = 1.0
+            speed_input = 100
+            self.speed_var.set("100")
+        self.speed = speed_input / 100.0  # 100=1.0x, 25=0.25x, 1000=10x
 
         # 取得重複時間（秒）
         repeat_time_sec = self._parse_time_to_seconds(self.repeat_time_var.get())
@@ -674,7 +772,7 @@ class RecorderApp(tb.Window):
         self.log(f"[{format_time(time.time())}] 開始回放，速度倍率: {self.speed}")
         self.playing = True
         self.paused = False
-        self._repeat_times = repeat
+        self._current_play_index = 0  # 新增：初始化回放索引
         threading.Thread(target=self._play_thread, daemon=True).start()
         self.after(100, self._update_play_time)
 
@@ -820,6 +918,7 @@ class RecorderApp(tb.Window):
             self.script_var.set(filename)
             with open(LAST_SCRIPT_FILE, "w", encoding="utf-8") as f:
                 f.write(filename)
+            self.on_script_selected()  # 新增：自動載入新腳本，顯示單次時間
         except Exception as ex:
             self.log(f"[{format_time(time.time())}] 存檔失敗: {ex}")
 
@@ -913,40 +1012,36 @@ class RecorderApp(tb.Window):
 
     def open_hotkey_settings(self):
         win = tb.Toplevel(self)
-        win.title("快捷鍵設定")
+        lang = self.language_var.get()
+        lang_map = LANG_MAP.get(lang, LANG_MAP["繁體中文"])
+        win.title(lang_map["快捷鍵"])
         win.geometry("340x280")
         win.resizable(False, False)
 
         labels = {
-            "start": "開始錄製",
-            "pause": "暫停/繼續",
-            "stop": "停止錄製",
-            "play": "回放",
-            "tiny": "TinyMode"
+            "start": lang_map["開始錄製"],
+            "pause": lang_map["暫停/繼續"],
+            "stop": lang_map["停止"],
+            "play": lang_map["回放"],
+            "tiny": lang_map["TinyMode"]
         }
         vars = {}
         entries = {}
         row = 0
 
         def on_entry_key(event, key, var):
-            # 只記錄實際按下的組合鍵或單鍵
             keys = []
-            # 只在有修飾鍵時才加
             if event.state & 0x0001: keys.append("shift")
             if event.state & 0x0004: keys.append("ctrl")
             if event.state & 0x0008: keys.append("alt")
             key_name = event.keysym.lower()
-            # 避免 shift/ctrl/alt 單獨被記錄
             if key_name not in ("shift_l", "shift_r", "control_l", "control_r", "alt_l", "alt_r"):
                 keys.append(key_name)
-            # 組合成快捷鍵字串
             var.set("+".join(keys))
             return "break"
 
         def on_entry_release(event, key, var):
-            # 只記錄釋放時的單一鍵
             key_name = event.keysym.lower()
-            # 避免 shift/ctrl/alt 單獨被記錄
             if key_name not in ("shift_l", "shift_r", "control_l", "control_r", "alt_l", "alt_r"):
                 var.set(key_name)
             return "break"
@@ -965,28 +1060,24 @@ class RecorderApp(tb.Window):
             entry.grid(row=row, column=1, padx=10)
             vars[key] = var
             entries[key] = entry
-            # 綁定事件
             entry.bind("<KeyRelease>", lambda e, k=key, v=var: on_entry_release(e, k, v))
             entry.bind("<FocusIn>", lambda e, v=var: on_entry_focus_in(e, v))
             entry.bind("<FocusOut>", lambda e, k=key, v=var: on_entry_focus_out(e, k, v))
             row += 1
 
         def save_and_close():
-            # 儲存快捷鍵設定
             for key, var in vars.items():
                 hotkey = var.get().strip()
                 if hotkey:
-                    # 移除原有的快捷鍵
                     if key in self._hotkey_handlers:
                         keyboard.remove_hotkey(self._hotkey_handlers[key])
-                    # 設定新的快捷鍵
                     try:
                         handler = keyboard.add_hotkey(hotkey, getattr(self, {
                             "start": "start_record",
                             "pause": "toggle_pause",
                             "stop": "stop_all",
                             "play": "play_record",
-                            "tiny": "toggle_tiny_mode"  # <--- 加這行
+                            "tiny": "toggle_tiny_mode"
                         }[key]))
                         self._hotkey_handlers[key] = handler
                     except Exception as ex:
@@ -994,100 +1085,126 @@ class RecorderApp(tb.Window):
             self.save_config()
             win.destroy()
 
-        tb.Button(win, text="儲存並關閉", command=save_and_close, bootstyle=SUCCESS, width=12).grid(row=row, column=0, columnspan=2, pady=12)
+        tb.Button(win, text=lang_map["儲存並關閉"], command=save_and_close, bootstyle=SUCCESS, width=12).grid(row=row, column=0, columnspan=2, pady=12)
 
-    def _update_hotkey_labels(self):
-        self.btn_start.config(text=f"開始錄製 ({self.hotkey_map['start']})")
-        self.btn_pause.config(text=f"暫停/繼續 ({self.hotkey_map['pause']})")
-        self.btn_stop.config(text=f"停止 ({self.hotkey_map['stop']})")
-        self.btn_play.config(text=f"回放 ({self.hotkey_map['play']})")
-        # TinyMode 按鈕同步更新
-        if hasattr(self, "tiny_btns"):
-            for btn, icon, key in self.tiny_btns:
-                btn.config(text=f"{icon} {self.hotkey_map[key]}")
-
-    def toggle_tiny_mode(self):
-        # 切換 TinyMode 狀態
-        if not hasattr(self, "tiny_mode_on"):
-            self.tiny_mode_on = False
-        self.tiny_mode_on = not self.tiny_mode_on
-        if self.tiny_mode_on:
-            if self.tiny_window is None or not self.tiny_window.winfo_exists():
-                self.tiny_window = tb.Toplevel(self)
-                self.tiny_window.title("ChroLens_Mimic TinyMode")
-                self.tiny_window.geometry("470x40")
-                self.tiny_window.overrideredirect(True)
-                self.tiny_window.resizable(False, False)
-                self.tiny_window.attributes("-topmost", True)
-                try:
-                    self.tiny_window.iconbitmap("觸手眼鏡貓.ico")
-                except Exception as e:
-                    print(f"無法設定 TinyMode icon: {e}")
-                self.tiny_btns = []
-                # 拖曳功能
-                self.tiny_window.bind("<ButtonPress-1>", self._start_move_tiny)
-                self.tiny_window.bind("<B1-Motion>", self._move_tiny)
-                btn_defs = [
-                    ("⏺", "start"),
-                    ("⏸", "pause"),
-                    ("⏹", "stop"),
-                    ("▶︎", "play"),
-                    ("⤴︎", "tiny")
-                ]
-                for i, (icon, key) in enumerate(btn_defs):
-                    btn = tb.Button(
-                        self.tiny_window,
-                        text=f"{icon} {self.hotkey_map[key]}",
-                        width=7, style="My.TButton",
-                        command=getattr(self, {
-                            "start": "start_record",
-                            "pause": "toggle_pause",
-                            "stop": "stop_all",
-                            "play": "play_record",
-                            "tiny": "toggle_tiny_mode"
-                        }[key])
-                    )
-                    btn.grid(row=0, column=i, padx=2, pady=5)
-                    self.tiny_btns.append((btn, icon, key))
-                self.tiny_window.protocol("WM_DELETE_WINDOW", self._close_tiny_mode)
-                self.withdraw()
-        else:
-            self._close_tiny_mode()
-
-    def _close_tiny_mode(self):
-        if self.tiny_window and self.tiny_window.winfo_exists():
-            self.tiny_window.destroy()
-        self.tiny_mode_on = False
-        self.deiconify()
-
-    def _start_move_tiny(self, event):
-        self._tiny_drag_x = event.x
-        self._tiny_drag_y = event.y
-
-    def _move_tiny(self, event):
-        x = self.tiny_window.winfo_x() + event.x - self._tiny_drag_x
-        y = self.tiny_window.winfo_y() + event.y - self._tiny_drag_y
-        self.tiny_window.geometry(f"+{x}+{y}")
-
-    def use_default_script_dir(self):
-        self.script_dir = SCRIPTS_DIR
-        if not os.path.exists(self.script_dir):
-            os.makedirs(self.script_dir)
-        self.refresh_script_list()
-        self.save_config()
-        # 開啟資料夾
-        os.startfile(self.script_dir)
-
-CONFIG_FILE = "user_config.json"
+LANG_MAP = {
+    "繁體中文": {
+        "開始錄製": "開始錄製",
+        "暫停/繼續": "暫停/繼續",
+        "停止": "停止",
+        "回放": "回放",
+        "TinyMode": "TinyMode",
+        "腳本路徑": "腳本路徑",
+        "快捷鍵": "快捷鍵",
+        "關於": "關於",
+        "重複次數:": "重複次數:",
+        "次": "次",
+        "重複時間": "重複時間",
+        "腳本選單:": "腳本選單:",
+        "修改腳本名稱": "修改腳本名稱",
+        "合併": "合併",
+        "合併並儲存": "合併並儲存",
+        "儲存並關閉": "儲存並關閉",
+        "單次:": "單次:",
+        "總運作:": "總運作:",
+        "錄製:": "錄製:",
+        "新腳本名稱：": "新腳本名稱：",
+        "確定": "確定",
+        "所有腳本": "所有腳本",
+        "合併清單（可拖曳排序，點擊次數可編輯）": "合併清單（可拖曳排序，點擊次數可編輯）",
+        "清空": "清空",
+        "加入": "加入",
+        "移除": "移除",
+        "腳本合併工具": "腳本合併工具",
+        "延遲秒數:": "延遲秒數:",
+        "Language": "Language",
+        "回放速度:": "回放速度:",
+        "目前腳本": "目前腳本",
+        "選擇合併腳本": "選擇合併腳本",
+        "目前腳本在前": "目前腳本在前",
+        "合併腳本在前": "合併腳本在前"
+    },
+    "日本語": {
+        "開始錄製": "マクロ記録",
+        "暫停/繼續": "一時停止/再開",
+        "停止": "停止",
+        "回放": "再生",
+        "TinyMode": "Tinyモード",
+        "腳本路徑": "スクリプトパス",
+        "快捷鍵": "ショートカット",
+        "關於": "情報",
+        "重複次數:": "繰り返し回数:",
+        "次": "回",
+        "重複時間": "繰り返し間隔",
+        "腳本選單:": "スクリプト選択:",
+        "修改腳本名稱": "名前変更",
+        "合併": "結合",
+        "合併並儲存": "結合して保存",
+        "儲存並關閉": "保存して閉じる",
+        "單次:": "単回:",
+        "總運作:": "合計実行:",
+        "錄製:": "マクロ記録:",
+        "新腳本名稱：": "新スクリプト名：",
+        "確定": "決定",
+        "所有腳本": "全スクリプト",
+        "合併清單（可拖曳排序，點擊次數可編輯）": "結合リスト（ドラッグで並べ替え、ダブルクリックで編集）",
+        "清空": "クリア",
+        "加入": "追加",
+        "移除": "削除",
+        "腳本合併工具": "スクリプト結合ツール",
+        "延遲秒數:": "遅延秒数:",
+        "Language": "言語",
+        "回放速度:": "再生速度:",
+        "目前腳本": "現在のスクリプト",
+        "選擇合併腳本": "結合スクリプト選択",
+        "目前腳本在前": "現在のスクリプトが先",
+        "合併腳本在前": "結合スクリプトが先"
+    },
+    "English": {
+        "開始錄製": "Start Recording",
+        "暫停/繼續": "Pause/Resume",
+        "停止": "Stop",
+        "回放": "Play",
+        "TinyMode": "TinyMode",
+        "腳本路徑": "Script Path",
+        "快捷鍵": "Hotkey",
+        "關於": "About",
+        "重複次數:": "Repeat Count:",
+        "次": "times",
+        "重複時間": "Repeat Interval",
+        "腳本選單:": "Script Selection:",
+        "修改腳本名稱": "Rename",
+        "合併": "Merge",
+        "合併並儲存": "Merge & Save",
+        "儲存並關閉": "Save & Close",
+        "單次:": "Single:",
+        "總運作:": "Total:",
+        "錄製:": "Record:",
+        "新腳本名稱：": "New Script Name:",
+        "確定": "OK",
+        "所有腳本": "All Scripts",
+        "合併清單（可拖曳排序，點擊次數可編輯）": "Merge List (drag to sort, double-click to edit)",
+        "清空": "Clear",
+        "加入": "Add",
+        "移除": "Remove",
+        "腳本合併工具": "Script Merge Tool",
+        "延遲秒數:": "Delay (sec):",
+        "Language": "Language",
+        "回放速度:": "Speed:",
+        "目前腳本": "Current Script",
+        "選擇合併腳本": "Select Script to Merge",
+        "目前腳本在前": "Current Script First",
+        "合併腳本在前": "Merge Script First"
+    }
+}
 
 def load_user_config():
-    if os.path.exists(CONFIG_FILE):
+    if os.path.exists("user_config.json"):
         try:
-            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+            with open("user_config.json", "r", encoding="utf-8") as f:
                 return json.load(f)
         except Exception:
             pass
-    # 預設值
     return {
         "skin": "darkly",
         "last_script": "",
@@ -1098,112 +1215,29 @@ def load_user_config():
 
 def save_user_config(config):
     try:
-        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+        with open("user_config.json", "w", encoding="utf-8") as f:
             json.dump(config, f, ensure_ascii=False, indent=2)
     except Exception:
         pass
 
+def move_mouse_abs(x, y):
+    """將滑鼠移動到絕對座標 (x, y)"""
+    ctypes.windll.user32.SetCursorPos(int(x), int(y))
 
-        # 置中顯示
-        self.update_idletasks()
-        x = self.winfo_x() + (self.winfo_width() // 2) - 225
-        y = self.winfo_y() + 60
-        win.geometry(f"+{x}+{y}")
-
-        frm = tb.Frame(win, padding=10)
-        frm.pack(fill="both", expand=True)
-
-        # 左側：目前腳本
-        tb.Label(frm, text="目前腳本", font=("Microsoft JhengHei", 10, "bold")).grid(row=0, column=0, sticky="w")
-        current_script_text = tk.Text(frm, width=25, height=18, font=("Consolas", 9))
-        current_script_text.grid(row=1, column=0, padx=(0, 8), pady=4)
-        # 載入目前腳本內容
-        try:
-            current_json = json.dumps(self.events, ensure_ascii=False, indent=2)
-        except Exception:
-            current_json = ""
-        current_script_text.insert("1.0", current_json)
-        current_script_text.config(state="disabled")
-
-        # 右側：選擇要合併的腳本
-        tb.Label(frm, text="選擇合併腳本", font=("Microsoft JhengHei", 10, "bold")).grid(row=0, column=1, sticky="w")
-        merge_files = [f for f in os.listdir(self.script_dir) if f.endswith('.json') and f != self.script_var.get()]
-        merge_var = tk.StringVar(value=merge_files[0] if merge_files else "")
-        merge_combo = tb.Combobox(frm, textvariable=merge_var, values=merge_files, state="readonly", width=22)
-        merge_combo.grid(row=1, column=1, sticky="w", pady=(0, 4))
-
-        merge_script_text = tk.Text(frm, width=25, height=14, font=("Consolas", 9))
-        merge_script_text.grid(row=2, column=1, padx=(0, 8), pady=4)
-        def load_merge_preview(*args):
-            fname = merge_var.get()
-            if fname:
-                try:
-                    with open(os.path.join(self.script_dir, fname), "r", encoding="utf-8") as f:
-                        data = json.load(f)
-                    merge_script_text.config(state="normal")
-                    merge_script_text.delete("1.0", "end")
-                    merge_script_text.insert("1.0", json.dumps(data, ensure_ascii=False, indent=2))
-                    merge_script_text.config(state="disabled")
-                except Exception as e:
-                    merge_script_text.config(state="normal")
-                    merge_script_text.delete("1.0", "end")
-                    merge_script_text.insert("1.0", f"讀取失敗: {e}")
-                    merge_script_text.config(state="disabled")
-            else:
-                merge_script_text.config(state="normal")
-                merge_script_text.delete("1.0", "end")
-                merge_script_text.config(state="disabled")
-        merge_var.trace_add("write", lambda *a: load_merge_preview())
-        load_merge_preview()
-
-        # 下方：合併選項與儲存
-        tb.Label(frm, text="新腳本名稱：", font=("Microsoft JhengHei", 10)).grid(row=3, column=0, pady=(12, 0), sticky="e")
-        new_name_var = tk.StringVar(value="merged_script.json")
-        tb.Entry(frm, textvariable=new_name_var, width=24).grid(row=3, column=1, pady=(12, 0), sticky="w")
-
-        # 合併順序選擇
-        order_var = tk.StringVar(value="current_first")
-        tb.Radiobutton(frm, text="目前腳本在前", variable=order_var, value="current_first").grid(row=4, column=0, sticky="w", pady=(6, 0))
-        tb.Radiobutton(frm, text="合併腳本在前", variable=order_var, value="merge_first").grid(row=4, column=1, sticky="w", pady=(6, 0))
-
-        # 合併與儲存按鈕
-        def do_merge_and_save():
-            fname = merge_var.get()
-            if not fname:
-                self.log("請選擇要合併的腳本。")
-                return
-            try:
-                with open(os.path.join(self.script_dir, fname), "r", encoding="utf-8") as f:
-                    merge_events = json.load(f)
-            except Exception as e:
-                self.log(f"合併腳本讀取失敗: {e}")
-                return
-            # 合併
-            if order_var.get() == "current_first":
-                merged = self.events + merge_events
-            else:
-                merged = merge_events + self.events
-            # 重新排序時間戳
-            merged.sort(key=lambda e: e.get("time", 0))
-            # 儲存
-            new_name = new_name_var.get().strip()
-            if not new_name.endswith(".json"):
-                new_name += ".json"
-            new_path = os.path.join(self.script_dir, new_name)
-            if os.path.exists(new_path):
-                self.log("檔案已存在，請換個新名稱。")
-                return
-            try:
-                with open(new_path, "w", encoding="utf-8") as f:
-                    json.dump(merged, f, ensure_ascii=False, indent=2)
-                self.log(f"合併完成並儲存為：{new_name}，共 {len(merged)} 筆事件。")
-                self.refresh_script_list()
-                win.destroy()
-            except Exception as e:
-                self.log(f"儲存失敗: {e}")
-
-        tb.Button(frm, text="合併並儲存", command=do_merge_and_save, bootstyle=SUCCESS, width=16).grid(row=5, column=0, columnspan=2, pady=18)
+def mouse_event_win(event, button='left', delta=0):
+    """模擬滑鼠事件"""
+    import win32api
+    import win32con
+    btn_map = {'left': win32con.MOUSEEVENTF_LEFTDOWN, 'right': win32con.MOUSEEVENTF_RIGHTDOWN, 'middle': win32con.MOUSEEVENTF_MIDDLEDOWN}
+    btn_up_map = {'left': win32con.MOUSEEVENTF_LEFTUP, 'right': win32con.MOUSEEVENTF_RIGHTUP, 'middle': win32con.MOUSEEVENTF_MIDDLEUP}
+    if event == 'down':
+        win32api.mouse_event(btn_map.get(button, win32con.MOUSEEVENTF_LEFTDOWN), 0, 0, 0, 0)
+    elif event == 'up':
+        win32api.mouse_event(btn_up_map.get(button, win32con.MOUSEEVENTF_LEFTUP), 0, 0, 0, 0)
+    elif event == 'wheel':
+        win32api.mouse_event(win32con.MOUSEEVENTF_WHEEL, 0, 0, int(delta), 0)
 
 if __name__ == "__main__":
     app = RecorderApp()
     app.mainloop()
+
