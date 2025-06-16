@@ -48,6 +48,17 @@ class Tooltip:
             self.tipwindow = None
 
 class RecorderApp(tb.Window):
+    _repeat_time_limit = None
+    _total_play_time = 0
+    _play_start_time = None
+    _record_start_time = None
+    events = []
+    playing = False
+    paused = False
+    recording = False
+    speed = 1.0
+    script_dir = SCRIPTS_DIR
+
     def _parse_time_to_seconds(self, time_str):
         try:
             parts = [int(x) for x in time_str.strip().split(":")]
@@ -138,174 +149,150 @@ class RecorderApp(tb.Window):
 
     def open_merge_window(self):
         import tkinter.messagebox
+        from tkinter import ttk
         lang_map = LANG_MAP[self.language_var.get()]
         win = tb.Toplevel(self)
         win.title(lang_map["腳本合併工具"])
-        win.geometry("1100x650")
-        win.resizable(False, False)
+        win.geometry("1000x550")
+        win.resizable(True, True)
         win.configure(bg=self.style.colors.bg)
 
-        main_frame = tb.Frame(win, padding=20)
+        main_frame = tb.Frame(win, padding=10)
         main_frame.pack(fill="both", expand=True)
 
-        # 左側：所有腳本清單
+        # 左側：腳本清單
         left_frame = tb.Frame(main_frame)
-        left_frame.grid(row=0, column=0, sticky="ns", padx=(0, 10))
-        tb.Label(left_frame, text=lang_map["所有腳本"], font=("Microsoft JhengHei", 11, "bold")).pack(anchor="w")
+        left_frame.grid(row=0, column=0, sticky="ns", padx=(0, 8))
+        tb.Label(left_frame, text=lang_map["所有腳本"], font=("Microsoft JhengHei", 10, "bold")).pack(anchor="w")
         all_files = [f for f in os.listdir(self.script_dir) if f.endswith('.json')]
-        all_listbox = tk.Listbox(left_frame, selectmode="extended", width=32, height=22, font=("Consolas", 10))
+        all_listbox = tk.Listbox(left_frame, selectmode="extended", width=21, height=15, font=("Consolas", 11))
         for f in all_files:
-            all_listbox.insert("end", f)
-        all_listbox.pack(fill="y", expand=True, pady=(6, 0))
+            all_listbox.insert("end", os.path.splitext(f)[0])
+        all_listbox.pack(fill="y", expand=True, pady=(4, 0))
 
         # 中間按鈕
         btn_frame = tb.Frame(main_frame)
         btn_frame.grid(row=0, column=1, sticky="ns")
-        btn_add = tb.Button(btn_frame, text="加入 →", width=10)
-        btn_add.pack(pady=(60, 10))
-        btn_remove = tb.Button(btn_frame, text="← 移除", width=10)
-        btn_remove.pack(pady=10)
+        btn_add = tb.Button(btn_frame, text=lang_map["加入"], width=8)
+        btn_add.pack(pady=(30, 6))
+        btn_remove = tb.Button(btn_frame, text=lang_map["移除"], width=8)
+        btn_remove.pack(pady=6)
+        btn_up = tb.Button(btn_frame, text="↑ " + lang_map.get("上移", "上移"), width=8)
+        btn_up.pack(pady=6)
+        btn_down = tb.Button(btn_frame, text="↓ " + lang_map.get("下移", "下移"), width=8)
+        btn_down.pack(pady=6)
+        btn_clear = tb.Button(btn_frame, text=lang_map["清空"], width=8)
+        btn_clear.pack(pady=6)
 
-        # 右側：合併清單（可重複、可編輯次數與延遲）
+        # 右側：合併清單（Treeview）
         right_frame = tb.Frame(main_frame)
-        right_frame.grid(row=0, column=2, sticky="ns", padx=(10, 0))
-        tb.Label(right_frame, text="合併清單（可重複、可編輯）", font=("Microsoft JhengHei", 11, "bold")).pack(anchor="w")
+        right_frame.grid(row=0, column=2, sticky="ns", padx=(8, 0))
+        tb.Label(right_frame, text="編輯列表", font=("Microsoft JhengHei", 10, "bold")).pack(anchor="w")
+        merge_tree = ttk.Treeview(right_frame, columns=("name", "repeat", "delay"), show="headings", height=15)
+        merge_tree.heading("name", text="腳本名稱")
+        merge_tree.heading("repeat", text="重複")
+        merge_tree.heading("delay", text="延遲")
+        merge_tree.column("name", width=180, anchor="w")
+        merge_tree.column("repeat", width=50, anchor="center")
+        merge_tree.column("delay", width=50, anchor="center")
+        merge_tree.pack(fill="y", expand=True, pady=(4, 0))
 
-        merge_canvas = tk.Canvas(right_frame, width=600, height=500, bg="#23272e", highlightthickness=0)
-        merge_scroll = tb.Scrollbar(right_frame, orient="vertical", command=merge_canvas.yview)
-        merge_frame = tb.Frame(merge_canvas, bg="#23272e")
-        merge_frame.bind(
-            "<Configure>",
-            lambda e: merge_canvas.configure(scrollregion=merge_canvas.bbox("all"))
-        )
-        merge_canvas.create_window((0, 0), window=merge_frame, anchor="nw")
-        merge_canvas.configure(yscrollcommand=merge_scroll.set)
-        merge_canvas.pack(side="left", fill="both", expand=True)
-        merge_scroll.pack(side="right", fill="y")
+        # 編輯區
+        edit_frame = tb.Frame(main_frame)
+        edit_frame.grid(row=1, column=2, sticky="ew", pady=(8, 0))
+        tb.Label(edit_frame, text=lang_map["重複次數:"], font=("Microsoft JhengHei", 9)).grid(row=0, column=0, padx=2)
+        repeat_var = tk.IntVar(value=1)
+        repeat_entry = tb.Entry(edit_frame, textvariable=repeat_var, width=5, font=("Consolas", 10))
+        repeat_entry.grid(row=0, column=1, padx=2)
+        tb.Label(edit_frame, text=lang_map.get("延遲秒數:", "Delay(s):"), font=("Microsoft JhengHei", 9)).grid(row=0, column=2, padx=2)
+        delay_var = tk.IntVar(value=0)
+        delay_entry = tb.Entry(edit_frame, textvariable=delay_var, width=5, font=("Consolas", 10))
+        delay_entry.grid(row=0, column=3, padx=2)
+        btn_apply = tb.Button(edit_frame, text=lang_map["確定"], width=8)
+        btn_apply.grid(row=0, column=4, padx=6)
 
-        merge_items = []  # 每一項: {"fname":..., "repeat_var":..., "delay_var":..., "widgets":...}
-
-        def refresh_merge_list():
-            # 清除現有
-            for widget in merge_frame.winfo_children():
-                widget.destroy()
-            for idx, item in enumerate(merge_items):
-                bg = "#23272e" if idx % 2 == 0 else "#2e323a"
-                row = tb.Frame(merge_frame, bg=bg)
-                row.pack(fill="x", pady=1)
-                # 檔名
-                lbl = tb.Label(row, text=item["fname"], width=32, font=("Consolas", 10), background=bg, foreground="#e0e0e0")
-                lbl.pack(side="left", padx=(2, 4))
-                # 重複次數
-                tb.Label(row, text="重複", background=bg, foreground="#e0e0e0").pack(side="left")
-                entry_repeat = tb.Entry(row, textvariable=item["repeat_var"], width=5)
-                entry_repeat.pack(side="left", padx=(2, 8))
-                # 延遲
-                tb.Label(row, text="延遲(s)", background=bg, foreground="#e0e0e0").pack(side="left")
-                entry_delay = tb.Entry(row, textvariable=item["delay_var"], width=5)
-                entry_delay.pack(side="left", padx=(2, 8))
-                # 上下移
-                def move_up(idx=idx):
-                    if idx > 0:
-                        merge_items[idx-1], merge_items[idx] = merge_items[idx], merge_items[idx-1]
-                        refresh_merge_list()
-                def move_down(idx=idx):
-                    if idx < len(merge_items)-1:
-                        merge_items[idx+1], merge_items[idx] = merge_items[idx], merge_items[idx+1]
-                        refresh_merge_list()
-                btn_up = tb.Button(row, text="↑", width=2, command=move_up)
-                btn_up.pack(side="left", padx=2)
-                btn_down = tb.Button(row, text="↓", width=2, command=move_down)
-                btn_down.pack(side="left", padx=2)
-                # 選取刪除
-                btn_del = tb.Button(row, text="移除", width=5, command=lambda i=idx: remove_merge_item(i))
-                btn_del.pack(side="left", padx=6)
-                item["widgets"] = (row, entry_repeat, entry_delay, btn_up, btn_down, btn_del)
-
-        def add_merge_item(fname):
-            merge_items.append({
-                "fname": fname,
-                "repeat_var": tk.IntVar(value=1),
-                "delay_var": tk.IntVar(value=0),
-                "widgets": None
-            })
-            refresh_merge_list()
-            update_preview()
-
-        def remove_merge_item(idx):
-            merge_items.pop(idx)
-            refresh_merge_list()
-            update_preview()
-
-        def do_add():
-            selected = all_listbox.curselection()
-            for i in selected:
-                fname = all_listbox.get(i)
-                add_merge_item(fname)
-            update_preview()
-        btn_add.config(command=do_add)
-
-        def do_remove():
-            # 移除合併清單中最後一個選取的
-            if merge_items:
-                remove_merge_item(len(merge_items)-1)
-        btn_remove.config(command=do_remove)
-
-        # 預覽區
-        preview_frame = tb.Frame(win, padding=(20, 0, 20, 10))
-        preview_frame.pack(fill="both", expand=True)
-        tb.Label(preview_frame, text="合併預覽", font=("Microsoft JhengHei", 11, "bold")).pack(anchor="w")
-        preview_text = tk.Text(preview_frame, width=99, height=8, font=("Consolas", 9), bg="#23272e", fg="#e0e0e0", insertbackground="#e0e0e0")
-        preview_text.pack(fill="both", expand=True, pady=(6, 0))
-
-        # 新腳本名稱
-        options_frame = tb.Frame(win, padding=(20, 0, 20, 10))
-        options_frame.pack(fill="x")
-        tb.Label(options_frame, text=lang_map["新腳本名稱："], font=("Microsoft JhengHei", 10)).grid(row=0, column=0, sticky="e")
+        # 新腳本名稱與合併按鈕
+        options_frame = tb.Frame(win, padding=(10, 0, 10, 10))
+        options_frame.pack(fill="x", side="bottom")
+        tb.Label(options_frame, text=lang_map["新腳本名稱："], font=("Microsoft JhengHei", 9)).grid(row=0, column=0, sticky="e")
         new_name_var = tk.StringVar(value="merged_script.json")
         tb.Entry(options_frame, textvariable=new_name_var, width=32).grid(row=0, column=1, sticky="w", padx=(4, 8))
+        btn_merge_save = tb.Button(options_frame, text=lang_map["合併並儲存"], width=16, bootstyle=SUCCESS)
+        btn_merge_save.grid(row=0, column=2, padx=8)
 
-        # 合併與儲存按鈕
-        def update_preview():
+        # 資料結構：每一項為 dict {"fname":..., "repeat":..., "delay":...}
+        merge_items = []
+
+        def refresh_merge_tree():
+            merge_tree.delete(*merge_tree.get_children())
+            for idx, item in enumerate(merge_items):
+                name = os.path.splitext(item['fname'])[0]
+                merge_tree.insert("", "end", iid=idx, values=(name, item['repeat'], item['delay']))
+
+        def on_add():
+            selected = all_listbox.curselection()
+            for i in selected:
+                fname = all_files[i]
+                merge_items.append({"fname": fname, "repeat": 1, "delay": 0})
+            refresh_merge_tree()
+
+        def on_remove():
+            selected = merge_tree.selection()
+            for iid in reversed(selected):
+                merge_items.pop(int(iid))
+            refresh_merge_tree()
+
+        def on_clear():
+            merge_items.clear()
+            refresh_merge_tree()
+
+        def on_up():
+            selected = list(map(int, merge_tree.selection()))
+            if not selected: return
+            for i in selected:
+                if i > 0:
+                    merge_items[i-1], merge_items[i] = merge_items[i], merge_items[i-1]
+            refresh_merge_tree()
+            for i in [max(0, x-1) for x in selected]:
+                merge_tree.selection_add(i)
+
+        def on_down():
+            selected = list(map(int, merge_tree.selection()))
+            if not selected: return
+            for i in reversed(selected):
+                if i < len(merge_items)-1:
+                    merge_items[i+1], merge_items[i] = merge_items[i], merge_items[i+1]
+            refresh_merge_tree()
+            for i in [min(len(merge_items)-1, x+1) for x in selected]:
+                merge_tree.selection_add(i)
+
+        def on_apply():
+            selected = merge_tree.selection()
+            if not selected: return
+            try:
+                repeat = max(1, int(repeat_var.get()))
+            except Exception:
+                repeat = 1
+            try:
+                delay = max(0, int(delay_var.get()))
+            except Exception:
+                delay = 0
+            for iid in selected:
+                idx = int(iid)
+                merge_items[idx]["repeat"] = repeat
+                merge_items[idx]["delay"] = delay
+            refresh_merge_tree()
+
+        def on_merge_save():
             merged = []
             for item in merge_items:
                 try:
-                    repeat = max(1, min(9999, int(item["repeat_var"].get())))
-                    delay = max(0, min(9999, int(item["delay_var"].get())))
-                except Exception:
-                    repeat = 1
-                    delay = 0
-                try:
                     with open(os.path.join(self.script_dir, item["fname"]), "r", encoding="utf-8") as f:
                         events = json.load(f)
-                    for _ in range(repeat):
+                    for _ in range(item["repeat"]):
                         merged += events
-                        if delay > 0 and merged:
-                            # 插入延遲事件（假設格式為 {"type": "delay", "seconds": delay}）
-                            merged.append({"type": "delay", "seconds": delay})
-                except Exception:
-                    pass
-            preview_text.config(state="normal")
-            preview_text.delete("1.0", "end")
-            preview_text.insert("1.0", json.dumps(merged[:50], ensure_ascii=False, indent=2) + ("\n...（僅顯示前50筆）" if len(merged) > 50 else ""))
-            preview_text.config(state="disabled")
-
-        def do_merge_and_save():
-            merged = []
-            for item in merge_items:
-                try:
-                    repeat = max(1, min(9999, int(item["repeat_var"].get())))
-                    delay = max(0, min(9999, int(item["delay_var"].get())))
-                except Exception:
-                    repeat = 1
-                    delay = 0
-                try:
-                    with open(os.path.join(self.script_dir, item["fname"]), "r", encoding="utf-8") as f:
-                        events = json.load(f)
-                    for _ in range(repeat):
-                        merged += events
-                        if delay > 0 and merged:
-                            merged.append({"type": "delay", "seconds": delay})
+                        if item["delay"] > 0 and merged:
+                            merged.append({"type": "delay", "seconds": item["delay"]})
                 except Exception as e:
                     tkinter.messagebox.showerror("錯誤", f"讀取 {item['fname']} 失敗: {e}")
                     return
@@ -325,8 +312,35 @@ class RecorderApp(tb.Window):
             except Exception as e:
                 tkinter.messagebox.showerror("錯誤", f"儲存失敗: {e}")
 
-        tb.Button(options_frame, text="合併", command=do_merge_and_save, bootstyle=SUCCESS, width=18).grid(row=0, column=2, padx=12)
-        update_preview()
+        def on_tree_select(event):
+            selected = merge_tree.selection()
+            if not selected: return
+            idx = int(selected[0])
+            repeat_var.set(merge_items[idx]["repeat"])
+            delay_var.set(merge_items[idx]["delay"])
+
+        btn_add.config(command=on_add)
+        btn_remove.config(command=on_remove)
+        btn_clear.config(command=on_clear)
+        btn_up.config(command=on_up)
+        btn_down.config(command=on_down)
+        btn_apply.config(command=on_apply)
+        btn_merge_save.config(command=on_merge_save)
+        merge_tree.bind("<<TreeviewSelect>>", on_tree_select)
+
+        refresh_merge_tree()
+
+    def update_speed_tooltip(self):
+        # 根據語言切換 Tooltip 內容
+        lang = self.language_var.get()
+        tips = {
+            "繁體中文": "正常速度1倍=100,範圍1~1000",
+            "日本語": "標準速度1倍=100、範囲1～1000",
+            "English": "Normal speed 1x=100, range 1~1000"
+        }
+        tip_text = tips.get(lang, tips["繁體中文"])
+        if hasattr(self, "speed_tooltip") and self.speed_tooltip:
+            self.speed_tooltip.text = tip_text
 
     def change_language(self, event=None):
         lang = self.language_var.get()
@@ -348,9 +362,12 @@ class RecorderApp(tb.Window):
         self.language_combo.config(values=list(LANG_MAP.keys()))
         # row1/row4
         self.lbl_speed.config(text=lang_map["回放速度:"] if "回放速度:" in lang_map else "回放速度:")
-        self.total_time_label.config(text=lang_map["總運作:"] + " 00:00.0" if "總運作:" in lang_map else "總運作: 00:00.0")
-        self.countdown_label.config(text=lang_map["單次:"] + " 00:00.0" if "單次:" in lang_map else "單次: 00:00.0")
-        self.time_label.config(text=lang_map["錄製:"] + " 00:00.0" if "錄製:" in lang_map else "錄製: 00:00.0")
+        # 新增：語言切換時更新 Tooltip
+        self.update_speed_tooltip()
+        # 統一時間格式為 00:00:00
+        self.total_time_label.config(text=lang_map["總運作:"] + " 00:00:00" if "總運作:" in lang_map else "總運作: 00:00:00")
+        self.countdown_label.config(text=lang_map["單次:"] + " 00:00:00" if "單次:" in lang_map else "單次: 00:00:00")
+        self.time_label.config(text=lang_map["錄製:"] + " 00:00:00" if "錄製:" in lang_map else "錄製: 00:00:00")
         self.save_config()
         self.update_idletasks()
         width = max(self.winfo_reqwidth() - 50, 400)
@@ -389,9 +406,11 @@ class RecorderApp(tb.Window):
         tb.Button(frm, text="關閉", command=about_win.destroy, width=8, bootstyle=SECONDARY).pack(anchor="e", pady=(16, 0))
 
     def __init__(self):
+        # 先初始化語言變數
         self.user_config = load_user_config()
         skin = self.user_config.get("skin", "darkly")
         super().__init__(themename=skin)
+        self.language_var = tk.StringVar(self, value="繁體中文")
         self._hotkey_handlers = {}
         self.tiny_window = None
 
@@ -474,6 +493,8 @@ class RecorderApp(tb.Window):
         frm_bottom.pack(fill="x")
         self.lbl_speed = tb.Label(frm_bottom, text="回放速度:", style="My.TLabel")
         self.lbl_speed.grid(row=0, column=0, padx=(0,2))
+        self.speed_tooltip = Tooltip(self.lbl_speed, "正常速度1倍=100,範圍1~1000")
+        self.update_speed_tooltip()
         self.speed_var = tk.StringVar(value="100")
         tb.Entry(frm_bottom, textvariable=self.speed_var, width=6, style="My.TEntry").grid(row=0, column=1, padx=2)
         self.btn_script_dir = tb.Button(frm_bottom, text="腳本路徑", command=self.use_default_script_dir, bootstyle=SECONDARY, width=10, style="My.TButton")
@@ -502,6 +523,10 @@ class RecorderApp(tb.Window):
         repeat_time_entry.grid(row=0, column=3, padx=(10,2))
         self.lbl_interval = tb.Label(frm_repeat, text="重複時間", style="My.TLabel")
         self.lbl_interval.grid(row=0, column=4, padx=(0,2))
+
+        # 新增單次時間顯示
+        self.lbl_single_time = tb.Label(frm_repeat, text="單次: 00:00:00", style="My.TLabel", foreground="#DB0E59")
+        self.lbl_single_time.grid(row=0, column=5, padx=(10,2))
 
         # ====== 腳本選單區 ======
         frm_script = tb.Frame(self, padding=(10, 0, 10, 5))
@@ -588,6 +613,12 @@ class RecorderApp(tb.Window):
         m = int((seconds % 3600) // 60)
         s = int(seconds % 60)
         self.time_label.config(text=f"錄製: {h:02d}:{m:02d}:{s:02d}")
+
+    def update_single_time_label(self, seconds):
+        h = int(seconds // 3600)
+        m = int((seconds % 3600) // 60)
+        s = int(seconds % 60)
+        self.lbl_single_time.config(text=f"單次: {h:02d}:{m:02d}:{s:02d}")
 
     def start_record(self):
         if self.recording:
@@ -704,6 +735,8 @@ class RecorderApp(tb.Window):
             self.recording = False
             self.log(f"[{format_time(time.time())}] 停止錄製。")
             self._wait_record_thread_finish()
+            script_seconds = self.get_script_duration()
+            self.update_single_time_label(script_seconds)
 
     def stop_all(self):
         stopped = False
@@ -933,6 +966,8 @@ class RecorderApp(tb.Window):
             self.script_var.set(os.path.basename(path))
             with open(LAST_SCRIPT_FILE, "w", encoding="utf-8") as f:
                 f.write(os.path.basename(path))
+            script_seconds = self.get_script_duration()  # 你需實作這個方法
+            self.update_single_time_label(script_seconds)
 
     def on_script_selected(self, event=None):
         script = self.script_var.get()
@@ -944,15 +979,8 @@ class RecorderApp(tb.Window):
             with open(LAST_SCRIPT_FILE, "w", encoding="utf-8") as f:
                 f.write(script)
             # 讀取腳本後，顯示單次腳本時間
-            if self.events:
-                total = self.events[-1]['time'] - self.events[0]['time']
-                h = int(total // 3600)
-                m = int((total % 3600) // 60)
-                s = int(total % 60)
-                self.countdown_label.config(text=f"單次: {h:02d}:{m:02d}:{s:02d}")
-            else:
-                self.countdown_label.config(text="單次: 00:00:00")
-        self.save_config()
+            script_seconds = self.get_script_duration()
+            self.update_single_time_label(script_seconds)
 
     def refresh_script_list(self):
         files = [f for f in os.listdir(self.script_dir) if f.endswith('.json')]
@@ -1086,6 +1114,26 @@ class RecorderApp(tb.Window):
             win.destroy()
 
         tb.Button(win, text=lang_map["儲存並關閉"], command=save_and_close, bootstyle=SUCCESS, width=12).grid(row=row, column=0, columnspan=2, pady=12)
+        self.register_global_hotkeys()
+
+    def register_global_hotkeys(self):
+        # 用 thread 避免卡住主程式
+        threading.Thread(target=self._hotkey_listener, daemon=True).start()
+
+    def _hotkey_listener(self):
+        keyboard.add_hotkey('f8', self.start_record)
+        keyboard.add_hotkey('f9', self.stop_record)
+        keyboard.add_hotkey('f10', self.play_record)
+        # 你可以根據需要增加其他熱鍵
+        keyboard.wait()  # 保持監聽
+
+    def get_script_duration(self):
+        # 根據你的腳本格式取得總秒數
+        # 假設 self.events_json 是腳本事件列表
+        if hasattr(self, "events_json") and self.events_json:
+            if self.events_json:
+                return self.events_json[-1]["time"]  # 假設最後一筆的 time 為總秒數
+        return 0
 
 LANG_MAP = {
     "繁體中文": {
@@ -1116,7 +1164,7 @@ LANG_MAP = {
         "加入": "加入",
         "移除": "移除",
         "腳本合併工具": "腳本合併工具",
-        "延遲秒數:": "延遲秒數:",
+        "延遲秒數:": "遲延秒數:",
         "Language": "Language",
         "回放速度:": "回放速度:",
         "目前腳本": "目前腳本",
