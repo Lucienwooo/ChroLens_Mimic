@@ -163,8 +163,35 @@ class RecorderApp(tb.Window):
         # 左側：腳本清單
         left_frame = tb.Frame(main_frame)
         left_frame.grid(row=0, column=0, sticky="ns", padx=(0, 8))
-        tb.Label(left_frame, text=lang_map["所有腳本"], font=("Microsoft JhengHei", 10, "bold")).pack(anchor="w")
-        all_files = [f for f in os.listdir(self.script_dir) if f.endswith('.json')]
+        # 移除「所有腳本」Label，直接放排序選單
+        sort_var = tk.StringVar(value="建立時間(新→舊)")
+        sort_options = [
+            "建立時間(新→舊)", "建立時間(舊→新)",
+            "名稱A-Z", "名稱Z-A"
+        ]
+        def get_sorted_files():
+            files = [f for f in os.listdir(self.script_dir) if f.endswith('.json')]
+            if sort_var.get() == "建立時間(新→舊)":
+                files.sort(key=lambda f: os.path.getctime(os.path.join(self.script_dir, f)), reverse=True)
+            elif sort_var.get() == "建立時間(舊→新)":
+                files.sort(key=lambda f: os.path.getctime(os.path.join(self.script_dir, f)))
+            elif sort_var.get() == "名稱A-Z":
+                files.sort()
+            elif sort_var.get() == "名稱Z-A":
+                files.sort(reverse=True)
+            return files
+
+        def refresh_all_listbox():
+            all_listbox.delete(0, "end")
+            files = get_sorted_files()
+            for f in files:
+                all_listbox.insert("end", os.path.splitext(f)[0])
+
+        sort_combo = tb.Combobox(left_frame, textvariable=sort_var, values=sort_options, state="readonly", width=14)
+        sort_combo.pack(anchor="w", pady=(2, 2))
+        sort_combo.bind("<<ComboboxSelected>>", lambda e: refresh_all_listbox())
+
+        all_files = get_sorted_files()
         all_listbox = tk.Listbox(left_frame, selectmode="extended", width=21, height=15, font=("Consolas", 11))
         for f in all_files:
             all_listbox.insert("end", os.path.splitext(f)[0])
@@ -215,7 +242,7 @@ class RecorderApp(tb.Window):
         options_frame = tb.Frame(win, padding=(10, 0, 10, 10))
         options_frame.pack(fill="x", side="bottom")
         tb.Label(options_frame, text=lang_map["新腳本名稱："], font=("Microsoft JhengHei", 9)).grid(row=0, column=0, sticky="e")
-        new_name_var = tk.StringVar(value="merged_script.json")
+        new_name_var = tk.StringVar(value="merged_script")
         tb.Entry(options_frame, textvariable=new_name_var, width=32).grid(row=0, column=1, sticky="w", padx=(4, 8))
         btn_merge_save = tb.Button(options_frame, text=lang_map["合併並儲存"], width=16, bootstyle=SUCCESS)
         btn_merge_save.grid(row=0, column=2, padx=8)
@@ -231,8 +258,9 @@ class RecorderApp(tb.Window):
 
         def on_add():
             selected = all_listbox.curselection()
+            files = get_sorted_files()
             for i in selected:
-                fname = all_files[i]
+                fname = files[i]
                 merge_items.append({"fname": fname, "repeat": 1, "delay": 0})
             refresh_merge_tree()
 
@@ -297,6 +325,10 @@ class RecorderApp(tb.Window):
                     tkinter.messagebox.showerror("錯誤", f"讀取 {item['fname']} 失敗: {e}")
                     return
             new_name = new_name_var.get().strip()
+            # 自動加上 .json
+            if not new_name:
+                tkinter.messagebox.showerror("錯誤", "請輸入新腳本名稱。")
+                return
             if not new_name.endswith(".json"):
                 new_name += ".json"
             new_path = os.path.join(self.script_dir, new_name)
@@ -329,6 +361,8 @@ class RecorderApp(tb.Window):
         merge_tree.bind("<<TreeviewSelect>>", on_tree_select)
 
         refresh_merge_tree()
+        # 在 open_merge_window 結尾呼叫 refresh_all_listbox 以確保初始排序
+        refresh_all_listbox()
 
     def update_speed_tooltip(self):
         # 根據語言切換 Tooltip 內容
@@ -524,10 +558,6 @@ class RecorderApp(tb.Window):
         self.lbl_interval = tb.Label(frm_repeat, text="重複時間", style="My.TLabel")
         self.lbl_interval.grid(row=0, column=4, padx=(0,2))
 
-        # 新增單次時間顯示
-        self.lbl_single_time = tb.Label(frm_repeat, text="單次: 00:00:00", style="My.TLabel", foreground="#DB0E59")
-        self.lbl_single_time.grid(row=0, column=5, padx=(10,2))
-
         # ====== 腳本選單區 ======
         frm_script = tb.Frame(self, padding=(10, 0, 10, 5))
         frm_script.pack(fill="x")
@@ -649,7 +679,6 @@ class RecorderApp(tb.Window):
             self.log(f"[{format_time(time.time())}] {mode}{state}。")
 
     def _record_thread(self):
-        import keyboard
         from pynput.mouse import Controller, Listener
         try:
             self._mouse_events = []
@@ -1035,8 +1064,30 @@ class RecorderApp(tb.Window):
         self.rename_var.set("")  # 更名後清空輸入框
 
     def open_scripts_dir(self):
-        path = os.path.abspath(SCRIPTS_DIR)
+        path = os.path.abspath(self.script_dir)
         os.startfile(path)
+
+    def register_hotkeys(self):
+        # 先移除所有已註冊的快捷鍵
+        for key, handler in self._hotkey_handlers.items():
+            try:
+                keyboard.remove_hotkey(handler)
+            except Exception:
+                pass
+        self._hotkey_handlers.clear()
+        # 重新註冊
+        for key, hotkey in self.hotkey_map.items():
+            try:
+                handler = keyboard.add_hotkey(hotkey, getattr(self, {
+                    "start": "start_record",
+                    "pause": "toggle_pause",
+                    "stop": "stop_all",
+                    "play": "play_record",
+                    "tiny": "toggle_tiny_mode"
+                }[key]))
+                self._hotkey_handlers[key] = handler
+            except Exception as ex:
+                self.log(f"快捷鍵 {hotkey} 註冊失敗: {ex}")
 
     def open_hotkey_settings(self):
         win = tb.Toplevel(self)
@@ -1094,11 +1145,18 @@ class RecorderApp(tb.Window):
             row += 1
 
         def save_and_close():
+            # 先移除所有已註冊的快捷鍵
+            for key, handler in self._hotkey_handlers.items():
+                try:
+                    keyboard.remove_hotkey(handler)
+                except Exception:
+                    pass
+            self._hotkey_handlers.clear()
+            # 設定新快捷鍵
             for key, var in vars.items():
                 hotkey = var.get().strip()
                 if hotkey:
-                    if key in self._hotkey_handlers:
-                        keyboard.remove_hotkey(self._hotkey_handlers[key])
+                    self.hotkey_map[key] = hotkey  # 更新 hotkey_map
                     try:
                         handler = keyboard.add_hotkey(hotkey, getattr(self, {
                             "start": "start_record",
@@ -1114,7 +1172,7 @@ class RecorderApp(tb.Window):
             win.destroy()
 
         tb.Button(win, text=lang_map["儲存並關閉"], command=save_and_close, bootstyle=SUCCESS, width=12).grid(row=row, column=0, columnspan=2, pady=12)
-        self.register_global_hotkeys()
+        self.register_hotkeys()
 
     def register_global_hotkeys(self):
         # 用 thread 避免卡住主程式
@@ -1122,17 +1180,13 @@ class RecorderApp(tb.Window):
 
     def _hotkey_listener(self):
         keyboard.add_hotkey('f8', self.start_record)
-        keyboard.add_hotkey('f9', self.stop_record)
+        keyboard.add_hotkey('f9', self.stop_all)  # 修正這一行
         keyboard.add_hotkey('f10', self.play_record)
-        # 你可以根據需要增加其他熱鍵
         keyboard.wait()  # 保持監聽
 
     def get_script_duration(self):
-        # 根據你的腳本格式取得總秒數
-        # 假設 self.events_json 是腳本事件列表
-        if hasattr(self, "events_json") and self.events_json:
-            if self.events_json:
-                return self.events_json[-1]["time"]  # 假設最後一筆的 time 為總秒數
+        if self.events and "time" in self.events[-1]:
+            return self.events[-1]["time"]
         return 0
 
 LANG_MAP = {
