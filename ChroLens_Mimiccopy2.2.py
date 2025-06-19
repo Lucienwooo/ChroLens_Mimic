@@ -1,6 +1,7 @@
 #ChroLens Studio - Lucienwooo
 #pyinstaller --noconsole --onedir --icon=觸手眼鏡貓.ico --add-data "觸手眼鏡貓.ico;." ChroLens_Mimic2.1.py
 #--onefile 單一檔案，啟動時間過久，改以"--onedir "方式打包，啟動較快
+目前合併功能有點問題，合併之後只會執行一次，可能是合併時，腳本內容並未融合
 import ttkbootstrap as tb
 from ttkbootstrap.constants import *
 import tkinter as tk
@@ -79,7 +80,7 @@ class RecorderApp(tb.Window):
 
     def use_default_script_dir(self):
         import tkinter.filedialog
-        path = tkinter.filedialog.askdirectory(title="選擇腳本資料夾")
+        path = tkinter.filedialog.askdirectory(title="選擇Script資料夾")
         if path:
             self.script_dir = path
             self.refresh_script_list()
@@ -152,7 +153,7 @@ class RecorderApp(tb.Window):
         from tkinter import ttk
         lang_map = LANG_MAP[self.language_var.get()]
         win = tb.Toplevel(self)
-        win.title(lang_map["腳本合併工具"])
+        win.title(lang_map["Script工具"])
         win.geometry("1000x550")
         win.resizable(True, True)
         win.configure(bg=self.style.colors.bg)
@@ -160,10 +161,10 @@ class RecorderApp(tb.Window):
         main_frame = tb.Frame(win, padding=10)
         main_frame.pack(fill="both", expand=True)
 
-        # 左側：腳本清單
+        # 左側：Script清單
         left_frame = tb.Frame(main_frame)
         left_frame.grid(row=0, column=0, sticky="ns", padx=(0, 8))
-        # 移除「所有腳本」Label，直接放排序選單
+        # 移除「所有Script」Label，直接放排序選單
         sort_var = tk.StringVar(value="建立時間(新→舊)")
         sort_options = [
             "建立時間(新→舊)", "建立時間(舊→新)",
@@ -204,19 +205,46 @@ class RecorderApp(tb.Window):
         btn_add.pack(pady=(30, 6))
         btn_remove = tb.Button(btn_frame, text=lang_map["移除"], width=8)
         btn_remove.pack(pady=6)
-        btn_up = tb.Button(btn_frame, text="↑ " + lang_map.get("上移", "上移"), width=8)
+        btn_up = tb.Button(btn_frame, text="↑ " + lang_map.get("", ""), width=8)
         btn_up.pack(pady=6)
-        btn_down = tb.Button(btn_frame, text="↓ " + lang_map.get("下移", "下移"), width=8)
+        btn_down = tb.Button(btn_frame, text="↓ " + lang_map.get("", ""), width=8)
         btn_down.pack(pady=6)
         btn_clear = tb.Button(btn_frame, text=lang_map["清空"], width=8)
         btn_clear.pack(pady=6)
+
+        # 新增紅色「刪除」按鈕
+        def on_delete_script():
+            selected = all_listbox.curselection()
+            files = get_sorted_files()
+            if not selected:
+                tkinter.messagebox.showinfo("提示", "請先選擇要刪除的Script。")
+                return
+            for i in reversed(selected):
+                fname = files[i]
+                path = os.path.join(self.script_dir, fname)
+                try:
+                    os.remove(path)
+                    self.log(f"已刪除Script：{display_filename(fname)}")
+                except Exception as e:
+                    tkinter.messagebox.showerror("錯誤", f"刪除 {fname} 失敗: {e}")
+            refresh_all_listbox()
+            self.refresh_script_list()
+
+        btn_delete = tb.Button(
+            btn_frame,
+            text=lang_map["刪除"],
+            width=8,
+            bootstyle="danger",  # 紅色
+            command=on_delete_script
+        )
+        btn_delete.pack(pady=6)
 
         # 右側：合併清單（Treeview）
         right_frame = tb.Frame(main_frame)
         right_frame.grid(row=0, column=2, sticky="ns", padx=(8, 0))
         tb.Label(right_frame, text="編輯列表", font=("Microsoft JhengHei", 10, "bold")).pack(anchor="w")
         merge_tree = ttk.Treeview(right_frame, columns=("name", "repeat", "delay"), show="headings", height=15)
-        merge_tree.heading("name", text="腳本名稱")
+        merge_tree.heading("name", text="Script名稱")
         merge_tree.heading("repeat", text="重複")
         merge_tree.heading("delay", text="延遲")
         merge_tree.column("name", width=180, anchor="w")
@@ -238,10 +266,10 @@ class RecorderApp(tb.Window):
         btn_apply = tb.Button(edit_frame, text=lang_map["確定"], width=8)
         btn_apply.grid(row=0, column=4, padx=6)
 
-        # 新腳本名稱與合併按鈕
+        # 新Script名稱與合併按鈕
         options_frame = tb.Frame(win, padding=(10, 0, 10, 10))
         options_frame.pack(fill="x", side="bottom")
-        tb.Label(options_frame, text=lang_map["新腳本名稱："], font=("Microsoft JhengHei", 9)).grid(row=0, column=0, sticky="e")
+        tb.Label(options_frame, text=lang_map["新Script名稱："], font=("Microsoft JhengHei", 9)).grid(row=0, column=0, sticky="e")
         new_name_var = tk.StringVar(value="merged_script")
         tb.Entry(options_frame, textvariable=new_name_var, width=32).grid(row=0, column=1, sticky="w", padx=(4, 8))
         btn_merge_save = tb.Button(options_frame, text=lang_map["合併並儲存"], width=16, bootstyle=SUCCESS)
@@ -327,7 +355,7 @@ class RecorderApp(tb.Window):
             new_name = new_name_var.get().strip()
             # 自動加上 .json
             if not new_name:
-                tkinter.messagebox.showerror("錯誤", "請輸入新腳本名稱。")
+                tkinter.messagebox.showerror("錯誤", "請輸入新Script名稱。")
                 return
             if not new_name.endswith(".json"):
                 new_name += ".json"
@@ -338,7 +366,8 @@ class RecorderApp(tb.Window):
             try:
                 with open(new_path, "w", encoding="utf-8") as f:
                     json.dump(merged, f, ensure_ascii=False, indent=2)
-                tkinter.messagebox.showinfo("成功", f"合併完成並儲存為：{new_name}\n共 {len(merged)} 筆事件。")
+                # 取消彈窗，改為寫入日誌
+                self.log(f"合併完成並儲存為：{new_name}，共 {len(merged)} 筆事件。")
                 self.refresh_script_list()
                 win.destroy()
             except Exception as e:
@@ -384,24 +413,23 @@ class RecorderApp(tb.Window):
         self.btn_stop.config(text=lang_map["停止"] + f" ({self.hotkey_map['stop']})")
         self.btn_play.config(text=lang_map["回放"] + f" ({self.hotkey_map['play']})")
         self.tiny_mode_btn.config(text=lang_map["TinyMode"])
-        self.btn_script_dir.config(text=lang_map["腳本路徑"])
+        self.btn_script_dir.config(text=lang_map["Script路徑"])
         self.btn_hotkey.config(text=lang_map["快捷鍵"])
         self.about_btn.config(text=lang_map["關於"])
         self.lbl_repeat.config(text=lang_map["重複次數:"])
         self.lbl_times.config(text=lang_map["次"])
         self.lbl_interval.config(text=lang_map["重複時間"])
-        self.lbl_script.config(text=lang_map["腳本選單:"])
-        self.btn_rename.config(text=lang_map["修改腳本名稱"])
-        self.btn_merge.config(text=lang_map["合併"])
+        self.lbl_script.config(text=lang_map["Script:"])
+        self.btn_rename.config(text=lang_map["重新命名"])
+        self.btn_merge.config(text=lang_map["Script"])
         self.language_combo.config(values=list(LANG_MAP.keys()))
-        # row1/row4
         self.lbl_speed.config(text=lang_map["回放速度:"] if "回放速度:" in lang_map else "回放速度:")
-        # 新增：語言切換時更新 Tooltip
         self.update_speed_tooltip()
-        # 統一時間格式為 00:00:00
-        self.total_time_label.config(text=lang_map["總運作:"] + " 00:00:00" if "總運作:" in lang_map else "總運作: 00:00:00")
-        self.countdown_label.config(text=lang_map["單次:"] + " 00:00:00" if "單次:" in lang_map else "單次: 00:00:00")
-        self.time_label.config(text=lang_map["錄製:"] + " 00:00:00" if "錄製:" in lang_map else "錄製: 00:00:00")
+        # 只換前綴，保留原本時間格式
+        self.total_time_label.config(text=f"{lang_map['總運作']}: 00:00:00")
+        self.countdown_label.config(text=f"{lang_map['單次']}: 00:00:00")
+        self.time_label.config(text=f"{lang_map['錄製']}: 00:00:00")
+        self.lbl_single_time.config(text=f"{lang_map['單次']}: 00:00:00")
         self.save_config()
         self.update_idletasks()
         width = max(self.winfo_reqwidth() - 50, 400)
@@ -447,6 +475,15 @@ class RecorderApp(tb.Window):
         self.language_var = tk.StringVar(self, value="繁體中文")
         self._hotkey_handlers = {}
         self.tiny_window = None
+        self.language_var = tk.StringVar(self, value=self.user_config.get("language", "繁體中文"))
+        self.hotkey_map = self.user_config.get("hotkey_map", {
+            "start": "F10",
+            "pause": "F11",
+            "stop": "F9",
+            "play": "F12",
+            "tiny": "alt+`"
+        })
+        self.speed_var = tk.StringVar(value=self.user_config.get("speed", "100"))
 
         self.style.configure("My.TButton", font=("Microsoft JhengHei", 9))
         self.style.configure("My.TLabel", font=("Microsoft JhengHei", 9))
@@ -531,7 +568,7 @@ class RecorderApp(tb.Window):
         self.update_speed_tooltip()
         self.speed_var = tk.StringVar(value="100")
         tb.Entry(frm_bottom, textvariable=self.speed_var, width=6, style="My.TEntry").grid(row=0, column=1, padx=2)
-        self.btn_script_dir = tb.Button(frm_bottom, text="腳本路徑", command=self.use_default_script_dir, bootstyle=SECONDARY, width=10, style="My.TButton")
+        self.btn_script_dir = tb.Button(frm_bottom, text="Script路徑", command=self.use_default_script_dir, bootstyle=SECONDARY, width=10, style="My.TButton")
         self.btn_script_dir.grid(row=0, column=3, padx=4)
         self.btn_hotkey = tb.Button(frm_bottom, text="快捷鍵", command=self.open_hotkey_settings, bootstyle=SECONDARY, width=10, style="My.TButton")
         self.btn_hotkey.grid(row=0, column=4, padx=4)
@@ -557,21 +594,23 @@ class RecorderApp(tb.Window):
         repeat_time_entry.grid(row=0, column=3, padx=(10,2))
         self.lbl_interval = tb.Label(frm_repeat, text="重複時間", style="My.TLabel")
         self.lbl_interval.grid(row=0, column=4, padx=(0,2))
+        self.lbl_single_time = tb.Label(frm_repeat, text="當前Script: 00:00:00", style="My.TLabel", foreground="#DB0E59")
+        self.lbl_single_time.grid(row=0, column=5, padx=(10,2))
 
-        # ====== 腳本選單區 ======
+        # ====== Script選單區 ======
         frm_script = tb.Frame(self, padding=(10, 0, 10, 5))
         frm_script.pack(fill="x")
-        self.lbl_script = tb.Label(frm_script, text="腳本選單:", style="My.TLabel")
+        self.lbl_script = tb.Label(frm_script, text="Script:", style="My.TLabel")
         self.lbl_script.grid(row=0, column=0, sticky="w")
         self.script_var = tk.StringVar(value="")
-        self.script_combo = tb.Combobox(frm_script, textvariable=self.script_var, width=30, state="readonly", style="My.TCombobox")
-        self.script_combo.grid(row=0, column=1, sticky="w", padx=4)
+        self.script_combo = tb.Combobox(frm_script, textvariable=self.script_var, width=24, style="My.TCombobox", state="readonly")
+        self.script_combo.grid(row=0, column=1, padx=(2, 0))
         self.rename_var = tk.StringVar()
         self.rename_entry = tb.Entry(frm_script, textvariable=self.rename_var, width=20, style="My.TEntry")
         self.rename_entry.grid(row=0, column=2, padx=4)
-        self.btn_rename = tb.Button(frm_script, text="修改腳本名稱", command=self.rename_script, bootstyle=WARNING, width=12, style="My.TButton")
+        self.btn_rename = tb.Button(frm_script, text="重新命名", command=self.rename_script, bootstyle=WARNING, width=12, style="My.TButton")
         self.btn_rename.grid(row=0, column=3, padx=4)
-        self.btn_merge = tb.Button(frm_script, text="合併", command=self.open_merge_window, bootstyle=INFO, width=8, style="My.TButton")
+        self.btn_merge = tb.Button(frm_script, text="Script", command=self.open_merge_window, bootstyle=INFO, width=8, style="My.TButton")
         self.btn_merge.grid(row=0, column=4, padx=4)
 
         # ====== 日誌顯示區 ======
@@ -626,6 +665,8 @@ class RecorderApp(tb.Window):
         self.user_config["repeat"] = self.repeat_var.get()
         self.user_config["speed"] = self.speed_var.get()
         self.user_config["script_dir"] = self.script_dir
+        self.user_config["language"] = self.language_var.get()
+        self.user_config["hotkey_map"] = self.hotkey_map
         save_user_config(self.user_config)
 
     def change_theme(self):
@@ -649,7 +690,8 @@ class RecorderApp(tb.Window):
         m = int((seconds % 3600) // 60)
         s = int(seconds % 60)
         self.lbl_single_time.config(text=f"單次: {h:02d}:{m:02d}:{s:02d}")
-
+        self.countdown_label.config(text=f"單次: {h:02d}:{m:02d}:{s:02d}")  # 新增這行
+        
     def start_record(self):
         if self.recording:
             return
@@ -684,10 +726,7 @@ class RecorderApp(tb.Window):
             self._mouse_events = []
             self._recording_mouse = True
             self._record_start_time = time.time()
-
-            # 先啟動 keyboard 與 mouse 監聽
             keyboard.start_recording()
-
             mouse_ctrl = Controller()
             last_pos = mouse_ctrl.position
 
@@ -718,7 +757,6 @@ class RecorderApp(tb.Window):
             )
             mouse_listener.start()
 
-            # 立即記錄當下滑鼠位置（避免剛開始沒動作時漏記）
             now = time.time()
             self._mouse_events.append({
                 'type': 'mouse',
@@ -729,6 +767,9 @@ class RecorderApp(tb.Window):
             })
 
             while self.recording:
+                if self.paused:
+                    time.sleep(0.05)
+                    continue
                 now = time.time()
                 pos = mouse_ctrl.position
                 if pos != last_pos:
@@ -745,9 +786,16 @@ class RecorderApp(tb.Window):
             mouse_listener.stop()
             k_events = keyboard.stop_recording()
 
+            # 取得目前設定的開始、暫停與停止快捷鍵（全部轉小寫）
+            exclude_keys = set([
+                self.hotkey_map.get("start", "F10").lower(),
+                self.hotkey_map.get("pause", "F11").lower(),
+                self.hotkey_map.get("stop", "F9").lower()
+            ])
+            # 過濾掉這些控制鍵的 down/up 事件
             filtered_k_events = [
                 e for e in k_events
-                if not (e.name == 'f10' and e.event_type in ('down', 'up'))
+                if not (e.name and e.name.lower() in exclude_keys and e.event_type in ('down', 'up'))
             ]
             self.events = sorted(
                 [{'type': 'keyboard', 'event': e.event_type, 'name': e.name, 'time': e.time} for e in filtered_k_events] +
@@ -793,7 +841,7 @@ class RecorderApp(tb.Window):
         if self.playing:
             return
         if not self.events:
-            self.log("沒有可回放的事件，請先錄製或載入腳本。")
+            self.log("沒有可回放的事件，請先錄製或載入Script。")
             return
         try:
             speed_input = int(self.speed_var.get())
@@ -827,6 +875,8 @@ class RecorderApp(tb.Window):
                 self._total_play_time = total * (99999 if repeat == -1 else repeat)
             else:
                 self._total_play_time = 0
+
+        self._repeat_times = repeat  # <--- 新增這行
 
         self._play_start_time = time.time()
         self._play_total_time = self._total_play_time
@@ -933,6 +983,16 @@ class RecorderApp(tb.Window):
                 if not self.playing:
                     break  # 強制中斷回放
                 if e['type'] == 'keyboard':
+                    # 取得目前設定的暫停與停止快捷鍵（全部轉小寫）
+                    exclude_keys = set([
+                        self.hotkey_map.get("pause", "F11").lower(),
+                        self.hotkey_map.get("stop", "F9").lower()
+                    ])
+                    if e['name'].lower() in exclude_keys:
+                        # 跳過暫停/停止按鍵，不執行也不記錄
+                        self.log(f"[{format_time(e['time'])}] 跳過控制鍵: {e['name']}")
+                        self._current_play_index += 1
+                        continue
                     if e['event'] == 'down':
                         keyboard.press(e['name'])
                     elif e['event'] == 'up':
@@ -975,12 +1035,14 @@ class RecorderApp(tb.Window):
             path = os.path.join(self.script_dir, filename)
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(self.events, f, ensure_ascii=False, indent=2)
-            self.log(f"[{format_time(time.time())}] 自動存檔：{filename}，事件數：{len(self.events)}")
+            self.log(f"[{format_time(time.time())}] 自動存檔：{display_filename(filename)}，事件數：{len(self.events)}")
             self.refresh_script_list()
-            self.script_var.set(filename)
+            # 只設檔名（不含副檔名）
+            self.script_var.set(os.path.splitext(filename)[0])
             with open(LAST_SCRIPT_FILE, "w", encoding="utf-8") as f:
                 f.write(filename)
-            self.on_script_selected()  # 新增：自動載入新腳本，顯示單次時間
+            self.log(f"[{format_time(time.time())}] Script已載入：{display_filename(filename)}，共 {len(self.events)} 筆事件。")
+            self.on_script_selected()  # 新增：自動載入新Script，顯示單次時間
         except Exception as ex:
             self.log(f"[{format_time(time.time())}] 存檔失敗: {ex}")
 
@@ -990,33 +1052,41 @@ class RecorderApp(tb.Window):
         if path:
             with open(path, "r", encoding="utf-8") as f:
                 self.events = json.load(f)
-            self.log(f"[{format_time(time.time())}] 腳本已載入：{os.path.basename(path)}，共 {len(self.events)} 筆事件。")
+            self.log(f"[{format_time(time.time())}] Script已載入：{os.path.basename(path)}，共 {len(self.events)} 筆事件。")
             self.refresh_script_list()
-            self.script_var.set(os.path.basename(path))
+            # 只設檔名（不含副檔名）
+            self.script_var.set(os.path.splitext(os.path.basename(path))[0])
             with open(LAST_SCRIPT_FILE, "w", encoding="utf-8") as f:
                 f.write(os.path.basename(path))
-            script_seconds = self.get_script_duration()  # 你需實作這個方法
+            script_seconds = self.get_script_duration()
             self.update_single_time_label(script_seconds)
 
     def on_script_selected(self, event=None):
-        script = self.script_var.get()
-        if script:
-            path = os.path.join(SCRIPTS_DIR, script)
+        script_name = self.script_var.get()
+        if script_name:
+            filename = script_name + ".json"
+            path = os.path.join(SCRIPTS_DIR, filename)
             with open(path, "r", encoding="utf-8") as f:
                 self.events = json.load(f)
-            self.log(f"[{format_time(time.time())}] 腳本已載入：{script}，共 {len(self.events)} 筆事件。")
+            self.log(f"[{format_time(time.time())}] Script已載入：{filename}，共 {len(self.events)} 筆事件。")
             with open(LAST_SCRIPT_FILE, "w", encoding="utf-8") as f:
-                f.write(script)
-            # 讀取腳本後，顯示單次腳本時間
+                f.write(filename)
+            # 讀取Script後，顯示單次Script時間
             script_seconds = self.get_script_duration()
             self.update_single_time_label(script_seconds)
 
     def refresh_script_list(self):
         files = [f for f in os.listdir(self.script_dir) if f.endswith('.json')]
-        self.script_combo['values'] = files
-        # 若目前選擇的腳本不存在於新資料夾，清空選擇
-        if self.script_var.get() not in files:
+        # 只顯示檔名（不含副檔名）
+        script_names = [os.path.splitext(f)[0] for f in files]
+        current_script = self.script_var.get()
+        current_script_name = os.path.splitext(current_script)[0] if current_script else ""
+        self.script_combo['values'] = script_names
+        # 若目前選擇的Script不存在於新資料夾，清空選擇
+        if current_script_name not in script_names:
             self.script_var.set("")
+        else:
+            self.script_var.set(current_script_name)
 
     def load_last_script(self):
         if os.path.exists(LAST_SCRIPT_FILE):
@@ -1027,8 +1097,9 @@ class RecorderApp(tb.Window):
                 if os.path.exists(script_path):
                     with open(script_path, "r", encoding="utf-8") as f:
                         self.events = json.load(f)
-                    self.script_var.set(last_script)
-                    self.log(f"[{format_time(time.time())}] 已自動載入上次腳本：{last_script}，共 {len(self.events)} 筆事件。")
+                    # 只設檔名（不含副檔名）
+                    self.script_var.set(os.path.splitext(last_script)[0])
+                    self.log(f"[{format_time(time.time())}] 已自動載入上次Script：{display_filename(last_script)}，共 {len(self.events)} 筆事件。")
 
     def update_mouse_pos(self):
         try:
@@ -1043,10 +1114,13 @@ class RecorderApp(tb.Window):
         old_name = self.script_var.get()
         new_name = self.rename_var.get().strip()
         if not old_name or not new_name:
-            self.log(f"[{format_time(time.time())}] 請選擇腳本並輸入新名稱。")
+            self.log(f"[{format_time(time.time())}] 請選擇Script並輸入新名稱。")
             return
         if not new_name.endswith('.json'):
             new_name += '.json'
+        # 修正：old_name 需加上 .json
+        if not old_name.endswith('.json'):
+            old_name += '.json'
         old_path = os.path.join(SCRIPTS_DIR, old_name)
         new_path = os.path.join(SCRIPTS_DIR, new_name)
         if os.path.exists(new_path):
@@ -1054,7 +1128,7 @@ class RecorderApp(tb.Window):
             return
         try:
             os.rename(old_path, new_path)
-            self.log(f"[{format_time(time.time())}] 腳本已更名為：{new_name}")
+            self.log(f"[{format_time(time.time())}] Script已更名為：{display_filename(new_name)}")
             self.refresh_script_list()
             self.script_var.set(new_name)
             with open(LAST_SCRIPT_FILE, "w", encoding="utf-8") as f:
@@ -1088,13 +1162,21 @@ class RecorderApp(tb.Window):
                 self._hotkey_handlers[key] = handler
             except Exception as ex:
                 self.log(f"快捷鍵 {hotkey} 註冊失敗: {ex}")
+        # 停止支援多組熱鍵
+        stop_hotkeys = [self.hotkey_map["stop"], "ctrl+f9", "alt+f9"]
+        for hotkey in stop_hotkeys:
+            try:
+                handler = keyboard.add_hotkey(hotkey, self.stop_all)
+                self._hotkey_handlers[f"stop_{hotkey}"] = handler
+            except Exception as ex:
+                self.log(f"快捷鍵 {hotkey} 註冊失敗: {ex}")
 
     def open_hotkey_settings(self):
         win = tb.Toplevel(self)
         lang = self.language_var.get()
         lang_map = LANG_MAP.get(lang, LANG_MAP["繁體中文"])
         win.title(lang_map["快捷鍵"])
-        win.geometry("340x280")
+        win.geometry("400x320")  # 視窗高度加大，確保按鈕顯示
         win.resizable(False, False)
 
         labels = {
@@ -1131,6 +1213,14 @@ class RecorderApp(tb.Window):
         def on_entry_focus_out(event, key, var):
             if var.get() == "輸入按鍵" or not var.get():
                 var.set(self.hotkey_map[key])
+
+        def update_main_buttons():
+            lang_map = LANG_MAP.get(self.language_var.get(), LANG_MAP["繁體中文"])
+            self.btn_start.config(text=lang_map["開始錄製"] + f" ({self.hotkey_map['start']})")
+            self.btn_pause.config(text=lang_map["暫停/繼續"] + f" ({self.hotkey_map['pause']})")
+            self.btn_stop.config(text=lang_map["停止"] + f" ({self.hotkey_map['stop']})")
+            self.btn_play.config(text=lang_map["回放"] + f" ({self.hotkey_map['play']})")
+            self.tiny_mode_btn.config(text=lang_map["TinyMode"])
 
         for key, label in labels.items():
             tb.Label(win, text=label, font=("Microsoft JhengHei", 11)).grid(row=row, column=0, padx=10, pady=8, sticky="w")
@@ -1169,9 +1259,18 @@ class RecorderApp(tb.Window):
                     except Exception as ex:
                         self.log(f"快捷鍵 {hotkey} 註冊失敗: {ex}")
             self.save_config()
+            update_main_buttons()  # 新增：即時更新主介面按鈕文字
             win.destroy()
 
-        tb.Button(win, text=lang_map["儲存並關閉"], command=save_and_close, bootstyle=SUCCESS, width=12).grid(row=row, column=0, columnspan=2, pady=12)
+        # 加回「儲存並關閉」按鈕
+        tb.Button(
+            win,
+            text=lang_map.get("儲存並關閉", "儲存並關閉"),
+            command=save_and_close,
+            bootstyle=SUCCESS,
+            width=16
+        ).grid(row=row, column=0, columnspan=2, pady=18)
+
         self.register_hotkeys()
 
     def register_global_hotkeys(self):
@@ -1186,7 +1285,7 @@ class RecorderApp(tb.Window):
 
     def get_script_duration(self):
         if self.events and "time" in self.events[-1]:
-            return self.events[-1]["time"]
+            return self.events[-1]["time"] - self.events[0]["time"]
         return 0
 
 LANG_MAP = {
@@ -1196,35 +1295,36 @@ LANG_MAP = {
         "停止": "停止",
         "回放": "回放",
         "TinyMode": "TinyMode",
-        "腳本路徑": "腳本路徑",
+        "Script路徑": "Script路徑",
         "快捷鍵": "快捷鍵",
         "關於": "關於",
         "重複次數:": "重複次數:",
         "次": "次",
         "重複時間": "重複時間",
-        "腳本選單:": "腳本選單:",
-        "修改腳本名稱": "修改腳本名稱",
-        "合併": "合併",
+        "Script:": "Script:",
+        "重新命名": "重新命名",
+        "Script": "Script",
         "合併並儲存": "合併並儲存",
-        "儲存並關閉": "儲存並關閉",
-        "單次:": "單次:",
-        "總運作:": "總運作:",
-        "錄製:": "錄製:",
-        "新腳本名稱：": "新腳本名稱：",
+        "所有Script": "所有Script",
+        "新Script名稱：": "新Script名稱：",
         "確定": "確定",
-        "所有腳本": "所有腳本",
+        "所有Script": "所有Script",
         "合併清單（可拖曳排序，點擊次數可編輯）": "合併清單（可拖曳排序，點擊次數可編輯）",
         "清空": "清空",
         "加入": "加入",
         "移除": "移除",
-        "腳本合併工具": "腳本合併工具",
+        "Script工具": "Script工具",
         "延遲秒數:": "遲延秒數:",
         "Language": "Language",
         "回放速度:": "回放速度:",
-        "目前腳本": "目前腳本",
-        "選擇合併腳本": "選擇合併腳本",
-        "目前腳本在前": "目前腳本在前",
-        "合併腳本在前": "合併腳本在前"
+        "目前Script": "目前Script",
+        "選擇合併Script": "選擇合併Script",
+        "目前Script在前": "目前Script在前",
+        "合併Script在前": "合併Script在前",
+        "總運作": "總運作",
+        "單次": "單次",
+        "錄製": "錄製",
+        "刪除": "刪除",
     },
     "日本語": {
         "開始錄製": "マクロ記録",
@@ -1232,35 +1332,36 @@ LANG_MAP = {
         "停止": "停止",
         "回放": "再生",
         "TinyMode": "Tinyモード",
-        "腳本路徑": "スクリプトパス",
+        "Script路徑": "Scriptパス",
         "快捷鍵": "ショートカット",
         "關於": "情報",
         "重複次數:": "繰り返し回数:",
         "次": "回",
         "重複時間": "繰り返し間隔",
-        "腳本選單:": "スクリプト選択:",
-        "修改腳本名稱": "名前変更",
-        "合併": "結合",
+        "Script:": "Script:",
+        "重新命名": "名前変更",
+        "Script": "Script",
         "合併並儲存": "結合して保存",
-        "儲存並關閉": "保存して閉じる",
-        "單次:": "単回:",
-        "總運作:": "合計実行:",
-        "錄製:": "マクロ記録:",
-        "新腳本名稱：": "新スクリプト名：",
+        "所有Script": "全Script",
+        "新Script名稱：": "新しいScript名：",
         "確定": "決定",
-        "所有腳本": "全スクリプト",
+        "所有Script": "全Script",
         "合併清單（可拖曳排序，點擊次數可編輯）": "結合リスト（ドラッグで並べ替え、ダブルクリックで編集）",
         "清空": "クリア",
         "加入": "追加",
         "移除": "削除",
-        "腳本合併工具": "スクリプト結合ツール",
+        "Script工具": "Script結合ツール",
         "延遲秒數:": "遅延秒数:",
         "Language": "言語",
         "回放速度:": "再生速度:",
-        "目前腳本": "現在のスクリプト",
-        "選擇合併腳本": "結合スクリプト選択",
-        "目前腳本在前": "現在のスクリプトが先",
-        "合併腳本在前": "結合スクリプトが先"
+        "目前Script": "現在のScript",
+        "選擇合併Script": "結合Script選択",
+        "目前Script在前": "現在のScriptが先",
+        "合併Script在前": "結合Scriptが先",
+        "總運作": "総運用",
+        "單次": "単回",
+        "錄製": "記録",
+        "刪除": "削除",
     },
     "English": {
         "開始錄製": "Start Recording",
@@ -1268,35 +1369,36 @@ LANG_MAP = {
         "停止": "Stop",
         "回放": "Play",
         "TinyMode": "TinyMode",
-        "腳本路徑": "Script Path",
+        "Script路徑": "Script Path",
         "快捷鍵": "Hotkey",
         "關於": "About",
         "重複次數:": "Repeat Count:",
         "次": "times",
         "重複時間": "Repeat Interval",
-        "腳本選單:": "Script Selection:",
-        "修改腳本名稱": "Rename",
-        "合併": "Merge",
+        "Script:": "Script:",
+        "重新命名": "Rename",
+        "Script": "Script",
         "合併並儲存": "Merge & Save",
-        "儲存並關閉": "Save & Close",
-        "單次:": "Single:",
-        "總運作:": "Total:",
-        "錄製:": "Record:",
-        "新腳本名稱：": "New Script Name:",
+        "所有Script": "All Scripts",
+        "新Script名稱：": "New Script Name:",
         "確定": "OK",
-        "所有腳本": "All Scripts",
+        "所有Script": "All Scripts",
         "合併清單（可拖曳排序，點擊次數可編輯）": "Merge List (drag to sort, double-click to edit)",
         "清空": "Clear",
         "加入": "Add",
         "移除": "Remove",
-        "腳本合併工具": "Script Merge Tool",
+        "Script工具": "Script Merge Tool",
         "延遲秒數:": "Delay (sec):",
         "Language": "Language",
         "回放速度:": "Speed:",
-        "目前腳本": "Current Script",
-        "選擇合併腳本": "Select Script to Merge",
-        "目前腳本在前": "Current Script First",
-        "合併腳本在前": "Merge Script First"
+        "目前Script": "Current Script",
+        "選擇合併Script": "Select Script to Merge",
+        "目前Script在前": "Current Script First",
+        "合併Script在前": "Merge Script First",
+        "總運作": "Total",
+        "單次": "Single",
+        "錄製": "Record",
+        "刪除": "Delete",
     }
 }
 
@@ -1311,8 +1413,16 @@ def load_user_config():
         "skin": "darkly",
         "last_script": "",
         "repeat": "1",
-        "speed": "1.0",
-        "script_dir": SCRIPTS_DIR
+        "speed": "100",
+        "script_dir": SCRIPTS_DIR,
+        "language": "繁體中文",
+        "hotkey_map": {
+            "start": "F10",
+            "pause": "F11",
+            "stop": "F9",
+            "play": "F12",
+            "tiny": "alt+`"
+        }
     }
 
 def save_user_config(config):
@@ -1331,6 +1441,7 @@ def mouse_event_win(event, button='left', delta=0):
     import win32api
     import win32con
     btn_map = {'left': win32con.MOUSEEVENTF_LEFTDOWN, 'right': win32con.MOUSEEVENTF_RIGHTDOWN, 'middle': win32con.MOUSEEVENTF_MIDDLEDOWN}
+    btn_map = {'left': win32con.MOUSEEVENTF_LEFTDOWN, 'right': win32con.MOUSEEVENTF_RIGHTDOWN, 'middle': win32con.MOUSEEVENTF_MIDDLEDOWN}
     btn_up_map = {'left': win32con.MOUSEEVENTF_LEFTUP, 'right': win32con.MOUSEEVENTF_RIGHTUP, 'middle': win32con.MOUSEEVENTF_MIDDLEUP}
     if event == 'down':
         win32api.mouse_event(btn_map.get(button, win32con.MOUSEEVENTF_LEFTDOWN), 0, 0, 0, 0)
@@ -1339,7 +1450,9 @@ def mouse_event_win(event, button='left', delta=0):
     elif event == 'wheel':
         win32api.mouse_event(win32con.MOUSEEVENTF_WHEEL, 0, 0, int(delta), 0)
 
+def display_filename(filename):
+    return os.path.splitext(filename)[0]
+
 if __name__ == "__main__":
     app = RecorderApp()
     app.mainloop()
-
