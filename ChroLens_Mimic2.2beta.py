@@ -1,5 +1,5 @@
 #ChroLens Studio - Lucienwooo
-#pyinstaller --noconsole --onedir --icon=觸手眼鏡貓.ico --add-data "觸手眼鏡貓.ico;." ChroLens_Mimic2.1.py
+#pyinstaller --noconsole --onedir --icon=觸手眼鏡貓.ico --add-data "觸手眼鏡貓.ico;." ChroLens_Mimic2.2beta.py
 #--onefile 單一檔案，啟動時間過久，改以"--onedir "方式打包，啟動較快
 import ttkbootstrap as tb
 from ttkbootstrap.constants import *
@@ -164,7 +164,6 @@ class RecorderApp(tb.Window):
         # 左側：Script清單
         left_frame = tb.Frame(main_frame)
         left_frame.grid(row=0, column=0, sticky="ns", padx=(0, 8))
-        # 移除「所有Script」Label，直接放排序選單
         sort_var = tk.StringVar(value="建立時間(新→舊)")
         sort_options = [
             "建立時間(新→舊)", "建立時間(舊→新)",
@@ -203,7 +202,7 @@ class RecorderApp(tb.Window):
         btn_frame.grid(row=0, column=1, sticky="ns")
         btn_add = tb.Button(btn_frame, text=lang_map["加入"], width=8)
         btn_add.pack(pady=(30, 6))
-        btn_remove = tb.Button(btn_frame, text=lang_map["移除"], width=8)
+        btn_remove = tb.Button(btn_frame, text=lang_map["取消"], width=8)
         btn_remove.pack(pady=6)
         btn_up = tb.Button(btn_frame, text="↑ " + lang_map.get("", ""), width=8)
         btn_up.pack(pady=6)
@@ -498,7 +497,7 @@ class RecorderApp(tb.Window):
         self.style.configure("My.TCheckbutton", font=("Microsoft JhengHei", 9))
         self.style.configure("TinyBold.TButton", font=("Microsoft JhengHei", 9, "bold"))
 
-        self.title("ChroLens_Mimic_2.1")
+        self.title("ChroLens_Mimic_2.2beta")
         try:
             import sys, os
             if getattr(sys, 'frozen', False):
@@ -693,7 +692,6 @@ class RecorderApp(tb.Window):
         self.geometry(f"{width}x{height}")
 
     def _delayed_init(self):
-        # self.after(1600, self._register_hotkeys)  # ←移除這行
         self.after(1700, self.refresh_script_list)
         self.after(1800, self.load_last_script)
         self.after(1900, self.update_mouse_pos)
@@ -1110,7 +1108,6 @@ class RecorderApp(tb.Window):
             with open(LAST_SCRIPT_FILE, "w", encoding="utf-8") as f:
                 f.write(filename)
             self.log(f"[{format_time(time.time())}] Script已載入：{display_filename(filename)}，共 {len(self.events)} 筆事件。")
-            # self.on_script_selected()  # ← 移除這行
         except Exception as ex:
             self.log(f"[{format_time(time.time())}] 存檔失敗: {ex}")
             self.on_script_selected()
@@ -1207,7 +1204,6 @@ class RecorderApp(tb.Window):
         os.startfile(path)
 
     def register_hotkeys(self):
-        # 先移除所有已註冊的快捷鍵
         for key, handler in self._hotkey_handlers.items():
             try:
                 keyboard.remove_hotkey(handler)
@@ -1300,7 +1296,6 @@ class RecorderApp(tb.Window):
             row += 1
 
         def save_and_close():
-            # 先移除所有已註冊的快捷鍵
             for key, handler in self._hotkey_handlers.items():
                 try:
                     keyboard.remove_hotkey(handler)

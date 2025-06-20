@@ -37,3 +37,23 @@
 
 👉如果你有任何問題、想法或建議，請加入我的 [Discord ChroLens](https://discord.gg/72Kbs4WPPn)
 
+
+## 機能紹介：
+1.  **マクロ記録ツール**：キーボードとマウスのすべての操作を記録し、マクロとして保存できます。
+2.  **繰り返し回数または指定された時間範囲で繰り返しを設定**。
+3.  **ホットキー、スクリプト名、スキンをカスタマイズ可能**。
+
+### シナリオ例：
+1.  複数のExcelシートの内容をコピーしてデータベースに貼り付け。
+2.  マウスを左右に動かして、PCがスタンバイまたはログイン画面に入るのを防ぐ。
+3.  ゲームの繰り返し操作：定点採集 / 簡単な左右移動 / スキル連発。
+
+## Features:
+1.  **Macro Recording Tool**: Records all keyboard and mouse operations and saves them as macros.
+2.  **Set repetitions by count or within a specified time range**.
+3.  **Customizable hotkeys, script names, and skins**.
+
+### Use Cases:
+1.  Copying content from multiple Excel sheets and pasting it into a database.
+2.  Moving the mouse left and right to prevent the computer from entering standby or the login screen.
+3.  Repetitive in-game actions: fixed-point gathering / simple left-right movement / repeated skill casting.

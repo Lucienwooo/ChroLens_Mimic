@@ -12,10 +12,6 @@
 2.  Moving the mouse left and right to prevent the computer from entering standby or the login screen.
 3.  Repetitive in-game actions: fixed-point gathering / simple left-right movement / repeated skill casting.
 
-### Update Plan:
-1.  Add Japanese and English versions.
-2025.06.08
-
 ---
 
 # [ChroLens Project](https://home.gamer.com.tw/artwork.php?sn=6150515)</br>
