@@ -1,7 +1,6 @@
 #ChroLens Studio - Lucienwooo
 #pyinstaller --noconsole --onedir --icon=觸手眼鏡貓.ico --add-data "觸手眼鏡貓.ico;." ChroLens_Mimic2.1.py
 #--onefile 單一檔案，啟動時間過久，改以"--onedir "方式打包，啟動較快
-#目前合併功能有點問題，合併之後只會執行一次，可能是合併時，腳本內容並未融合
 import ttkbootstrap as tb
 from ttkbootstrap.constants import *
 import tkinter as tk
@@ -11,6 +10,7 @@ import ctypes
 import win32api
 import tkinter.filedialog
 import sys
+import copy
 
 SCRIPTS_DIR = "scripts"
 LAST_SCRIPT_FILE = "last_script.txt"
@@ -341,19 +341,26 @@ class RecorderApp(tb.Window):
 
         def on_merge_save():
             merged = []
+            current_time = 0
             for item in merge_items:
                 try:
                     with open(os.path.join(self.script_dir, item["fname"]), "r", encoding="utf-8") as f:
                         events = json.load(f)
                     for _ in range(item["repeat"]):
-                        merged += events
-                        if item["delay"] > 0 and merged:
-                            merged.append({"type": "delay", "seconds": item["delay"]})
+                        if events:
+                            base = events[0]['time']
+                            for e in events:
+                                # 每次都做 deepcopy，且直接 append 到 merged
+                                new_event = copy.deepcopy(e)
+                                new_event['time'] = (e['time'] - base) + current_time
+                                merged.append(new_event)
+                            current_time = merged[-1]['time']
+                            if item["delay"] > 0:
+                                current_time += item["delay"]
                 except Exception as e:
                     tkinter.messagebox.showerror("錯誤", f"讀取 {item['fname']} 失敗: {e}")
                     return
             new_name = new_name_var.get().strip()
-            # 自動加上 .json
             if not new_name:
                 tkinter.messagebox.showerror("錯誤", "請輸入新Script名稱。")
                 return
@@ -366,7 +373,6 @@ class RecorderApp(tb.Window):
             try:
                 with open(new_path, "w", encoding="utf-8") as f:
                     json.dump(merged, f, ensure_ascii=False, indent=2)
-                # 取消彈窗，改為寫入日誌
                 self.log(f"合併完成並儲存為：{new_name}，共 {len(merged)} 筆事件。")
                 self.refresh_script_list()
                 win.destroy()
@@ -568,7 +574,7 @@ class RecorderApp(tb.Window):
         self.update_speed_tooltip()
         self.speed_var = tk.StringVar(value="100")
         tb.Entry(frm_bottom, textvariable=self.speed_var, width=6, style="My.TEntry").grid(row=0, column=1, padx=2)
-        self.btn_script_dir = tb.Button(frm_bottom, text="Script路徑", command=self.use_default_script_dir, bootstyle=SECONDARY, width=10, style="My.TButton")
+        self.btn_script_dir = tb.Button(frm_bottom, text="Script路徑", command=self.open_scripts_dir, bootstyle=SECONDARY, width=10, style="My.TButton")
         self.btn_script_dir.grid(row=0, column=3, padx=4)
         self.btn_hotkey = tb.Button(frm_bottom, text="快捷鍵", command=self.open_hotkey_settings, bootstyle=SECONDARY, width=10, style="My.TButton")
         self.btn_hotkey.grid(row=0, column=4, padx=4)
@@ -730,6 +736,9 @@ class RecorderApp(tb.Window):
             mouse_ctrl = Controller()
             last_pos = mouse_ctrl.position
 
+            def now_rel():
+                return time.time() - self._record_start_time
+
             def on_click(x, y, button, pressed):
                 if self._recording_mouse and not self.paused:
                     self._mouse_events.append({
@@ -738,7 +747,7 @@ class RecorderApp(tb.Window):
                         'button': str(button).replace('Button.', ''),
                         'x': x,
                         'y': y,
-                        'time': time.time()
+                        'time': now_rel()
                     })
             def on_scroll(x, y, dx, dy):
                 if self._recording_mouse and not self.paused:
@@ -748,7 +757,7 @@ class RecorderApp(tb.Window):
                         'delta': dy,
                         'x': x,
                         'y': y,
-                        'time': time.time()
+                        'time': now_rel()
                     })
             import pynput.mouse
             mouse_listener = pynput.mouse.Listener(
@@ -757,20 +766,19 @@ class RecorderApp(tb.Window):
             )
             mouse_listener.start()
 
-            now = time.time()
             self._mouse_events.append({
                 'type': 'mouse',
                 'event': 'move',
                 'x': last_pos[0],
                 'y': last_pos[1],
-                'time': now
+                'time': 0.0
             })
 
             while self.recording:
                 if self.paused:
                     time.sleep(0.05)
                     continue
-                now = time.time()
+                now = now_rel()
                 pos = mouse_ctrl.position
                 if pos != last_pos:
                     self._mouse_events.append({
@@ -786,22 +794,22 @@ class RecorderApp(tb.Window):
             mouse_listener.stop()
             k_events = keyboard.stop_recording()
 
-            # 取得目前設定的開始、暫停與停止快捷鍵（全部轉小寫）
             exclude_keys = set([
                 self.hotkey_map.get("start", "F10").lower(),
                 self.hotkey_map.get("pause", "F11").lower(),
                 self.hotkey_map.get("stop", "F9").lower()
             ])
-            # 過濾掉這些控制鍵的 down/up 事件
             filtered_k_events = [
                 e for e in k_events
                 if not (e.name and e.name.lower() in exclude_keys and e.event_type in ('down', 'up'))
             ]
-            self.events = sorted(
-                [{'type': 'keyboard', 'event': e.event_type, 'name': e.name, 'time': e.time} for e in filtered_k_events] +
-                self._mouse_events,
-                key=lambda e: e['time']
-            )
+            # 這裡也要把鍵盤事件的 time 轉成相對時間
+            events = [
+                {'type': 'keyboard', 'event': e.event_type, 'name': e.name, 'time': e.time - self._record_start_time}
+                for e in filtered_k_events
+            ] + self._mouse_events
+
+            self.events = sorted(events, key=lambda e: e['time'])
             self.log(f"[{format_time(time.time())}] 錄製完成，共 {len(self.events)} 筆事件。")
             self.log(f"事件預覽: {json.dumps(self.events[:10], ensure_ascii=False, indent=2)}")
         except Exception as ex:
@@ -836,6 +844,7 @@ class RecorderApp(tb.Window):
             self.auto_save_script()
 
     def play_record(self):
+        self.on_script_selected()
         import keyboard
         import mouse
         if self.playing:
@@ -1037,14 +1046,14 @@ class RecorderApp(tb.Window):
                 json.dump(self.events, f, ensure_ascii=False, indent=2)
             self.log(f"[{format_time(time.time())}] 自動存檔：{display_filename(filename)}，事件數：{len(self.events)}")
             self.refresh_script_list()
-            # 只設檔名（不含副檔名）
             self.script_var.set(os.path.splitext(filename)[0])
             with open(LAST_SCRIPT_FILE, "w", encoding="utf-8") as f:
                 f.write(filename)
             self.log(f"[{format_time(time.time())}] Script已載入：{display_filename(filename)}，共 {len(self.events)} 筆事件。")
-            self.on_script_selected()  # 新增：自動載入新Script，顯示單次時間
+            # self.on_script_selected()  # ← 移除這行
         except Exception as ex:
             self.log(f"[{format_time(time.time())}] 存檔失敗: {ex}")
+            self.on_script_selected()
 
     def load_script(self):
         from tkinter import filedialog

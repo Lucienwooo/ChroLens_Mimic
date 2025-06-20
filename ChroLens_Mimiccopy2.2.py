@@ -1,7 +1,6 @@
 #ChroLens Studio - Lucienwooo
 #pyinstaller --noconsole --onedir --icon=觸手眼鏡貓.ico --add-data "觸手眼鏡貓.ico;." ChroLens_Mimic2.1.py
 #--onefile 單一檔案，啟動時間過久，改以"--onedir "方式打包，啟動較快
-目前合併功能有點問題，合併之後只會執行一次，可能是合併時，腳本內容並未融合
 import ttkbootstrap as tb
 from ttkbootstrap.constants import *
 import tkinter as tk
@@ -11,6 +10,7 @@ import ctypes
 import win32api
 import tkinter.filedialog
 import sys
+import copy
 
 SCRIPTS_DIR = "scripts"
 LAST_SCRIPT_FILE = "last_script.txt"
@@ -341,19 +341,26 @@ class RecorderApp(tb.Window):
 
         def on_merge_save():
             merged = []
+            current_time = 0
             for item in merge_items:
                 try:
                     with open(os.path.join(self.script_dir, item["fname"]), "r", encoding="utf-8") as f:
                         events = json.load(f)
                     for _ in range(item["repeat"]):
-                        merged += events
-                        if item["delay"] > 0 and merged:
-                            merged.append({"type": "delay", "seconds": item["delay"]})
+                        if events:
+                            base = events[0]['time']
+                            for e in events:
+                                # 每次都做 deepcopy，且直接 append 到 merged
+                                new_event = copy.deepcopy(e)
+                                new_event['time'] = (e['time'] - base) + current_time
+                                merged.append(new_event)
+                            current_time = merged[-1]['time']
+                            if item["delay"] > 0:
+                                current_time += item["delay"]
                 except Exception as e:
                     tkinter.messagebox.showerror("錯誤", f"讀取 {item['fname']} 失敗: {e}")
                     return
             new_name = new_name_var.get().strip()
-            # 自動加上 .json
             if not new_name:
                 tkinter.messagebox.showerror("錯誤", "請輸入新Script名稱。")
                 return
@@ -366,7 +373,6 @@ class RecorderApp(tb.Window):
             try:
                 with open(new_path, "w", encoding="utf-8") as f:
                     json.dump(merged, f, ensure_ascii=False, indent=2)
-                # 取消彈窗，改為寫入日誌
                 self.log(f"合併完成並儲存為：{new_name}，共 {len(merged)} 筆事件。")
                 self.refresh_script_list()
                 win.destroy()
@@ -568,7 +574,7 @@ class RecorderApp(tb.Window):
         self.update_speed_tooltip()
         self.speed_var = tk.StringVar(value="100")
         tb.Entry(frm_bottom, textvariable=self.speed_var, width=6, style="My.TEntry").grid(row=0, column=1, padx=2)
-        self.btn_script_dir = tb.Button(frm_bottom, text="Script路徑", command=self.use_default_script_dir, bootstyle=SECONDARY, width=10, style="My.TButton")
+        self.btn_script_dir = tb.Button(frm_bottom, text="Script路徑", command=self.open_scripts_dir, bootstyle=SECONDARY, width=10, style="My.TButton")
         self.btn_script_dir.grid(row=0, column=3, padx=4)
         self.btn_hotkey = tb.Button(frm_bottom, text="快捷鍵", command=self.open_hotkey_settings, bootstyle=SECONDARY, width=10, style="My.TButton")
         self.btn_hotkey.grid(row=0, column=4, padx=4)
@@ -594,8 +600,6 @@ class RecorderApp(tb.Window):
         repeat_time_entry.grid(row=0, column=3, padx=(10,2))
         self.lbl_interval = tb.Label(frm_repeat, text="重複時間", style="My.TLabel")
         self.lbl_interval.grid(row=0, column=4, padx=(0,2))
-        self.lbl_single_time = tb.Label(frm_repeat, text="當前Script: 00:00:00", style="My.TLabel", foreground="#DB0E59")
-        self.lbl_single_time.grid(row=0, column=5, padx=(10,2))
 
         # ====== Script選單區 ======
         frm_script = tb.Frame(self, padding=(10, 0, 10, 5))
@@ -628,14 +632,49 @@ class RecorderApp(tb.Window):
 
         # 右側時間區用一個Frame包起來，讓三個時間靠右且彼此緊湊
         time_frame = tb.Frame(log_title_frame)
-        time_frame.pack(side="right", padx=0)  # 取消間隔
+        time_frame.pack(side="right", padx=0)
 
-        self.time_label = tb.Label(time_frame, text="錄製: 00:00.00", font=("Consolas", 12), foreground="#15D3BD")
-        self.time_label.pack(side="right", padx=0)
-        self.countdown_label = tb.Label(time_frame, text="單次: 00:00.00", font=("Consolas", 12), foreground="#DB0E59")
-        self.countdown_label.pack(side="right", padx=0)
-        self.total_time_label = tb.Label(time_frame, text="總運作: 00:00.00", font=("Consolas", 12), foreground="#FF95CA")
-        self.total_time_label.pack(side="right", padx=0)
+        # 錄製
+        self.time_label_title = tb.Label(time_frame, text="錄製", font=("Consolas", 12), foreground="#15D3BD")
+        self.time_label_title.pack(side="left", padx=0)
+        self.time_label_h = tb.Label(time_frame, text="00", font=("Consolas", 12), foreground="#888888")
+        self.time_label_h.pack(side="left", padx=0)
+        self.time_label_colon1 = tb.Label(time_frame, text=":", font=("Consolas", 12), foreground="#888888")
+        self.time_label_colon1.pack(side="left", padx=0)
+        self.time_label_m = tb.Label(time_frame, text="00", font=("Consolas", 12), foreground="#888888")
+        self.time_label_m.pack(side="left", padx=0)
+        self.time_label_colon2 = tb.Label(time_frame, text=":", font=("Consolas", 12), foreground="#888888")
+        self.time_label_colon2.pack(side="left", padx=0)
+        self.time_label_s = tb.Label(time_frame, text="00", font=("Consolas", 12), foreground="#888888")
+        self.time_label_s.pack(side="left", padx=0)
+
+        # 單次
+        self.countdown_label_title = tb.Label(time_frame, text="單次", font=("Consolas", 12), foreground="#DB0E59")
+        self.countdown_label_title.pack(side="left", padx=0)
+        self.countdown_label_h = tb.Label(time_frame, text="00", font=("Consolas", 12), foreground="#888888")
+        self.countdown_label_h.pack(side="left", padx=0)
+        self.countdown_label_colon1 = tb.Label(time_frame, text=":", font=("Consolas", 12), foreground="#888888")
+        self.countdown_label_colon1.pack(side="left", padx=0)
+        self.countdown_label_m = tb.Label(time_frame, text="00", font=("Consolas", 12), foreground="#888888")
+        self.countdown_label_m.pack(side="left", padx=0)
+        self.countdown_label_colon2 = tb.Label(time_frame, text=":", font=("Consolas", 12), foreground="#888888")
+        self.countdown_label_colon2.pack(side="left", padx=0)
+        self.countdown_label_s = tb.Label(time_frame, text="00", font=("Consolas", 12), foreground="#888888")
+        self.countdown_label_s.pack(side="left", padx=0)
+
+        # 總運作
+        self.total_time_label_title = tb.Label(time_frame, text="總運作", font=("Consolas", 12), foreground="#FF95CA")
+        self.total_time_label_title.pack(side="left", padx=0)
+        self.total_time_label_h = tb.Label(time_frame, text="00", font=("Consolas", 12), foreground="#888888")
+        self.total_time_label_h.pack(side="left", padx=0)
+        self.total_time_label_colon1 = tb.Label(time_frame, text=":", font=("Consolas", 12), foreground="#888888")
+        self.total_time_label_colon1.pack(side="left", padx=0)
+        self.total_time_label_m = tb.Label(time_frame, text="00", font=("Consolas", 12), foreground="#888888")
+        self.total_time_label_m.pack(side="left", padx=0)
+        self.total_time_label_colon2 = tb.Label(time_frame, text=":", font=("Consolas", 12), foreground="#888888")
+        self.total_time_label_colon2.pack(side="left", padx=0)
+        self.total_time_label_s = tb.Label(time_frame, text="00", font=("Consolas", 12), foreground="#888888")
+        self.total_time_label_s.pack(side="left", padx=0)
 
         self.log_text = tb.Text(frm_log, height=8, width=95, state="disabled", font=("Microsoft JhengHei", 9))  # 高度縮短
         self.log_text.pack(fill="both", expand=True, pady=(4,0))
@@ -683,15 +722,38 @@ class RecorderApp(tb.Window):
         h = int(seconds // 3600)
         m = int((seconds % 3600) // 60)
         s = int(seconds % 60)
-        self.time_label.config(text=f"錄製: {h:02d}:{m:02d}:{s:02d}")
+        gray = "#888888"
+        color = "#15D3BD"
+        self.time_label_h.config(text=f"{h:02d}", foreground=color if h else gray)
+        self.time_label_m.config(text=f"{m:02d}", foreground=color if m else gray)
+        self.time_label_s.config(text=f"{s:02d}", foreground=color if s else gray)
+        self.time_label_colon1.config(foreground=gray)
+        self.time_label_colon2.config(foreground=gray)
 
-    def update_single_time_label(self, seconds):
+    def update_countdown_label(self, seconds):
         h = int(seconds // 3600)
         m = int((seconds % 3600) // 60)
         s = int(seconds % 60)
-        self.lbl_single_time.config(text=f"單次: {h:02d}:{m:02d}:{s:02d}")
-        self.countdown_label.config(text=f"單次: {h:02d}:{m:02d}:{s:02d}")  # 新增這行
-        
+        gray = "#888888"
+        color = "#DB0E59"
+        self.countdown_label_h.config(text=f"{h:02d}", foreground=color if h else gray)
+        self.countdown_label_m.config(text=f"{m:02d}", foreground=color if m else gray)
+        self.countdown_label_s.config(text=f"{s:02d}", foreground=color if s else gray)
+        self.countdown_label_colon1.config(foreground=gray)
+        self.countdown_label_colon2.config(foreground=gray)
+
+    def update_total_time_label(self, seconds):
+        h = int(seconds // 3600)
+        m = int((seconds % 3600) // 60)
+        s = int(seconds % 60)
+        gray = "#888888"
+        color = "#FF95CA"
+        self.total_time_label_h.config(text=f"{h:02d}", foreground=color if h else gray)
+        self.total_time_label_m.config(text=f"{m:02d}", foreground=color if m else gray)
+        self.total_time_label_s.config(text=f"{s:02d}", foreground=color if s else gray)
+        self.total_time_label_colon1.config(foreground=gray)
+        self.total_time_label_colon2.config(foreground=gray)
+
     def start_record(self):
         if self.recording:
             return
@@ -730,6 +792,9 @@ class RecorderApp(tb.Window):
             mouse_ctrl = Controller()
             last_pos = mouse_ctrl.position
 
+            def now_rel():
+                return time.time() - self._record_start_time
+
             def on_click(x, y, button, pressed):
                 if self._recording_mouse and not self.paused:
                     self._mouse_events.append({
@@ -738,7 +803,7 @@ class RecorderApp(tb.Window):
                         'button': str(button).replace('Button.', ''),
                         'x': x,
                         'y': y,
-                        'time': time.time()
+                        'time': now_rel()
                     })
             def on_scroll(x, y, dx, dy):
                 if self._recording_mouse and not self.paused:
@@ -748,7 +813,7 @@ class RecorderApp(tb.Window):
                         'delta': dy,
                         'x': x,
                         'y': y,
-                        'time': time.time()
+                        'time': now_rel()
                     })
             import pynput.mouse
             mouse_listener = pynput.mouse.Listener(
@@ -757,20 +822,19 @@ class RecorderApp(tb.Window):
             )
             mouse_listener.start()
 
-            now = time.time()
             self._mouse_events.append({
                 'type': 'mouse',
                 'event': 'move',
                 'x': last_pos[0],
                 'y': last_pos[1],
-                'time': now
+                'time': 0.0
             })
 
             while self.recording:
                 if self.paused:
                     time.sleep(0.05)
                     continue
-                now = time.time()
+                now = now_rel()
                 pos = mouse_ctrl.position
                 if pos != last_pos:
                     self._mouse_events.append({
@@ -786,22 +850,22 @@ class RecorderApp(tb.Window):
             mouse_listener.stop()
             k_events = keyboard.stop_recording()
 
-            # 取得目前設定的開始、暫停與停止快捷鍵（全部轉小寫）
             exclude_keys = set([
                 self.hotkey_map.get("start", "F10").lower(),
                 self.hotkey_map.get("pause", "F11").lower(),
                 self.hotkey_map.get("stop", "F9").lower()
             ])
-            # 過濾掉這些控制鍵的 down/up 事件
             filtered_k_events = [
                 e for e in k_events
                 if not (e.name and e.name.lower() in exclude_keys and e.event_type in ('down', 'up'))
             ]
-            self.events = sorted(
-                [{'type': 'keyboard', 'event': e.event_type, 'name': e.name, 'time': e.time} for e in filtered_k_events] +
-                self._mouse_events,
-                key=lambda e: e['time']
-            )
+            # 這裡也要把鍵盤事件的 time 轉成相對時間
+            events = [
+                {'type': 'keyboard', 'event': e.event_type, 'name': e.name, 'time': e.time - self._record_start_time}
+                for e in filtered_k_events
+            ] + self._mouse_events
+
+            self.events = sorted(events, key=lambda e: e['time'])
             self.log(f"[{format_time(time.time())}] 錄製完成，共 {len(self.events)} 筆事件。")
             self.log(f"事件預覽: {json.dumps(self.events[:10], ensure_ascii=False, indent=2)}")
         except Exception as ex:
@@ -812,8 +876,6 @@ class RecorderApp(tb.Window):
             self.recording = False
             self.log(f"[{format_time(time.time())}] 停止錄製。")
             self._wait_record_thread_finish()
-            script_seconds = self.get_script_duration()
-            self.update_single_time_label(script_seconds)
 
     def stop_all(self):
         stopped = False
@@ -836,6 +898,7 @@ class RecorderApp(tb.Window):
             self.auto_save_script()
 
     def play_record(self):
+        self.on_script_selected()
         import keyboard
         import mouse
         if self.playing:
@@ -918,9 +981,15 @@ class RecorderApp(tb.Window):
 
     def update_total_time_label(self, seconds):
         h = int(seconds // 3600)
-        m = int((seconds % 3600) // 60)
+        m = int((seconds % 3600) % 60)
         s = int(seconds % 60)
-        self.total_time_label.config(text=f"總運作: {h:02d}:{m:02d}:{s:02d}")
+        gray = "#888888"
+        color = "#FF95CA"
+        self.total_time_label_h.config(text=f"{h:02d}", foreground=color if h else gray)
+        self.total_time_label_m.config(text=f"{m:02d}", foreground=color if m else gray)
+        self.total_time_label_s.config(text=f"{s:02d}", foreground=color if s else gray)
+        self.total_time_label_colon1.config(foreground=gray)
+        self.total_time_label_colon2.config(foreground=gray)
 
     def _play_thread(self):
         self.playing = True
@@ -989,7 +1058,7 @@ class RecorderApp(tb.Window):
                         self.hotkey_map.get("stop", "F9").lower()
                     ])
                     if e['name'].lower() in exclude_keys:
-                        # 跳過暫停/停止按鍵，不執行也不記錄
+                        # 跳過暫停/停止按键，不執行也不記錄
                         self.log(f"[{format_time(e['time'])}] 跳過控制鍵: {e['name']}")
                         self._current_play_index += 1
                         continue
@@ -1037,14 +1106,14 @@ class RecorderApp(tb.Window):
                 json.dump(self.events, f, ensure_ascii=False, indent=2)
             self.log(f"[{format_time(time.time())}] 自動存檔：{display_filename(filename)}，事件數：{len(self.events)}")
             self.refresh_script_list()
-            # 只設檔名（不含副檔名）
             self.script_var.set(os.path.splitext(filename)[0])
             with open(LAST_SCRIPT_FILE, "w", encoding="utf-8") as f:
                 f.write(filename)
             self.log(f"[{format_time(time.time())}] Script已載入：{display_filename(filename)}，共 {len(self.events)} 筆事件。")
-            self.on_script_selected()  # 新增：自動載入新Script，顯示單次時間
+            # self.on_script_selected()  # ← 移除這行
         except Exception as ex:
             self.log(f"[{format_time(time.time())}] 存檔失敗: {ex}")
+            self.on_script_selected()
 
     def load_script(self):
         from tkinter import filedialog
@@ -1058,8 +1127,6 @@ class RecorderApp(tb.Window):
             self.script_var.set(os.path.splitext(os.path.basename(path))[0])
             with open(LAST_SCRIPT_FILE, "w", encoding="utf-8") as f:
                 f.write(os.path.basename(path))
-            script_seconds = self.get_script_duration()
-            self.update_single_time_label(script_seconds)
 
     def on_script_selected(self, event=None):
         script_name = self.script_var.get()
@@ -1072,8 +1139,6 @@ class RecorderApp(tb.Window):
             with open(LAST_SCRIPT_FILE, "w", encoding="utf-8") as f:
                 f.write(filename)
             # 讀取Script後，顯示單次Script時間
-            script_seconds = self.get_script_duration()
-            self.update_single_time_label(script_seconds)
 
     def refresh_script_list(self):
         files = [f for f in os.listdir(self.script_dir) if f.endswith('.json')]
