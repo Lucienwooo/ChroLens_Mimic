@@ -1,9 +1,10 @@
 #ChroLens Studio - Lucienwooo
-#pyinstaller --noconsole --onedir --icon=觸手眼鏡貓.ico --add-data "觸手眼鏡貓.ico;." ChroLens_Mimic2.2beta.py
+#pyinstaller --noconsole --onedir --icon=觸手眼鏡貓.ico --add-data "觸手眼鏡貓.ico;." ChroLens_Mimic3.0beta.py
 #--onefile 單一檔案，啟動時間過久，改以"--onedir "方式打包，啟動較快
 import ttkbootstrap as tb
 from ttkbootstrap.constants import *
 import tkinter as tk
+from tkinter import ttk
 import threading, time, json, os, datetime
 import keyboard, mouse
 import ctypes
@@ -11,6 +12,7 @@ import win32api
 import tkinter.filedialog
 import sys
 import copy
+import shutil
 
 SCRIPTS_DIR = "scripts"
 LAST_SCRIPT_FILE = "last_script.txt"
@@ -22,9 +24,11 @@ def format_time(ts):
 
 class Tooltip:
     def __init__(self, widget, text):
+        self.action_list = []
         self.widget = widget
         self.text = text
         self.tipwindow = None
+        self.action_list = []
         widget.bind("<Enter>", self.show_tip)
         widget.bind("<Leave>", self.hide_tip)
 
@@ -59,6 +63,42 @@ class RecorderApp(tb.Window):
     recording = False
     speed = 1.0
     script_dir = SCRIPTS_DIR
+
+    def save_action_list(self):
+        from tkinter import filedialog, messagebox
+        # 假設 self.action_list 是你的動作列表
+        if not hasattr(self, "action_list") or not self.action_list:
+            messagebox.showinfo("提示", "沒有可儲存的動作。")
+            return
+        path = filedialog.asksaveasfilename(
+            defaultextension=".json",
+            filetypes=[("JSON files", "*.json")],
+            initialdir=self.script_dir,
+            title="儲存動作列表"
+        )
+        if path:
+            try:
+                with open(path, "w", encoding="utf-8") as f:
+                    json.dump(self.action_list, f, ensure_ascii=False, indent=2)
+                self.log(f"動作列表已儲存：{os.path.basename(path)}")
+            except Exception as e:
+                messagebox.showerror("錯誤", f"儲存失敗: {e}")
+
+    def on_action_tree_double_click(self, event):
+        item = self.action_tree.selection()
+        if not item:
+            return
+        idx = int(self.action_tree.item(item, "values")[0]) - 1
+        # 假設 self.action_list 是 [{pic_key, img_path, action, delay}, ...]
+        if hasattr(self, "action_list") and 0 <= idx < len(self.action_list):
+            self.perform_actions([self.action_list[idx]])
+
+    def open_gallery(self):
+        folder = os.path.abspath("images")
+        if not os.path.exists(folder):
+            os.makedirs(folder)
+        os.startfile(folder)
+        self.log("開啟圖庫資料夾")
 
     def _parse_time_to_seconds(self, time_str):
         try:
@@ -474,6 +514,7 @@ class RecorderApp(tb.Window):
 
     def __init__(self):
         # 先初始化語言變數
+        self.action_list = [] 
         self.user_config = load_user_config()
         skin = self.user_config.get("skin", "darkly")
         super().__init__(themename=skin)
@@ -497,7 +538,7 @@ class RecorderApp(tb.Window):
         self.style.configure("My.TCheckbutton", font=("Microsoft JhengHei", 9))
         self.style.configure("TinyBold.TButton", font=("Microsoft JhengHei", 9, "bold"))
 
-        self.title("ChroLens_Mimic_2.2beta")
+        self.title("ChroLens_Mimic_3.0beta")
         try:
             import sys, os
             if getattr(sys, 'frozen', False):
@@ -600,13 +641,19 @@ class RecorderApp(tb.Window):
         self.lbl_interval = tb.Label(frm_repeat, text="重複時間", style="My.TLabel")
         self.lbl_interval.grid(row=0, column=4, padx=(0,2))
 
+        # 新增存檔按鈕
+        self.btn_save_actionlist = tb.Button(
+            frm_repeat, text="存檔", command=self.save_action_list, bootstyle=SUCCESS, width=8, style="My.TButton"
+        )
+        self.btn_save_actionlist.grid(row=0, column=5, padx=(10, 0))
+
         # ====== Script選單區 ======
         frm_script = tb.Frame(self, padding=(10, 0, 10, 5))
         frm_script.pack(fill="x")
         self.lbl_script = tb.Label(frm_script, text="Script:", style="My.TLabel")
         self.lbl_script.grid(row=0, column=0, sticky="w")
         self.script_var = tk.StringVar(value="")
-        self.script_combo = tb.Combobox(frm_script, textvariable=self.script_var, width=24, style="My.TCombobox", state="readonly")
+        self.script_combo = tb.Combobox(frm_script, textvariable=self.script_var, width=16, style="My.TCombobox", state="readonly")
         self.script_combo.grid(row=0, column=1, padx=(2, 0))
         self.rename_var = tk.StringVar()
         self.rename_entry = tb.Entry(frm_script, textvariable=self.rename_var, width=20, style="My.TEntry")
@@ -616,70 +663,137 @@ class RecorderApp(tb.Window):
         self.btn_merge = tb.Button(frm_script, text="Script", command=self.open_merge_window, bootstyle=INFO, width=8, style="My.TButton")
         self.btn_merge.grid(row=0, column=4, padx=4)
 
+        # 新增圖庫按鈕
+        self.btn_gallery = tb.Button(frm_script, text="圖庫", command=self.open_gallery, bootstyle=SECONDARY, width=8, style="My.TButton")
+        self.btn_gallery.grid(row=0, column=5, padx=4)
+
         # ====== 日誌顯示區 ======
         frm_log = tb.Frame(self, padding=(10, 0, 10, 10))
         frm_log.pack(fill="both", expand=True)
-        log_title_frame = tb.Frame(frm_log)
-        log_title_frame.pack(fill="x")
+        frm_log_right = tb.Frame(frm_log, width=1)
+        frm_log_right.pack(side="left", fill="both", expand=True)
+        self.log_text = tk.Text(frm_log_right, height=18, font=("Consolas", 5), state="disabled", wrap="none", bg="#222", fg="#fff")
+        self.log_text.pack(fill="both", expand=True, padx=4, pady=4)
+        self.refresh_script_list()
+        if self.script_var.get():
+            self.on_script_selected()
 
-        self.mouse_pos_label = tb.Label(
-            log_title_frame, text="( X:0, Y:0 )",
-            font=("Consolas", 12, "bold"),
-            foreground="#668B9B"
+        # 新增動作列表區塊
+        frm_action = tb.Frame(frm_log, width=1)
+        frm_action.pack(side="left", fill="both", expand=True)
+
+        columns = ("#", "pic_key", "action", "delay")
+        style = ttk.Style()
+        style.configure("Custom.Treeview", rowheight=28, borderwidth=1, relief="solid", font=("Microsoft JhengHei", 10))
+        style.map("Custom.Treeview", background=[('selected', '#e6f7ff')])
+        style.layout("Custom.Treeview", [('Treeview.treearea', {'sticky': 'nswe'})])
+
+        # 新增垂直卷軸
+        action_tree_scrollbar = ttk.Scrollbar(frm_action, orient="vertical")
+        self.action_tree = ttk.Treeview(
+            frm_action, columns=columns, show="headings", height=18, style="Custom.Treeview",
+            yscrollcommand=action_tree_scrollbar.set
         )
-        self.mouse_pos_label.pack(side="left", padx=0)  # 取消間隔
+        action_tree_scrollbar.config(command=self.action_tree.yview)
+        action_tree_scrollbar.pack(side="right", fill="y")
+        self.action_tree.pack(fill="both", expand=True, pady=4, side="left")
 
-        # 右側時間區用一個Frame包起來，讓三個時間靠右且彼此緊湊
-        time_frame = tb.Frame(log_title_frame)
-        time_frame.pack(side="right", padx=0)
+        # --- 行內編輯功能 ---
+        def on_tree_click(event):
+            region = self.action_tree.identify("region", event.x, event.y)
+            col = self.action_tree.identify_column(event.x)
+            row = self.action_tree.identify_row(event.y)
+            if not row:
+                # 點擊空白區自動新增一行
+                self.action_list.append({"pic_key": "", "img_path": "", "action": "", "delay": 0})
+                self.refresh_action_tree()
+                return
+            idx = self.action_tree.index(row)
+            if col == "#2":  # 圖片名稱
+                from tkinter import filedialog
+                path = filedialog.askopenfilename(filetypes=[("Image files", "*.png;*.jpg;*.jpeg;*.bmp")])
+                if path:
+                    self.action_list[idx]["img_path"] = path
+                    self.action_list[idx]["pic_key"] = os.path.basename(path)
+                    self.refresh_action_tree()
+            elif col == "#3":  # 動作
+                win = tk.Toplevel(self)
+                win.title("選擇動作")
+                win.geometry("300x200")
+                actions = ["左鍵點擊", "右鍵點擊", "按空白鍵"]  # 你可以自訂
+                var = tk.StringVar(value=self.action_list[idx].get("action", ""))
+                lb = tk.Listbox(win, listvariable=tk.StringVar(value=actions), height=8)
+                lb.pack(fill="both", expand=True, padx=10, pady=10)
+                def set_action():
+                    sel = lb.curselection()
+                    if sel:
+                        self.action_list[idx]["action"] = actions[sel[0]]
+                        self.refresh_action_tree()
+                    win.destroy()
+                btn = tk.Button(win, text="確定", command=set_action)
+                btn.pack(pady=5)
+            elif col == "#4":  # 延遲
+                x, y, w, h = self.action_tree.bbox(row, col)
+                entry = tk.Entry(self.action_tree, width=6)
+                entry.place(x=x, y=y, width=w, height=h)
+                entry.insert(0, str(self.action_list[idx].get("delay", 0)))
+                entry.focus()
+                def on_entry_confirm(event=None):
+                    try:
+                        val = float(entry.get())
+                        self.action_list[idx]["delay"] = val
+                    except:
+                        pass
+                    entry.destroy()
+                    self.refresh_action_tree()
+                entry.bind("<Return>", on_entry_confirm)
+                entry.bind("<FocusOut>", on_entry_confirm)
 
-        # 錄製
-        self.time_label_title = tb.Label(time_frame, text="錄製", font=("Consolas", 12), foreground="#15D3BD")
-        self.time_label_title.pack(side="left", padx=0)
-        self.time_label_h = tb.Label(time_frame, text="00", font=("Consolas", 12), foreground="#888888")
-        self.time_label_h.pack(side="left", padx=0)
-        self.time_label_colon1 = tb.Label(time_frame, text=":", font=("Consolas", 12), foreground="#888888")
-        self.time_label_colon1.pack(side="left", padx=0)
-        self.time_label_m = tb.Label(time_frame, text="00", font=("Consolas", 12), foreground="#888888")
-        self.time_label_m.pack(side="left", padx=0)
-        self.time_label_colon2 = tb.Label(time_frame, text=":", font=("Consolas", 12), foreground="#888888")
-        self.time_label_colon2.pack(side="left", padx=0)
-        self.time_label_s = tb.Label(time_frame, text="00", font=("Consolas", 12), foreground="#888888")
-        self.time_label_s.pack(side="left", padx=0)
+        self.action_tree.bind("<Button-1>", on_tree_click)
 
-        # 單次
-        self.countdown_label_title = tb.Label(time_frame, text="單次", font=("Consolas", 12), foreground="#DB0E59")
-        self.countdown_label_title.pack(side="left", padx=0)
-        self.countdown_label_h = tb.Label(time_frame, text="00", font=("Consolas", 12), foreground="#888888")
-        self.countdown_label_h.pack(side="left", padx=0)
-        self.countdown_label_colon1 = tb.Label(time_frame, text=":", font=("Consolas", 12), foreground="#888888")
-        self.countdown_label_colon1.pack(side="left", padx=0)
-        self.countdown_label_m = tb.Label(time_frame, text="00", font=("Consolas", 12), foreground="#888888")
-        self.countdown_label_m.pack(side="left", padx=0)
-        self.countdown_label_colon2 = tb.Label(time_frame, text=":", font=("Consolas", 12), foreground="#888888")
-        self.countdown_label_colon2.pack(side="left", padx=0)
-        self.countdown_label_s = tb.Label(time_frame, text="00", font=("Consolas", 12), foreground="#888888")
-        self.countdown_label_s.pack(side="left", padx=0)
+        # --- 刷新顯示 ---
+        def refresh_action_tree():
+            self.action_tree.delete(*self.action_tree.get_children())
+            for i, act in enumerate(self.action_list):
+                self.action_tree.insert("", "end", values=(
+                    i+1,
+                    act.get("pic_key", ""),
+                    act.get("action", ""),
+                    act.get("delay", 0)
+                ))
+            # 自動隱藏卷軸
+            if len(self.action_list) > 18:
+                action_tree_scrollbar.pack(side="right", fill="y")
+            else:
+                action_tree_scrollbar.pack_forget()
+        self.refresh_action_tree = refresh_action_tree
 
-        # 總運作
-        self.total_time_label_title = tb.Label(time_frame, text="總運作", font=("Consolas", 12), foreground="#FF95CA")
-        self.total_time_label_title.pack(side="left", padx=0)
-        self.total_time_label_h = tb.Label(time_frame, text="00", font=("Consolas", 12), foreground="#888888")
-        self.total_time_label_h.pack(side="left", padx=0)
-        self.total_time_label_colon1 = tb.Label(time_frame, text=":", font=("Consolas", 12), foreground="#888888")
-        self.total_time_label_colon1.pack(side="left", padx=0)
-        self.total_time_label_m = tb.Label(time_frame, text="00", font=("Consolas", 12), foreground="#888888")
-        self.total_time_label_m.pack(side="left", padx=0)
-        self.total_time_label_colon2 = tb.Label(time_frame, text=":", font=("Consolas", 12), foreground="#888888")
-        self.total_time_label_colon2.pack(side="left", padx=0)
-        self.total_time_label_s = tb.Label(time_frame, text="00", font=("Consolas", 12), foreground="#888888")
-        self.total_time_label_s.pack(side="left", padx=0)
+        # --- 儲存時只存有資料的行 ---
+        def save_action_list(self):
+            from tkinter import filedialog, messagebox
+            # 只儲存有資料的行
+            filtered = [
+                act for act in self.action_list
+                if act.get("pic_key") or act.get("action") or act.get("delay")
+            ]
+            if not filtered:
+                messagebox.showinfo("提示", "沒有可儲存的動作。")
+                return
+            path = filedialog.asksaveasfilename(
+                defaultextension=".json",
+                filetypes=[("JSON files", "*.json")],
+                initialdir=self.script_dir,
+                title="儲存動作列表"
+            )
+            if path:
+                try:
+                    with open(path, "w", encoding="utf-8") as f:
+                        json.dump(filtered, f, ensure_ascii=False, indent=2)
+                    self.log(f"動作列表已儲存：{os.path.basename(path)}")
+                except Exception as e:
+                    messagebox.showerror("錯誤", f"儲存失敗: {e}")
 
-        self.log_text = tb.Text(frm_log, height=8, width=95, state="disabled", font=("Microsoft JhengHei", 9))  # 高度縮短
-        self.log_text.pack(fill="both", expand=True, pady=(4,0))
-        log_scroll = tb.Scrollbar(frm_log, command=self.log_text.yview)
-        log_scroll.pack(side="left", fill="y")
-        self.log_text.config(yscrollcommand=log_scroll.set)
+        self.save_action_list = save_action_list.__get__(self)
 
         self.refresh_script_list()
         if self.script_var.get():
@@ -687,8 +801,8 @@ class RecorderApp(tb.Window):
 
         self.after(1500, self._delayed_init)
         self.update_idletasks()
-        width = max(self.winfo_reqwidth() - 50, 400)  # 寬度減少50，最小400
-        height = int(self.winfo_reqheight() * 2 / 3) + 100  # 高度縮短1/3再+100
+        width = max(self.winfo_reqwidth() - 50, 400) * 1  # 寬度減少50，最小400
+        height = (int(self.winfo_reqheight() * 2 / 3) + 50) * 2  # 高度縮短1/3再+100
         self.geometry(f"{width}x{height}")
 
     def _delayed_init(self):
@@ -1512,6 +1626,49 @@ def mouse_event_win(event, button='left', delta=0):
 
 def display_filename(filename):
     return os.path.splitext(filename)[0]
+
+def locate_image_on_screen(template_path, confidence=0.8):
+    import pyautogui, cv2, numpy as np
+    screenshot = pyautogui.screenshot()
+    screenshot = cv2.cvtColor(np.array(screenshot), cv2.COLOR_RGB2GRAY)
+    try:
+        file_bytes = np.fromfile(template_path, dtype=np.uint8)
+        template = cv2.imdecode(file_bytes, cv2.IMREAD_GRAYSCALE)
+    except Exception as e:
+        tk.messagebox.showerror("錯誤", f"無法讀取圖片: {template_path}\n{e}")
+        return None
+    if template is None:
+        tk.messagebox.showerror("錯誤", f"無法讀取圖片: {template_path}")
+        return None
+    res = cv2.matchTemplate(screenshot, template, cv2.TM_CCOEFF_NORMED)
+    min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
+    if max_val >= confidence:
+        h, w = template.shape[:2]
+        center = (max_loc[0] + w // 2, max_loc[1] + h // 2)
+        return center
+    return None
+
+def perform_actions(self, actions):
+    import pyautogui, time, os
+    for act in actions:
+        if not act["img_path"] or not os.path.exists(act["img_path"]):
+            continue
+        pos = locate_image_on_screen(act["img_path"])
+        if not pos:
+            tk.messagebox.showwarning("警告", f"找不到圖片: {os.path.basename(act['img_path'])}")
+            return
+        pyautogui.moveTo(pos)
+        if act["action"] == "左鍵點擊":
+            pyautogui.click()
+        elif act["action"] == "右鍵點擊":
+            pyautogui.click(button='right')
+        elif act["action"] == "按空白鍵":
+            pyautogui.press('space')
+        elif act["action"]:
+            pyautogui.press(act["action"])
+        time.sleep(act["delay"])
+
+
 
 if __name__ == "__main__":
     app = RecorderApp()
