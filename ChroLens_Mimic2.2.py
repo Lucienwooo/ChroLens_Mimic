@@ -1,8 +1,6 @@
 #ChroLens Studio - Lucienwooo
-#pyinstaller --noconsole --onedir --icon=觸手眼鏡貓.ico --add-data "觸手眼鏡貓.ico;." ChroLens_Mimic2.3.py
+#pyinstaller --noconsole --onedir --icon=觸手眼鏡貓.ico --add-data "觸手眼鏡貓.ico;." ChroLens_Mimic2.2.py
 #--onefile 單一檔案，啟動時間過久，改以"--onedir "方式打包，啟動較快
-# 考慮加入快捷鍵切換腳本
-# 腳本模組化、可視化
 import ttkbootstrap as tb
 from ttkbootstrap.constants import *
 import tkinter as tk
@@ -67,7 +65,6 @@ LAST_SCRIPT_FILE = "last_script.txt"
 LAST_SKIN_FILE = "last_skin.txt"  # 新增這行
 MOUSE_SAMPLE_INTERVAL = 0.01  # 10ms
 
-# ====== 語言對照表（完整複製2.2beta） ======
 LANG_MAP = {
     "繁體中文": {
         "開始錄製": "開始錄製",
@@ -182,7 +179,6 @@ LANG_MAP = {
     }
 }
 
-# ====== Tooltip 類別（從2.2beta複製） ======
 class Tooltip:
     def __init__(self, widget, text):
         self.widget = widget
@@ -255,18 +251,7 @@ class RecorderApp(tb.Window):
         self.btn_play.config(text=lang_map["回放"] + f" ({self.hotkey_map['play']})")
         self.tiny_mode_btn.config(text=lang_map["TinyMode"])
         self.about_btn.config(text=lang_map["關於"])
-        # 補齊其它label（建議根據2.2beta補齊）
-        # 例如下方這些（如有對應元件）：
-        # self.lbl_speed.config(text=lang_map["回放速度:"] if "回放速度:" in lang_map else "回放速度:")
-        # self.lbl_repeat.config(text=lang_map["重複次數:"])
-        # self.lbl_times.config(text=lang_map["次"])
-        # self.lbl_interval.config(text=lang_map["重複時間"])
-        # self.lbl_script.config(text=lang_map["Script:"])
-        # self.btn_rename.config(text=lang_map["重新命名"])
-        # self.btn_merge.config(text=lang_map["Script"])
-        # self.language_combo.config(values=list(LANG_MAP.keys()))
         self.update_speed_tooltip()
-        # 只換前綴，保留原本時間格式
         self.total_time_label.config(text=f"{lang_map['總運作']}: 00:00:00")
         self.countdown_label.config(text=f"{lang_map['單次']}: 00:00:00")
         self.time_label.config(text=f"{lang_map['錄製']}: 00:00:00")
@@ -274,7 +259,6 @@ class RecorderApp(tb.Window):
         self.update_idletasks()
 
     def update_speed_tooltip(self):
-        # 根據語言切換 Tooltip 內容
         lang = self.language_var.get()
         tips = {
             "繁體中文": "正常速度1倍=100,範圍1~1000",
@@ -285,7 +269,6 @@ class RecorderApp(tb.Window):
         if hasattr(self, "speed_tooltip") and self.speed_tooltip:
             self.speed_tooltip.text = tip_text
 
-    # ...existing code...
 
     def __init__(self):
         self.user_config = load_user_config()
@@ -303,7 +286,7 @@ class RecorderApp(tb.Window):
         self.style.configure("My.TCheckbutton", font=("Microsoft JhengHei", 9))
         self.style.configure("TinyBold.TButton", font=("Microsoft JhengHei", 9, "bold"))
 
-        self.title("ChroLens_Mimic_2.3")
+        self.title("ChroLens_Mimic_2.2")
         try:
             import sys, os
             if getattr(sys, 'frozen', False):
@@ -320,7 +303,7 @@ class RecorderApp(tb.Window):
         Tooltip(self.icon_tip_label, f"{self.title()}_By_Lucien")
 
         self.geometry("900x550")
-        self.resizable(False, False)
+        self.resizable(True, True)
         self.recording = False
         self.playing = False
         self.paused = False
