@@ -209,7 +209,25 @@ class Tooltip:
 
 class RecorderApp(tb.Window):
 
-    # ...existing code...
+    def _parse_time_to_seconds(self, t):
+        """將 00:00:00 或 00:00 格式字串轉為秒數"""
+        if not t or not isinstance(t, str):
+            return 0
+        parts = t.strip().split(":")
+        try:
+            if len(parts) == 3:
+                h, m, s = map(int, parts)
+                return h * 3600 + m * 60 + s
+            elif len(parts) == 2:
+                m, s = map(int, parts)
+                return m * 60 + s
+            elif len(parts) == 1:
+                return int(parts[0])
+        except Exception:
+            return 0
+        return 0
+
+    # ...其餘程式碼...
 
     def show_about_dialog(self):
         about_win = tb.Toplevel(self)
@@ -816,7 +834,7 @@ class RecorderApp(tb.Window):
 
     def load_script(self):
         from tkinter import filedialog
-        path = filedialog.askopenfilename(filetypes=[("JSON files", "*.json")], initialdir=SCRIPTS_DIR)
+        path = filedialog.askopenfilename(filetypes=[("JSON files", "*.json")], initialdir=self.script_dir)
         if path:
             with open(path, "r", encoding="utf-8") as f:
                 self.events = json.load(f)
@@ -829,7 +847,7 @@ class RecorderApp(tb.Window):
     def on_script_selected(self, event=None):
         script = self.script_var.get()
         if script:
-            path = os.path.join(SCRIPTS_DIR, script)
+            path = os.path.join(self.script_dir, script)  # 修正這裡
             with open(path, "r", encoding="utf-8") as f:
                 self.events = json.load(f)
             self.log(f"[{format_time(time.time())}] 腳本已載入：{script}，共 {len(self.events)} 筆事件。")
@@ -849,16 +867,16 @@ class RecorderApp(tb.Window):
     def refresh_script_list(self):
         files = [f for f in os.listdir(self.script_dir) if f.endswith('.json')]
         self.script_combo['values'] = files
-        # 若目前選擇的腳本不存在於新資料夾，清空選擇
-        if self.script_var.get() not in files:
-            self.script_var.set("")
+        # 若目前選擇的腳本不存在於新資料夾，不自動清空，讓用戶自己決定
+        # if self.script_var.get() not in files:
+        #     self.script_var.set("")
 
     def load_last_script(self):
         if os.path.exists(LAST_SCRIPT_FILE):
             with open(LAST_SCRIPT_FILE, "r", encoding="utf-8") as f:
                 last_script = f.read().strip()
             if last_script:
-                script_path = os.path.join(SCRIPTS_DIR, last_script)
+                script_path = os.path.join(self.script_dir, last_script)  # 修正
                 if os.path.exists(script_path):
                     with open(script_path, "r", encoding="utf-8") as f:
                         self.events = json.load(f)
@@ -882,8 +900,8 @@ class RecorderApp(tb.Window):
             return
         if not new_name.endswith('.json'):
             new_name += '.json'
-        old_path = os.path.join(SCRIPTS_DIR, old_name)
-        new_path = os.path.join(SCRIPTS_DIR, new_name)
+        old_path = os.path.join(self.script_dir, old_name)  # 修正
+        new_path = os.path.join(self.script_dir, new_name)  # 修正
         if os.path.exists(new_path):
             self.log(f"[{format_time(time.time())}] 檔案已存在，請換個名稱。")
             return
@@ -899,7 +917,7 @@ class RecorderApp(tb.Window):
         self.rename_var.set("")  # 更名後清空輸入框
 
     def open_scripts_dir(self):
-        path = os.path.abspath(SCRIPTS_DIR)
+        path = os.path.abspath(self.script_dir)  # 修正
         os.startfile(path)
 
     def open_hotkey_settings(self):
