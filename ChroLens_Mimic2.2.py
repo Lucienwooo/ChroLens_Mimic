@@ -270,9 +270,10 @@ class RecorderApp(tb.Window):
         self.tiny_mode_btn.config(text=lang_map["TinyMode"])
         self.about_btn.config(text=lang_map["關於"])
         self.update_speed_tooltip()
-        self.total_time_label.config(text=f"{lang_map['總運作']}: 00:00:00")
-        self.countdown_label.config(text=f"{lang_map['單次']}: 00:00:00")
-        self.time_label.config(text=f"{lang_map['錄製']}: 00:00:00")
+        # 預設灰色
+        self.total_time_label_time.config(text="00:00:00", foreground="#888888")
+        self.countdown_label_time.config(text="00:00:00", foreground="#888888")
+        self.time_label_time.config(text="00:00:00", foreground="#888888")
         self.save_config()
         self.update_idletasks()
 
@@ -286,7 +287,13 @@ class RecorderApp(tb.Window):
         tip_text = tips.get(lang, tips["繁體中文"])
         if hasattr(self, "speed_tooltip") and self.speed_tooltip:
             self.speed_tooltip.text = tip_text
-
+        # 額外更新顯示倍率
+        try:
+            speed_val = int(self.speed_var.get())
+            ratio = speed_val / 100.0
+            self.lbl_speed.config(text=f"回放速度: {ratio:.2f}:{speed_val}")
+        except:
+            self.lbl_speed.config(text="回放速度:")
 
     def __init__(self):
         self.user_config = load_user_config()
@@ -379,7 +386,7 @@ class RecorderApp(tb.Window):
         self.lbl_speed.grid(row=0, column=0, padx=(0,2))
         self.speed_tooltip = Tooltip(self.lbl_speed, "正常速度1倍=100,範圍1~1000")
         self.update_speed_tooltip()
-        self.speed_var = tk.StringVar(value=self.user_config.get("speed", "1.0"))
+        self.speed_var = tk.StringVar(value=self.user_config.get("speed", "100"))  # 預設100
         tb.Entry(frm_bottom, textvariable=self.speed_var, width=6, style="My.TEntry").grid(row=0, column=1, padx=2)
         tb.Button(frm_bottom, text="腳本路徑", command=self.use_default_script_dir, bootstyle=SECONDARY, width=10, style="My.TButton").grid(row=0, column=3, padx=4)
         tb.Button(frm_bottom, text="快捷鍵", command=self.open_hotkey_settings, bootstyle=SECONDARY, width=10, style="My.TButton").grid(row=0, column=4, padx=4)
@@ -454,12 +461,24 @@ class RecorderApp(tb.Window):
             foreground="#668B9B"
         )
         self.mouse_pos_label.pack(side="left", padx=8)
-        self.time_label = tb.Label(log_title_frame, text="錄製: 00:00.0", font=("Consolas", 12, ), foreground="#15D3BD")
-        self.time_label.pack(side="right", padx=8)
-        self.countdown_label = tb.Label(log_title_frame, text="單次: 00:00.0", font=("Consolas", 12, ), foreground="#DB0E59")
-        self.countdown_label.pack(side="right", padx=8)
-        self.total_time_label = tb.Label(log_title_frame, text="總共: 00:00.0", font=("Consolas", 12, ), foreground="#FF95CA")
-        self.total_time_label.pack(side="right", padx=8)
+
+        # 錄製時間
+        self.time_label_time = tb.Label(log_title_frame, text="00:00:00", font=("Consolas", 12), foreground="#888888")
+        self.time_label_time.pack(side="right", padx=0)
+        self.time_label_prefix = tb.Label(log_title_frame, text="錄製: ", font=("Consolas", 12), foreground="#15D3BD")
+        self.time_label_prefix.pack(side="right", padx=0)
+
+        # 單次剩餘
+        self.countdown_label_time = tb.Label(log_title_frame, text="00:00:00", font=("Consolas", 12), foreground="#888888")
+        self.countdown_label_time.pack(side="right", padx=0)
+        self.countdown_label_prefix = tb.Label(log_title_frame, text="單次: ", font=("Consolas", 12), foreground="#DB0E59")
+        self.countdown_label_prefix.pack(side="right", padx=0)
+
+        # 總運作
+        self.total_time_label_time = tb.Label(log_title_frame, text="00:00:00", font=("Consolas", 12), foreground="#888888")
+        self.total_time_label_time.pack(side="right", padx=0)
+        self.total_time_label_prefix = tb.Label(log_title_frame, text="總運作: ", font=("Consolas", 12), foreground="#FF95CA")
+        self.total_time_label_prefix.pack(side="right", padx=0)
 
         self.log_text = tb.Text(frm_log, height=24, width=110, state="disabled", font=("Microsoft JhengHei", 9))
         self.log_text.pack(fill="both", expand=True, pady=(4,0))
@@ -503,7 +522,70 @@ class RecorderApp(tb.Window):
         h = int(seconds // 3600)
         m = int((seconds % 3600) // 60)
         s = int(seconds % 60)
-        self.time_label.config(text=f"錄製: {h:02d}:{m:02d}:{s:02d}")
+        time_str = f"{h:02d}:{m:02d}:{s:02d}"
+        if time_str == "00:00:00":
+            self.time_label_time.config(text=time_str, foreground="#888888")
+        else:
+            # 前導零灰色，非零部分有顏色
+            colored = []
+            for idx, part in enumerate(time_str.split(":")):
+                if part == "00" and idx < 2:
+                    colored.append(("#888888", part))
+                else:
+                    colored.append(("#15D3BD", part))
+            # 組合顯示
+            self.time_label_time.config(
+                text=":".join([p[1] for p in colored]),
+                foreground=colored[-1][0]  # 只會有一種顏色，因為 Label 只能一色
+            )
+            # 但因為 Label 只能一色，建議只讓最後一段有顏色，其餘灰色
+            # 若要每段不同色，需用 Text 或 Canvas
+
+    def update_total_time_label(self, seconds):
+        h = int(seconds // 3600)
+        m = int((seconds % 3600) // 60)
+        s = int(seconds % 60)
+        time_str = f"{h:02d}:{m:02d}:{s:02d}"
+        if time_str == "00:00:00":
+            self.total_time_label_time.config(text=time_str, foreground="#888888")
+        else:
+            # 只讓最後一段有顏色
+            self.total_time_label_time.config(text=time_str, foreground="#FF95CA")
+
+    def update_countdown_label(self, seconds):
+        h = int(seconds // 3600)
+        m = int((seconds % 3600) // 60)
+        s = int(seconds % 60)
+        time_str = f"{h:02d}:{m:02d}:{s:02d}"
+        if time_str == "00:00:00":
+            self.countdown_label_time.config(text=time_str, foreground="#888888")
+        else:
+            self.countdown_label_time.config(text=time_str, foreground="#DB0E59")
+
+    def _update_play_time(self):
+        if self.playing:
+            idx = getattr(self, "_current_play_index", 0)
+            if idx == 0:
+                elapsed = 0
+            else:
+                elapsed = self.events[idx-1]['time'] - self.events[0]['time']
+            self.update_time_label(elapsed)
+            # 單次剩餘
+            total = self.events[-1]['time'] - self.events[0]['time'] if self.events else 0
+            remain = max(0, total - elapsed)
+            self.update_countdown_label(remain)
+            # 倒數顯示
+            if hasattr(self, "_play_start_time"):
+                if self._repeat_time_limit:
+                    total_remain = max(0, self._repeat_time_limit - (time.time() - self._play_start_time))
+                else:
+                    total_remain = max(0, self._total_play_time - (time.time() - self._play_start_time))
+                self.update_total_time_label(total_remain)
+            self.after(100, self._update_play_time)
+        else:
+            self.update_time_label(0)
+            self.update_countdown_label(0)
+            self.update_total_time_label(0)
 
     def start_record(self):
         if self.recording:
@@ -634,6 +716,12 @@ class RecorderApp(tb.Window):
             self.log(f"[{format_time(time.time())}] 停止回放。")
         if not stopped:
             self.log(f"[{format_time(time.time())}] 無進行中動作可停止。")
+        # 立即刷新顯示
+        self.update_time_label(0)
+        self.update_countdown_label(0)
+        self.update_total_time_label(0)
+        self._update_play_time()
+        self._update_record_time()
 
     def _wait_record_thread_finish(self):
         if hasattr(self, '_record_thread_handle') and self._record_thread_handle.is_alive():
@@ -650,9 +738,16 @@ class RecorderApp(tb.Window):
             self.log("沒有可回放的事件，請先錄製或載入腳本。")
             return
         try:
-            self.speed = float(self.speed_var.get())
+            speed_val = int(self.speed_var.get())
+            if speed_val < 1:
+                speed_val = 1
+            elif speed_val > 1000:
+                speed_val = 1000
+            self.speed_var.set(str(speed_val))  # 修正顯示
+            self.speed = speed_val / 100.0
         except:
             self.speed = 1.0
+            self.speed_var.set("100")
 
         # 取得重複時間（秒）
         repeat_time_sec = self._parse_time_to_seconds(self.repeat_time_var.get())
@@ -680,7 +775,7 @@ class RecorderApp(tb.Window):
         self._play_start_time = time.time()
         self._play_total_time = self._total_play_time
         self.update_total_time_label(self._total_play_time)
-        self.log(f"[{format_time(time.time())}] 開始回放，速度倍率: {self.speed}")
+        self.log(f"[{format_time(time.time())}] 開始回放，速度倍率: {self.speed:.2f}: {self.speed_var.get()}")
         self.playing = True
         self.paused = False
         self._repeat_times = repeat
@@ -698,10 +793,7 @@ class RecorderApp(tb.Window):
             # 單次剩餘
             total = self.events[-1]['time'] - self.events[0]['time'] if self.events else 0
             remain = max(0, total - elapsed)
-            h = int(remain // 3600)
-            m = int((remain % 3600) // 60)
-            s = int(remain % 60)
-            self.countdown_label.config(text=f"單次: {h:02d}:{m:02d}:{s:02d}")
+            self.update_countdown_label(remain)
             # 倒數顯示
             if hasattr(self, "_play_start_time"):
                 if self._repeat_time_limit:
@@ -712,14 +804,8 @@ class RecorderApp(tb.Window):
             self.after(100, self._update_play_time)
         else:
             self.update_time_label(0)
-            self.countdown_label.config(text="單次: 00:00:00")
+            self.update_countdown_label(0)
             self.update_total_time_label(0)
-
-    def update_total_time_label(self, seconds):
-        h = int(seconds // 3600)
-        m = int((seconds % 3600) // 60)
-        s = int(seconds % 60)
-        self.total_time_label.config(text=f"總運作: {h:02d}:{m:02d}:{s:02d}")
 
     def _play_thread(self):
         self.playing = True
@@ -847,7 +933,7 @@ class RecorderApp(tb.Window):
     def on_script_selected(self, event=None):
         script = self.script_var.get()
         if script:
-            path = os.path.join(self.script_dir, script)  # 修正這裡
+            path = os.path.join(self.script_dir, script)
             with open(path, "r", encoding="utf-8") as f:
                 self.events = json.load(f)
             self.log(f"[{format_time(time.time())}] 腳本已載入：{script}，共 {len(self.events)} 筆事件。")
@@ -856,12 +942,9 @@ class RecorderApp(tb.Window):
             # 讀取腳本後，顯示單次腳本時間
             if self.events:
                 total = self.events[-1]['time'] - self.events[0]['time']
-                h = int(total // 3600)
-                m = int((total % 3600) // 60)
-                s = int(total % 60)
-                self.countdown_label.config(text=f"單次: {h:02d}:{m:02d}:{s:02d}")
+                self.update_countdown_label(total)
             else:
-                self.countdown_label.config(text="單次: 00:00:00")
+                self.update_countdown_label(0)
         self.save_config()
 
     def refresh_script_list(self):
@@ -995,22 +1078,29 @@ class RecorderApp(tb.Window):
     # 不再需要 _make_hotkey_entry_handler
 
     def _register_hotkeys(self):
+        import keyboard
         for handler in self._hotkey_handlers.values():
             try:
                 keyboard.remove_hotkey(handler)
-            except Exception:
-                pass
+            except Exception as ex:
+                self.log(f"移除快捷鍵時發生錯誤: {ex}")
         self._hotkey_handlers.clear()
         for key, hotkey in self.hotkey_map.items():
             try:
-                handler = keyboard.add_hotkey(hotkey, getattr(self, {
-                    "start": "start_record",
-                    "pause": "toggle_pause",
-                    "stop": "stop_all",
-                    "play": "play_record",
-                    "tiny": "toggle_tiny_mode"  # <--- 加這行
-                }[key]))
+                handler = keyboard.add_hotkey(
+                    hotkey,
+                    getattr(self, {
+                        "start": "start_record",
+                        "pause": "toggle_pause",
+                        "stop": "stop_all",
+                        "play": "play_record",
+                        "tiny": "toggle_tiny_mode"
+                    }[key]),
+                    suppress=False,  # 不攔截原本的功能
+                    trigger_on_release=False
+                )
                 self._hotkey_handlers[key] = handler
+                self.log(f"已註冊快捷鍵: {hotkey} → {key}")
             except Exception as ex:
                 self.log(f"快捷鍵 {hotkey} 註冊失敗: {ex}")
 
@@ -1110,7 +1200,7 @@ def load_user_config():
         "skin": "darkly",
         "last_script": "",
         "repeat": "1",
-        "speed": "1.0",
+        "speed": "100",  # 預設100
         "script_dir": SCRIPTS_DIR
     }
 
