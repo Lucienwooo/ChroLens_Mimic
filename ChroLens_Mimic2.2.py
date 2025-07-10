@@ -14,7 +14,7 @@ import sys
 # row 0 (frm_top):開始錄製（btn_start）、暫停/繼續（btn_pause）、停止（btn_stop）、回放（btn_play）、TinyMode（tiny_mode_btn）、skin下拉選單（theme_combo）、關於（about_btn）
 # row 1 (frm_bottom):回放速度（speed_var 輸入框）、腳本路徑（open_scripts_dir 按鈕）、快捷鍵（open_hotkey_settings 按鈕）、關於（about_btn）
 # row 2 (frm_repeat):重複次數（repeat_var 輸入框）、單位「次」
-# row 3 (frm_script):腳本選單（script_combo）、腳本重新命名輸入框（rename_entry）、修改腳本名稱（rename_script 按鈕）
+# row 3 (frm_script):腳本選單（script_combo）、腳本重新命名輸入框（rename_entry）、Rename（rename_script 按鈕）
 # row 4 (frm_log):滑鼠座標（mouse_pos_label）、錄製時間（time_label）、單次剩餘（countdown_label）、總運作時間（total_time_label）
 # 下方為日誌顯示區（log_text）
 
@@ -269,7 +269,27 @@ class RecorderApp(tb.Window):
         self.btn_play.config(text=lang_map["回放"] + f" ({self.hotkey_map['play']})")
         self.tiny_mode_btn.config(text=lang_map["TinyMode"])
         self.about_btn.config(text=lang_map["關於"])
-        self.update_speed_tooltip()
+        self.lbl_speed.config(text=lang_map["回放速度:"])
+        # 新增：腳本路徑、快捷鍵按鈕
+        self.btn_scripts_dir.config(text=lang_map["Script路徑"])
+        self.btn_hotkey.config(text=lang_map["快捷鍵"])
+        # 重複次數
+        for child in self.children.values():
+            if isinstance(child, tb.Frame):
+                for widget in child.winfo_children():
+                    if isinstance(widget, tb.Label):
+                        if widget.cget("text") in ["重複次數:", "繰り返し回数:", "Repeat Count:"]:
+                            widget.config(text=lang_map["重複次數:"])
+                        elif widget.cget("text") in ["次", "回", "times"]:
+                            widget.config(text=lang_map["次"])
+                        elif widget.cget("text") in ["重複時間", "繰り返し間隔", "Repeat Interval"]:
+                            widget.config(text=lang_map["重複時間"])
+                        elif widget.cget("text") in ["腳本選單:", "Script:"]:
+                            widget.config(text=lang_map["Script:"])
+        # 新增：總運作、單次、錄製
+        self.total_time_label_prefix.config(text=lang_map["總運作"])
+        self.countdown_label_prefix.config(text=lang_map["單次"])
+        self.time_label_prefix.config(text=lang_map["錄製"])
         # 預設灰色
         self.total_time_label_time.config(text="00:00:00", foreground="#888888")
         self.countdown_label_time.config(text="00:00:00", foreground="#888888")
@@ -353,11 +373,11 @@ class RecorderApp(tb.Window):
         }
 
         # ====== 上方操作區 ======
-        frm_top = tb.Frame(self, padding=(10, 10, 10, 5))
+        frm_top = tb.Frame(self, padding=(8, 10, 8, 5))
         frm_top.pack(fill="x")
 
         self.btn_start = tb.Button(frm_top, text=f"開始錄製 ({self.hotkey_map['start']})", command=self.start_record, bootstyle=PRIMARY, width=14, style="My.TButton")
-        self.btn_start.grid(row=0, column=0, padx=4)
+        self.btn_start.grid(row=0, column=0, padx=(0, 4))
         self.btn_pause = tb.Button(frm_top, text=f"暫停/繼續 ({self.hotkey_map['pause']})", command=self.toggle_pause, bootstyle=INFO, width=14, style="My.TButton")
         self.btn_pause.grid(row=0, column=1, padx=4)
         self.btn_stop = tb.Button(frm_top, text=f"停止 ({self.hotkey_map['stop']})", command=self.stop_all, bootstyle=WARNING, width=14, style="My.TButton")
@@ -369,7 +389,7 @@ class RecorderApp(tb.Window):
         themes = ["darkly", "cyborg", "superhero", "journal","minty", "united", "morph", "lumen"]
         self.theme_var = tk.StringVar(value=self.style.theme_use())
         theme_combo = tb.Combobox(frm_top, textvariable=self.theme_var, values=themes, state="readonly", width=6, style="My.TCombobox")
-        theme_combo.grid(row=0, column=8, padx=(0, 4), sticky="e")
+        theme_combo.grid(row=0, column=8, padx=(4, 8), sticky="e")
         theme_combo.bind("<<ComboboxSelected>>", lambda e: self.change_theme())
 
         # TinyMode 按鈕（skin下拉選單左側）
@@ -377,44 +397,46 @@ class RecorderApp(tb.Window):
             frm_top, text="TinyMode", style="My.TButton",
             command=self.toggle_tiny_mode, width=10
         )
-        self.tiny_mode_btn.grid(row=0, column=7, padx=(0, 4), sticky="e")
+        self.tiny_mode_btn.grid(row=0, column=7, padx=4)
 
         # ====== 下方操作區 ======
-        frm_bottom = tb.Frame(self, padding=(10, 0, 10, 5))
+        frm_bottom = tb.Frame(self, padding=(8, 0, 8, 5))
         frm_bottom.pack(fill="x")
         self.lbl_speed = tb.Label(frm_bottom, text="回放速度:", style="My.TLabel")
-        self.lbl_speed.grid(row=0, column=0, padx=(0,2))
+        self.lbl_speed.grid(row=0, column=0, padx=(0, 6))
         self.speed_tooltip = Tooltip(self.lbl_speed, "正常速度1倍=100,範圍1~1000")
         self.update_speed_tooltip()
         self.speed_var = tk.StringVar(value=self.user_config.get("speed", "100"))  # 預設100
-        tb.Entry(frm_bottom, textvariable=self.speed_var, width=6, style="My.TEntry").grid(row=0, column=1, padx=2)
-        tb.Button(frm_bottom, text="腳本路徑", command=self.use_default_script_dir, bootstyle=SECONDARY, width=10, style="My.TButton").grid(row=0, column=3, padx=4)
-        tb.Button(frm_bottom, text="快捷鍵", command=self.open_hotkey_settings, bootstyle=SECONDARY, width=10, style="My.TButton").grid(row=0, column=4, padx=4)
+        tb.Entry(frm_bottom, textvariable=self.speed_var, width=6, style="My.TEntry").grid(row=0, column=1, padx=6)
+        self.btn_scripts_dir = tb.Button(frm_bottom, text="腳本路徑", command=self.use_default_script_dir, bootstyle=SECONDARY, width=10, style="My.TButton")
+        self.btn_scripts_dir.grid(row=0, column=3, padx=6)
+        self.btn_hotkey = tb.Button(frm_bottom, text="快捷鍵", command=self.open_hotkey_settings, bootstyle=SECONDARY, width=10, style="My.TButton")
+        self.btn_hotkey.grid(row=0, column=4, padx=6)
         self.about_btn = tb.Button(
             frm_bottom, text="關於", width=6, style="My.TButton",
             command=self.show_about_dialog, bootstyle=SECONDARY
         )
-        self.about_btn.grid(row=0, column=5, padx=(0, 2), sticky="e")
+        self.about_btn.grid(row=0, column=5, padx=6, sticky="e")
         # 語言下拉選單
         lang_combo = tb.Combobox(frm_bottom, textvariable=self.language_var, values=list(LANG_MAP.keys()), state="readonly", width=10, style="My.TCombobox")
-        lang_combo.grid(row=0, column=6, padx=(0, 2), sticky="e")
+        lang_combo.grid(row=0, column=6, padx=(6, 8), sticky="e")
         lang_combo.bind("<<ComboboxSelected>>", self.change_language)
         self.language_combo = lang_combo
 
         # ====== 重複次數設定 ======
         self.repeat_var = tk.StringVar(value=self.user_config.get("repeat", "1"))
-        frm_repeat = tb.Frame(self, padding=(10, 0, 10, 5))
+        frm_repeat = tb.Frame(self, padding=(8, 0, 8, 5))
         frm_repeat.pack(fill="x")
-        tb.Label(frm_repeat, text="重複次數:", style="My.TLabel").grid(row=0, column=0, padx=(0,2))
+        tb.Label(frm_repeat, text="重複次數:", style="My.TLabel").grid(row=0, column=0, padx=(0, 2))
         self.repeat_var = tk.StringVar(value=self.user_config.get("repeat", "1"))
         tb.Entry(frm_repeat, textvariable=self.repeat_var, width=6, style="My.TEntry").grid(row=0, column=1, padx=2)
-        tb.Label(frm_repeat, text="次", style="My.TLabel").grid(row=0, column=2, padx=(0,2))
+        tb.Label(frm_repeat, text="次", style="My.TLabel").grid(row=0, column=2, padx=(0, 2))
 
         # 新增重複時間欄位
         self.repeat_time_var = tk.StringVar(value="00:00:00")
         repeat_time_entry = tb.Entry(frm_repeat, textvariable=self.repeat_time_var, width=10, style="My.TEntry", justify="center")
-        repeat_time_entry.grid(row=0, column=3, padx=(10,2))
-        tb.Label(frm_repeat, text="重複時間", style="My.TLabel").grid(row=0, column=4, padx=(0,2))
+        repeat_time_entry.grid(row=0, column=3, padx=(10, 2))
+        tb.Label(frm_repeat, text="重複時間", style="My.TLabel").grid(row=0, column=4, padx=(0, 2))
 
         # 只允許輸入數字與冒號
         def validate_time_input(P):
@@ -435,16 +457,16 @@ class RecorderApp(tb.Window):
         self.repeat_time_var.trace_add("write", on_repeat_time_change)
 
         # ====== 腳本選單區 ======
-        frm_script = tb.Frame(self, padding=(10, 0, 10, 5))
+        frm_script = tb.Frame(self, padding=(8, 0, 8, 5))
         frm_script.pack(fill="x")
-        tb.Label(frm_script, text="腳本選單:", style="My.TLabel").grid(row=0, column=0, sticky="w")
+        tb.Label(frm_script, text="腳本選單:", style="My.TLabel").grid(row=0, column=0, sticky="w", padx=(0, 2))
         self.script_var = tk.StringVar(value=self.user_config.get("last_script", ""))
         self.script_combo = tb.Combobox(frm_script, textvariable=self.script_var, width=30, state="readonly", style="My.TCombobox")
         self.script_combo.grid(row=0, column=1, sticky="w", padx=4)
         self.rename_var = tk.StringVar()
         self.rename_entry = tb.Entry(frm_script, textvariable=self.rename_var, width=20, style="My.TEntry")
         self.rename_entry.grid(row=0, column=2, padx=4)
-        tb.Button(frm_script, text="修改腳本名稱", command=self.rename_script, bootstyle=WARNING, width=12, style="My.TButton").grid(row=0, column=3, padx=4)
+        tb.Button(frm_script, text="Rename", command=self.rename_script, bootstyle=WARNING, width=12, style="My.TButton").grid(row=0, column=3, padx=4)
 
         self.script_combo.bind("<<ComboboxSelected>>", self.on_script_selected)
 
@@ -609,11 +631,25 @@ class RecorderApp(tb.Window):
             self.update_time_label(0)
 
     def toggle_pause(self):
-        if self.recording or self.playing:
+        if self.recording:
             self.paused = not self.paused
             state = "暫停" if self.paused else "繼續"
-            mode = "錄製" if self.recording else "回放"
+            mode = "錄製"
             self.log(f"[{format_time(time.time())}] {mode}{state}。")
+            if self.paused:
+                # 暫停時停止 keyboard 錄製，暫存事件
+                import keyboard
+                if hasattr(self, "_keyboard_recording"):
+                    k_events = keyboard.stop_recording()
+                    if not hasattr(self, "_paused_k_events"):
+                        self._paused_k_events = []
+                    self._paused_k_events += k_events
+                    self._keyboard_recording = False
+            else:
+                # 繼續時重新開始 keyboard 錄製
+                import keyboard
+                keyboard.start_recording()
+                self._keyboard_recording = True
 
     def _record_thread(self):
         import keyboard
@@ -622,9 +658,11 @@ class RecorderApp(tb.Window):
             self._mouse_events = []
             self._recording_mouse = True
             self._record_start_time = time.time()
+            self._paused_k_events = []
 
             # 先啟動 keyboard 與 mouse 監聽
             keyboard.start_recording()
+            self._keyboard_recording = True
 
             mouse_ctrl = Controller()
             last_pos = mouse_ctrl.position
@@ -669,7 +707,7 @@ class RecorderApp(tb.Window):
             while self.recording:
                 now = time.time()
                 pos = mouse_ctrl.position
-                if pos != last_pos:
+                if pos != last_pos and not self.paused:
                     self._mouse_events.append({
                         'type': 'mouse',
                         'event': 'move',
@@ -681,10 +719,18 @@ class RecorderApp(tb.Window):
                 time.sleep(MOUSE_SAMPLE_INTERVAL)
             self._recording_mouse = False
             mouse_listener.stop()
-            k_events = keyboard.stop_recording()
+            # 收集最後一段 keyboard 事件
+            if hasattr(self, "_keyboard_recording") and self._keyboard_recording:
+                k_events = keyboard.stop_recording()
+            else:
+                k_events = []
+            all_k_events = []
+            if hasattr(self, "_paused_k_events"):
+                all_k_events += self._paused_k_events
+            all_k_events += k_events
 
             filtered_k_events = [
-                e for e in k_events
+                e for e in all_k_events
                 if not (e.name == 'f10' and e.event_type in ('down', 'up'))
             ]
             self.events = sorted(
@@ -1006,7 +1052,7 @@ class RecorderApp(tb.Window):
     def open_hotkey_settings(self):
         win = tb.Toplevel(self)
         win.title("快捷鍵設定")
-        win.geometry("340x280")
+        win.geometry("340x340")
         win.resizable(False, False)
 
         labels = {
