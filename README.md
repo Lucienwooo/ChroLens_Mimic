@@ -28,24 +28,28 @@
 
 👉如果你有任何問題、想法或建議，請加入我的 [Discord ChroLens](https://discord.gg/72Kbs4WPPn)
 
-![ChroLens_Mimic](./clm2.2jp.png)
-## 機能紹介：
-1.  **マクロ記録ツール**：キーボードとマウスのすべての操作を記録し、マクロとして保存できます。
-2.  **繰り返し回数または指定された時間範囲で繰り返しを設定**。
-3.  **ホットキー、スクリプト名、スキンをカスタマイズ可能**。
+---
 
-### シナリオ例：
-1.  複数のExcelシートの内容をコピーしてデータベースに貼り付け。
-2.  マウスを左右に動かして、PCがスタンバイまたはログイン画面に入るのを防ぐ。
-3.  ゲームの繰り返し操作：定点採集 / 簡単な左右移動 / スキル連発。
+![ChroLens_Mimic](./clm2.2jp.png)
+## 🇯🇵 日本語の紹介
+
+**ChroLens_Mimic** は、Windows 上のマウス・キーボードの操作を滑らかかつシンプルに記録・再生できる **“マクロ録画＆再生ツール”** です。  
+**TinyTask** や **AutoHotkey（AHK）のレコーディング機能** に似た使いやすさを目指していて、プログラミング不要で、単純な繰り返し作業から軽度の自動化まで幅広く活用できます。
+
+特にゲーマーの定番である TinyTask の直感的な操作性や、AHK のようにホットキーだけで起動・停止できる便利さが、ChroLens_Mimic の強みです。  
+使い方は録画開始（Record）→停止（Stop）→再生（Play）、繰り返し指定、ホットキー設定も可能。
+
+GitHub にて v2.2 を公開中。詳細やダウンロード、質問はこちらのリポジトリを参照してください。
+
+---
 
 ![ChroLens_Mimic](./clm2.2en.png)
-## Features:
-1.  **Macro Recording Tool**: Records all keyboard and mouse operations and saves them as macros.
-2.  **Set repetitions by count or within a specified time range**.
-3.  **Customizable hotkeys, script names, and skins**.
+## 🇺🇸 English Introduction
 
-### Use Cases:
-1.  Copying content from multiple Excel sheets and pasting it into a database.
-2.  Moving the mouse left and right to prevent the computer from entering standby or the login screen.
-3.  Repetitive in-game actions: fixed-point gathering / simple left-right movement / repeated skill casting.
+**ChroLens_Mimic** is a lightweight macro recorder for Windows that lets you record and replay mouse and keyboard actions—much like **TinyTask** or AutoHotkey’s built-in macro recorder.  
+Aimed at users who want no‑code automation, ChroLens_Mimic combines TinyTask’s simplicity (just record → stop → play) with AutoHotkey’s hotkey‑based control.
+
+You can loop playback, assign hotkeys, and save your macros for everyday automation tasks—whether for work or casual use.  
+If you're familiar with TinyTask’s one‑click simplicity or AHK’s scripting flexibility, you'll find ChroLens_Mimic a natural fit for reducing repetitive tasks.
+
+Check out the GitHub repository (v2.2 available) for download, documentation, and support.
