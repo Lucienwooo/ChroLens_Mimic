@@ -86,18 +86,12 @@ LANG_MAP = {
         "新Script名稱：": "新Script名稱：",
         "確定": "確定",
         "所有Script": "所有Script",
-        "合併清單（可拖曳排序，點擊次數可編輯）": "合併清單（可拖曳排序，點擊次數可編輯）",
         "清空": "清空",
         "加入": "加入",
         "移除": "移除",
-        "Script工具": "Script工具",
         "延遲秒數:": "遲延秒數:",
         "Language": "Language",
         "回放速度:": "回放速度:",
-        "目前Script": "目前Script",
-        "選擇合併Script": "選擇合併Script",
-        "目前Script在前": "目前Script在前",
-        "合併Script在前": "合併Script在前",
         "總運作": "總運作",
         "單次": "單次",
         "錄製": "錄製",
@@ -122,19 +116,9 @@ LANG_MAP = {
         "所有Script": "全Script",
         "新Script名稱：": "新しいScript名：",
         "確定": "決定",
-        "所有Script": "全Script",
-        "合併清單（可拖曳排序，點擊次數可編輯）": "結合リスト（ドラッグで並べ替え、ダブルクリックで編集）",
-        "清空": "クリア",
-        "加入": "追加",
-        "移除": "削除",
-        "Script工具": "Script結合ツール",
         "延遲秒數:": "遅延秒数:",
         "Language": "言語",
         "回放速度:": "再生速度:",
-        "目前Script": "現在のScript",
-        "選擇合併Script": "結合Script選択",
-        "目前Script在前": "現在のScriptが先",
-        "合併Script在前": "結合Scriptが先",
         "總運作": "総運用",
         "單次": "単回",
         "錄製": "記録",
@@ -155,23 +139,12 @@ LANG_MAP = {
         "Script:": "Script:",
         "重新命名": "Rename",
         "Script": "Script",
-        "合併並儲存": "Merge & Save",
         "所有Script": "All Scripts",
         "新Script名稱：": "New Script Name:",
         "確定": "OK",
-        "所有Script": "All Scripts",
-        "合併清單（可拖曳排序，點擊次數可編輯）": "Merge List (drag to sort, double-click to edit)",
-        "清空": "Clear",
-        "加入": "Add",
-        "移除": "Remove",
-        "Script工具": "Script Merge Tool",
         "延遲秒數:": "Delay (sec):",
         "Language": "Language",
         "回放速度:": "Speed:",
-        "目前Script": "Current Script",
-        "選擇合併Script": "Select Script to Merge",
-        "目前Script在前": "Current Script First",
-        "合併Script在前": "Merge Script First",
         "總運作": "Total",
         "單次": "Single",
         "錄製": "Record",
@@ -318,8 +291,9 @@ class RecorderApp(tb.Window):
     def __init__(self):
         self.user_config = load_user_config()
         skin = self.user_config.get("skin", "darkly")
+        lang = self.user_config.get("language", "繁體中文")
         super().__init__(themename=skin)
-        self.language_var = tk.StringVar(self, value=self.user_config.get("language", "繁體中文"))
+        self.language_var = tk.StringVar(self, value=lang)
         self._hotkey_handlers = {}
         self.tiny_window = None
 
@@ -512,7 +486,8 @@ class RecorderApp(tb.Window):
         self.refresh_script_list()
         if self.script_var.get():
             self.on_script_selected()
-
+        # 語言初始化（確保UI語言正確）
+        self.change_language()
         self.after(1500, self._delayed_init)  
 
     def _delayed_init(self):
@@ -650,6 +625,11 @@ class RecorderApp(tb.Window):
                 import keyboard
                 keyboard.start_recording()
                 self._keyboard_recording = True
+        elif self.playing:
+            self.paused = not self.paused
+            state = "暫停" if self.paused else "繼續"
+            mode = "回放"
+            self.log(f"[{format_time(time.time())}] {mode}{state}。")
 
     def _record_thread(self):
         import keyboard
@@ -1241,13 +1221,14 @@ def load_user_config():
                 return json.load(f)
         except Exception:
             pass
-    # 預設值
+    # 首次開啟才預設繁體中文
     return {
         "skin": "darkly",
         "last_script": "",
         "repeat": "1",
         "speed": "100",  # 預設100
-        "script_dir": SCRIPTS_DIR
+        "script_dir": SCRIPTS_DIR,
+        "language": "繁體中文"
     }
 
 def save_user_config(config):
