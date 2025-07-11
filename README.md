@@ -1,5 +1,4 @@
-[日本語](./README_JA.md) | [English](./README_EN.md)
-![ChroLens_Mimic](./ChroLens_Mimic2.1.png)
+![ChroLens_Mimic](./clm2.2tw.png)
 
 ## 功能介紹：</br>
 1.巨集錄製工具：可以錄製鍵盤和滑鼠的所有操作，並將其儲存為巨集。</br>
@@ -11,21 +10,13 @@
 2.滑鼠左右滑動，預防電腦進入待機或登入畫面</br>
 3.遊戲重複操作：定點採集/簡單左右移動/重複施放技能</br>
 
-### 更新計劃：
-1.加入日文、英文版本
-2025.06.08
-
 ---
 # [ChroLens Project](https://home.gamer.com.tw/artwork.php?sn=6150515)</br>
 ## [ChroLens_Portal](https://github.com/Lucienwooo/ChroLens_Portal)_批次開關分組的檔案、快捷鍵切換複數視窗置頂顯示。</br>
 ## [ChroLens_Mimic](https://github.com/Lucienwooo/ChroLens_Mimic)_巨集錄製工具、鍵鼠模擬、按鍵精靈。</br>
 ## [ChroLens_Clear](https://github.com/Lucienwooo/ChroLens_Clear)_自動關閉複數視窗/程式</br>
 ## [ChroLens_Orbit](https://github.com/Lucienwooo/ChroLens_Orbit)_簡易版工作排程器，支援開啟捷徑.lnk檔案</br>
-
----
-#### 📄 授權資訊 (Licensing) </br>
-
-[LICENSE](LICENSE)
+# [ChroLens_Sothoth](https://github.com/Lucienwooo/ChroLens_Sothoth)_建立在mimic之上，擁有模組化動作編輯以及圖片偵測的自動化工具</br>
 
 ---
 
@@ -37,7 +28,7 @@
 
 👉如果你有任何問題、想法或建議，請加入我的 [Discord ChroLens](https://discord.gg/72Kbs4WPPn)
 
-
+![ChroLens_Mimic](./clm2.2jp.png)
 ## 機能紹介：
 1.  **マクロ記録ツール**：キーボードとマウスのすべての操作を記録し、マクロとして保存できます。
 2.  **繰り返し回数または指定された時間範囲で繰り返しを設定**。
@@ -48,6 +39,7 @@
 2.  マウスを左右に動かして、PCがスタンバイまたはログイン画面に入るのを防ぐ。
 3.  ゲームの繰り返し操作：定点採集 / 簡単な左右移動 / スキル連発。
 
+![ChroLens_Mimic](./clm2.2en.png)
 ## Features:
 1.  **Macro Recording Tool**: Records all keyboard and mouse operations and saves them as macros.
 2.  **Set repetitions by count or within a specified time range**.

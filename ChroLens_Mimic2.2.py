@@ -1,6 +1,5 @@
 #ChroLens Studio - Lucienwooo
 #pyinstaller --noconsole --onedir --icon=觸手眼鏡貓.ico --add-data "觸手眼鏡貓.ico;." ChroLens_Mimic2.2.py
-#--onefile 單一檔案，啟動時間過久，改以"--onedir "方式打包，啟動較快
 import ttkbootstrap as tb
 from ttkbootstrap.constants import *
 import tkinter as tk
@@ -11,11 +10,11 @@ import win32api
 import tkinter.filedialog
 import sys
 # ====== UI 介面 row 對應說明 ======
-# row 0 (frm_top):開始錄製（btn_start）、暫停/繼續（btn_pause）、停止（btn_stop）、回放（btn_play）、TinyMode（tiny_mode_btn）、skin下拉選單（theme_combo）、關於（about_btn）
-# row 1 (frm_bottom):回放速度（speed_var 輸入框）、腳本路徑（open_scripts_dir 按鈕）、快捷鍵（open_hotkey_settings 按鈕）、關於（about_btn）
-# row 2 (frm_repeat):重複次數（repeat_var 輸入框）、單位「次」
-# row 3 (frm_script):腳本選單（script_combo）、腳本重新命名輸入框（rename_entry）、Rename（rename_script 按鈕）
-# row 4 (frm_log):滑鼠座標（mouse_pos_label）、錄製時間（time_label）、單次剩餘（countdown_label）、總運作時間（total_time_label）
+# row 0 (frm_top): 開始錄製（btn_start）、暫停/繼續（btn_pause）、停止（btn_stop）、回放（btn_play）、MiniMode（tiny_mode_btn）、skin下拉選單（theme_combo）
+# row 1 (frm_bottom): 回放速度（lbl_speed, speed_var 輸入框）、腳本路徑（btn_scripts_dir 按鈕）、快捷鍵（btn_hotkey 按鈕）、關於（about_btn）、語言下拉選單（lang_combo）
+# row 2 (frm_repeat): 重複次數（repeat_var 輸入框）、單位「次」、重複時間（repeat_time_var 輸入框）、重複時間標籤
+# row 3 (frm_script): 腳本選單（script_combo）、腳本重新命名輸入框（rename_entry）、Rename（rename_script 按鈕）
+# row 4 (frm_log): 滑鼠座標（mouse_pos_label）、總運作（total_time_label_prefix, total_time_label_time）、單次（countdown_label_prefix, countdown_label_time）、錄製（time_label_prefix, time_label_time）
 # 下方為日誌顯示區（log_text）
 
 # ====== 滑鼠控制函式放在這裡 ======
@@ -71,7 +70,7 @@ LANG_MAP = {
         "暫停/繼續": "暫停/繼續",
         "停止": "停止",
         "回放": "回放",
-        "TinyMode": "TinyMode",
+        "MiniMode": "MiniMode",
         "Script路徑": "Script路徑",
         "快捷鍵": "快捷鍵",
         "關於": "關於",
@@ -98,57 +97,57 @@ LANG_MAP = {
         "刪除": "刪除",
     },
     "日本語": {
-        "開始錄製": "マクロ記録",
-        "暫停/繼續": "一時停止/再開",
+        "開始錄製": "録画開始",
+        "暫停/繼續": "一時停止 / 再開",
         "停止": "停止",
         "回放": "再生",
-        "TinyMode": "Tinyモード",
-        "Script路徑": "Scriptパス",
-        "快捷鍵": "ショートカット",
-        "關於": "情報",
-        "重複次數:": "繰り返し回数:",
+        "MiniMode": "ミニモード",
+        "Script路徑": "Scriptのパス",
+        "快捷鍵": "ホットキー",
+        "關於": "アバウト",
+        "重複次數:": "繰り返し回数：",
         "次": "回",
-        "重複時間": "繰り返し間隔",
-        "Script:": "Script:",
-        "重新命名": "名前変更",
+        "重複時間": "間隔時間",
+        "Script:": "Script：",
+        "重新命名": "名前を変更",
         "Script": "Script",
         "合併並儲存": "結合して保存",
         "所有Script": "全Script",
-        "新Script名稱：": "新しいScript名：",
-        "確定": "決定",
-        "延遲秒數:": "遅延秒数:",
+        "新Script名稱：": "新しい名前：",
+        "確定": "OK",
+        "延遲秒數:": "ディレイ（秒）：",
         "Language": "言語",
-        "回放速度:": "再生速度:",
-        "總運作": "総運用",
-        "單次": "単回",
-        "錄製": "記録",
-        "刪除": "削除",
+        "回放速度:": "再生速度：",
+        "總運作": "総再生",
+        "單次": "1回のみ",
+        "錄製": "録画",
+        "刪除": "削除"
     },
     "English": {
         "開始錄製": "Start Recording",
         "暫停/繼續": "Pause/Resume",
         "停止": "Stop",
         "回放": "Play",
-        "TinyMode": "TinyMode",
+        "MiniMode": "Mini Mode",
         "Script路徑": "Script Path",
         "快捷鍵": "Hotkey",
         "關於": "About",
-        "重複次數:": "Repeat Count:",
+        "重複次數:": "Repeat:",
         "次": "times",
-        "重複時間": "Repeat Interval",
+        "重複時間": "Interval",
         "Script:": "Script:",
         "重新命名": "Rename",
         "Script": "Script",
         "所有Script": "All Scripts",
         "新Script名稱：": "New Script Name:",
-        "確定": "OK",
+        "確定": "Confirm",
         "延遲秒數:": "Delay (sec):",
         "Language": "Language",
-        "回放速度:": "Speed:",
-        "總運作": "Total",
-        "單次": "Single",
+        "回放速度:": "Playback Speed:",
+        "總運作": "Total Runs",
+        "單次": "Single Run",
         "錄製": "Record",
-        "刪除": "Delete",
+        "刪除": "Delete"
     }
 }
 
@@ -233,40 +232,53 @@ class RecorderApp(tb.Window):
         tb.Label(frm, text="Creat By Lucienwooo", font=("Microsoft JhengHei", 11,)).pack(anchor="w", pady=(0, 6))
         tb.Button(frm, text="關閉", command=about_win.destroy, width=8, bootstyle=SECONDARY).pack(anchor="e", pady=(16, 0))
 
-    def change_language(self, event=None):
-        lang = self.language_var.get()
+    def _init_language(self, lang):
+        # 初始化 UI 語言，但下拉選單封面仍顯示 Language
+        self.language_var.set("Language")
         lang_map = LANG_MAP.get(lang, LANG_MAP["繁體中文"])
         self.btn_start.config(text=lang_map["開始錄製"] + f" ({self.hotkey_map['start']})")
         self.btn_pause.config(text=lang_map["暫停/繼續"] + f" ({self.hotkey_map['pause']})")
         self.btn_stop.config(text=lang_map["停止"] + f" ({self.hotkey_map['stop']})")
         self.btn_play.config(text=lang_map["回放"] + f" ({self.hotkey_map['play']})")
-        self.tiny_mode_btn.config(text=lang_map["TinyMode"])
+        self.tiny_mode_btn.config(text=lang_map["MiniMode"])
         self.about_btn.config(text=lang_map["關於"])
         self.lbl_speed.config(text=lang_map["回放速度:"])
-        # 新增：腳本路徑、快捷鍵按鈕
         self.btn_scripts_dir.config(text=lang_map["Script路徑"])
         self.btn_hotkey.config(text=lang_map["快捷鍵"])
-        # 重複次數
-        for child in self.children.values():
-            if isinstance(child, tb.Frame):
-                for widget in child.winfo_children():
-                    if isinstance(widget, tb.Label):
-                        if widget.cget("text") in ["重複次數:", "繰り返し回数:", "Repeat Count:"]:
-                            widget.config(text=lang_map["重複次數:"])
-                        elif widget.cget("text") in ["次", "回", "times"]:
-                            widget.config(text=lang_map["次"])
-                        elif widget.cget("text") in ["重複時間", "繰り返し間隔", "Repeat Interval"]:
-                            widget.config(text=lang_map["重複時間"])
-                        elif widget.cget("text") in ["腳本選單:", "Script:"]:
-                            widget.config(text=lang_map["Script:"])
-        # 新增：總運作、單次、錄製
         self.total_time_label_prefix.config(text=lang_map["總運作"])
         self.countdown_label_prefix.config(text=lang_map["單次"])
         self.time_label_prefix.config(text=lang_map["錄製"])
-        # 預設灰色
-        self.total_time_label_time.config(text="00:00:00", foreground="#888888")
-        self.countdown_label_time.config(text="00:00:00", foreground="#888888")
-        self.time_label_time.config(text="00:00:00", foreground="#888888")
+        self.repeat_label.config(text=lang_map["重複次數:"])
+        self.repeat_unit_label.config(text=lang_map["次"])
+        self.repeat_time_label.config(text=lang_map["重複時間"])
+        self.script_menu_label.config(text=lang_map["Script:"])
+        # 其他 label 同 change_language
+        self.update_idletasks()
+        self.language_var.set("Language")
+
+    def change_language(self, event=None):
+        lang = self.language_var.get()
+        if lang == "Language":
+            return  # 不切換語言
+        # 切換語言並更新 UI
+        lang_map = LANG_MAP.get(lang, LANG_MAP["繁體中文"])
+        self.btn_start.config(text=lang_map["開始錄製"] + f" ({self.hotkey_map['start']})")
+        self.btn_pause.config(text=lang_map["暫停/繼續"] + f" ({self.hotkey_map['pause']})")
+        self.btn_stop.config(text=lang_map["停止"] + f" ({self.hotkey_map['stop']})")
+        self.btn_play.config(text=lang_map["回放"] + f" ({self.hotkey_map['play']})")
+        self.tiny_mode_btn.config(text=lang_map["MiniMode"])
+        self.about_btn.config(text=lang_map["關於"])
+        self.lbl_speed.config(text=lang_map["回放速度:"])
+        self.btn_scripts_dir.config(text=lang_map["Script路徑"])
+        self.btn_hotkey.config(text=lang_map["快捷鍵"])
+        self.total_time_label_prefix.config(text=lang_map["總運作"])
+        self.countdown_label_prefix.config(text=lang_map["單次"])
+        self.time_label_prefix.config(text=lang_map["錄製"])
+        self.repeat_label.config(text=lang_map["重複次數:"])
+        self.repeat_unit_label.config(text=lang_map["次"])
+        self.repeat_time_label.config(text=lang_map["重複時間"])
+        self.script_menu_label.config(text=lang_map["Script:"])
+        self.user_config["language"] = lang
         self.save_config()
         self.update_idletasks()
 
@@ -366,9 +378,9 @@ class RecorderApp(tb.Window):
         theme_combo.grid(row=0, column=8, padx=(4, 8), sticky="e")
         theme_combo.bind("<<ComboboxSelected>>", lambda e: self.change_theme())
 
-        # TinyMode 按鈕（skin下拉選單左側）
+        # MiniMode 按鈕（skin下拉選單左側）
         self.tiny_mode_btn = tb.Button(
-            frm_top, text="TinyMode", style="My.TButton",
+            frm_top, text="MiniMode", style="My.TButton",
             command=self.toggle_tiny_mode, width=10
         )
         self.tiny_mode_btn.grid(row=0, column=7, padx=4)
@@ -392,25 +404,37 @@ class RecorderApp(tb.Window):
         )
         self.about_btn.grid(row=0, column=5, padx=6, sticky="e")
         # 語言下拉選單
-        lang_combo = tb.Combobox(frm_bottom, textvariable=self.language_var, values=list(LANG_MAP.keys()), state="readonly", width=10, style="My.TCombobox")
+        saved_lang = self.user_config.get("language", "繁體中文")
+        self.language_var = tk.StringVar(self, value="Language")  # 一律顯示 Language
+        lang_combo = tb.Combobox(
+            frm_bottom,
+            textvariable=self.language_var,
+            values=["繁體中文", "日本語", "English"],
+            state="readonly",
+            width=10,
+            style="My.TCombobox"
+        )
         lang_combo.grid(row=0, column=6, padx=(6, 8), sticky="e")
         lang_combo.bind("<<ComboboxSelected>>", self.change_language)
         self.language_combo = lang_combo
 
+
+
         # ====== 重複次數設定 ======
-        self.repeat_var = tk.StringVar(value=self.user_config.get("repeat", "1"))
         frm_repeat = tb.Frame(self, padding=(8, 0, 8, 5))
         frm_repeat.pack(fill="x")
-        tb.Label(frm_repeat, text="重複次數:", style="My.TLabel").grid(row=0, column=0, padx=(0, 2))
+        self.repeat_label = tb.Label(frm_repeat, text="重複次數:", style="My.TLabel")
+        self.repeat_label.grid(row=0, column=0, padx=(0, 2))
         self.repeat_var = tk.StringVar(value=self.user_config.get("repeat", "1"))
         tb.Entry(frm_repeat, textvariable=self.repeat_var, width=6, style="My.TEntry").grid(row=0, column=1, padx=2)
-        tb.Label(frm_repeat, text="次", style="My.TLabel").grid(row=0, column=2, padx=(0, 2))
+        self.repeat_unit_label = tb.Label(frm_repeat, text="次", style="My.TLabel")
+        self.repeat_unit_label.grid(row=0, column=2, padx=(0, 2))
 
-        # 新增重複時間欄位
         self.repeat_time_var = tk.StringVar(value="00:00:00")
         repeat_time_entry = tb.Entry(frm_repeat, textvariable=self.repeat_time_var, width=10, style="My.TEntry", justify="center")
         repeat_time_entry.grid(row=0, column=3, padx=(10, 2))
-        tb.Label(frm_repeat, text="重複時間", style="My.TLabel").grid(row=0, column=4, padx=(0, 2))
+        self.repeat_time_label = tb.Label(frm_repeat, text="重複時間", style="My.TLabel")
+        self.repeat_time_label.grid(row=0, column=4, padx=(0, 2))
 
         # 只允許輸入數字與冒號
         def validate_time_input(P):
@@ -433,7 +457,8 @@ class RecorderApp(tb.Window):
         # ====== 腳本選單區 ======
         frm_script = tb.Frame(self, padding=(8, 0, 8, 5))
         frm_script.pack(fill="x")
-        tb.Label(frm_script, text="腳本選單:", style="My.TLabel").grid(row=0, column=0, sticky="w", padx=(0, 2))
+        self.script_menu_label = tb.Label(frm_script, text="腳本選單:", style="My.TLabel")
+        self.script_menu_label.grid(row=0, column=0, sticky="w", padx=(0, 2))
         self.script_var = tk.StringVar(value=self.user_config.get("last_script", ""))
         self.script_combo = tb.Combobox(frm_script, textvariable=self.script_var, width=30, state="readonly", style="My.TCombobox")
         self.script_combo.grid(row=0, column=1, sticky="w", padx=4)
@@ -487,7 +512,7 @@ class RecorderApp(tb.Window):
         if self.script_var.get():
             self.on_script_selected()
         # 語言初始化（確保UI語言正確）
-        self.change_language()
+        self._init_language(saved_lang)
         self.after(1500, self._delayed_init)  
 
     def _delayed_init(self):
@@ -1031,40 +1056,47 @@ class RecorderApp(tb.Window):
 
     def open_hotkey_settings(self):
         win = tb.Toplevel(self)
-        win.title("快捷鍵設定")
-        win.geometry("340x340")
+        win.title("Hotkey")
+        win.geometry("300x320")
         win.resizable(False, False)
+        # 讓快捷鍵視窗icon跟主程式一致
+        try:
+            import sys, os
+            if getattr(sys, 'frozen', False):
+                icon_path = os.path.join(sys._MEIPASS, "觸手眼鏡貓.ico")
+            else:
+                icon_path = "觸手眼鏡貓.ico"
+            win.iconbitmap(icon_path)
+        except Exception as e:
+            print(f"無法設定快捷鍵視窗 icon: {e}")
 
+        # 依目前語言取得標籤
+        lang = self.language_var.get()
+        lang_map = LANG_MAP.get(lang, LANG_MAP["繁體中文"])
         labels = {
-            "start": "開始錄製",
-            "pause": "暫停/繼續",
-            "stop": "停止錄製",
-            "play": "回放",
-            "tiny": "TinyMode"
+            "start": lang_map["開始錄製"],
+            "pause": lang_map["暫停/繼續"],
+            "stop": lang_map["停止"],
+            "play": lang_map["回放"],
+            "tiny": lang_map["MiniMode"]
         }
         vars = {}
         entries = {}
         row = 0
 
         def on_entry_key(event, key, var):
-            # 只記錄實際按下的組合鍵或單鍵
             keys = []
-            # 只在有修飾鍵時才加
             if event.state & 0x0001: keys.append("shift")
             if event.state & 0x0004: keys.append("ctrl")
             if event.state & 0x0008: keys.append("alt")
             key_name = event.keysym.lower()
-            # 避免 shift/ctrl/alt 單獨被記錄
             if key_name not in ("shift_l", "shift_r", "control_l", "control_r", "alt_l", "alt_r"):
                 keys.append(key_name)
-            # 組合成快捷鍵字串
             var.set("+".join(keys))
             return "break"
 
         def on_entry_release(event, key, var):
-            # 只記錄釋放時的單一鍵
             key_name = event.keysym.lower()
-            # 避免 shift/ctrl/alt 單獨被記錄
             if key_name not in ("shift_l", "shift_r", "control_l", "control_r", "alt_l", "alt_r"):
                 var.set(key_name)
             return "break"
@@ -1079,11 +1111,10 @@ class RecorderApp(tb.Window):
         for key, label in labels.items():
             tb.Label(win, text=label, font=("Microsoft JhengHei", 11)).grid(row=row, column=0, padx=10, pady=8, sticky="w")
             var = tk.StringVar(value=self.hotkey_map[key])
-            entry = tb.Entry(win, textvariable=var, width=16, font=("Consolas", 11), state="normal")
+            entry = tb.Entry(win, textvariable=var, width=8, font=("Consolas", 11), state="normal")  # 寬度縮短
             entry.grid(row=row, column=1, padx=10)
             vars[key] = var
             entries[key] = entry
-            # 綁定事件
             entry.bind("<KeyRelease>", lambda e, k=key, v=var: on_entry_release(e, k, v))
             entry.bind("<FocusIn>", lambda e, v=var: on_entry_focus_in(e, v))
             entry.bind("<FocusOut>", lambda e, k=key, v=var: on_entry_focus_out(e, k, v))
@@ -1135,20 +1166,20 @@ class RecorderApp(tb.Window):
         self.btn_pause.config(text=f"暫停/繼續 ({self.hotkey_map['pause']})")
         self.btn_stop.config(text=f"停止 ({self.hotkey_map['stop']})")
         self.btn_play.config(text=f"回放 ({self.hotkey_map['play']})")
-        # TinyMode 按鈕同步更新
+        # MiniMode 按鈕同步更新
         if hasattr(self, "tiny_btns"):
             for btn, icon, key in self.tiny_btns:
                 btn.config(text=f"{icon} {self.hotkey_map[key]}")
 
     def toggle_tiny_mode(self):
-        # 切換 TinyMode 狀態
+        # 切換 MiniMode 狀態
         if not hasattr(self, "tiny_mode_on"):
             self.tiny_mode_on = False
         self.tiny_mode_on = not self.tiny_mode_on
         if self.tiny_mode_on:
             if self.tiny_window is None or not self.tiny_window.winfo_exists():
                 self.tiny_window = tb.Toplevel(self)
-                self.tiny_window.title("ChroLens_Mimic TinyMode")
+                self.tiny_window.title("ChroLens_Mimic MiniMode")
                 self.tiny_window.geometry("470x40")
                 self.tiny_window.overrideredirect(True)
                 self.tiny_window.resizable(False, False)
@@ -1156,7 +1187,7 @@ class RecorderApp(tb.Window):
                 try:
                     self.tiny_window.iconbitmap("觸手眼鏡貓.ico")
                 except Exception as e:
-                    print(f"無法設定 TinyMode icon: {e}")
+                    print(f"無法設定 MiniMode icon: {e}")
                 self.tiny_btns = []
                 # 拖曳功能
                 self.tiny_window.bind("<ButtonPress-1>", self._start_move_tiny)
