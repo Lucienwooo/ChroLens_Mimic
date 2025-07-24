@@ -180,132 +180,12 @@ class Tooltip:
             self.tipwindow = None
 
 class RecorderApp(tb.Window):
-
-    def _parse_time_to_seconds(self, t):
-        """將 00:00:00 或 00:00 格式字串轉為秒數"""
-        if not t or not isinstance(t, str):
-            return 0
-        parts = t.strip().split(":")
-        try:
-            if len(parts) == 3:
-                h, m, s = map(int, parts)
-                return h * 3600 + m * 60 + s
-            elif len(parts) == 2:
-                m, s = map(int, parts)
-                return m * 60 + s
-            elif len(parts) == 1:
-                return int(parts[0])
-        except Exception:
-            return 0
-        return 0
-
-    # ...其餘程式碼...
-
-    def show_about_dialog(self):
-        about_win = tb.Toplevel(self)
-        about_win.title("關於 ChroLens_Mimic")
-        about_win.geometry("450x300")
-        about_win.resizable(False, False)
-        about_win.grab_set()
-        self.update_idletasks()
-        x = self.winfo_x() + (self.winfo_width() // 2) - 175
-        y = self.winfo_y() + 80
-        about_win.geometry(f"+{x}+{y}")
-        try:
-            import sys, os
-            if getattr(sys, 'frozen', False):
-                icon_path = os.path.join(sys._MEIPASS, "觸手眼鏡貓.ico")
-            else:
-                icon_path = "觸手眼鏡貓.ico"
-            about_win.iconbitmap(icon_path)
-        except Exception as e:
-            print(f"無法設定 about 視窗 icon: {e}")
-        frm = tb.Frame(about_win, padding=20)
-        frm.pack(fill="both", expand=True)
-        tb.Label(frm, text="ChroLens_Mimic\n可理解為按鍵精靈/操作錄製/掛機工具\n解決重複性高的作業或動作", font=("Microsoft JhengHei", 11,)).pack(anchor="w", pady=(0, 6))
-        link = tk.Label(frm, text="ChroLens_模擬器討論區", font=("Microsoft JhengHei", 10, "underline"), fg="#5865F2", cursor="hand2")
-        link.pack(anchor="w")
-        link.bind("<Button-1>", lambda e: os.startfile("https://discord.gg/72Kbs4WPPn"))
-        github = tk.Label(frm, text="查看更多工具(巴哈)", font=("Microsoft JhengHei", 10, "underline"), fg="#24292f", cursor="hand2")
-        github.pack(anchor="w", pady=(8, 0))
-        github.bind("<Button-1>", lambda e: os.startfile("https://home.gamer.com.tw/profile/index_creation.php?owner=umiwued&folder=523848"))
-        tb.Label(frm, text="Creat By Lucienwooo", font=("Microsoft JhengHei", 11,)).pack(anchor="w", pady=(0, 6))
-        tb.Button(frm, text="關閉", command=about_win.destroy, width=8, bootstyle=SECONDARY).pack(anchor="e", pady=(16, 0))
-
-    def _init_language(self, lang):
-        # 初始化 UI 語言，但下拉選單封面仍顯示 Language
-        self.language_var.set("Language")
-        lang_map = LANG_MAP.get(lang, LANG_MAP["繁體中文"])
-        self.btn_start.config(text=lang_map["開始錄製"] + f" ({self.hotkey_map['start']})")
-        self.btn_pause.config(text=lang_map["暫停/繼續"] + f" ({self.hotkey_map['pause']})")
-        self.btn_stop.config(text=lang_map["停止"] + f" ({self.hotkey_map['stop']})")
-        self.btn_play.config(text=lang_map["回放"] + f" ({self.hotkey_map['play']})")
-        self.tiny_mode_btn.config(text=lang_map["MiniMode"])
-        self.about_btn.config(text=lang_map["關於"])
-        self.lbl_speed.config(text=lang_map["回放速度:"])
-        self.btn_scripts_dir.config(text=lang_map["Script路徑"])
-        self.btn_hotkey.config(text=lang_map["快捷鍵"])
-        self.total_time_label_prefix.config(text=lang_map["總運作"])
-        self.countdown_label_prefix.config(text=lang_map["單次"])
-        self.time_label_prefix.config(text=lang_map["錄製"])
-        self.repeat_label.config(text=lang_map["重複次數:"])
-        self.repeat_unit_label.config(text=lang_map["次"])
-        self.repeat_time_label.config(text=lang_map["重複時間"])
-        self.script_menu_label.config(text=lang_map["Script:"])
-        # 其他 label 同 change_language
-        self.update_idletasks()
-        self.language_var.set("Language")
-
-    def change_language(self, event=None):
-        lang = self.language_var.get()
-        if lang == "Language":
-            return  # 不切換語言
-        # 切換語言並更新 UI
-        lang_map = LANG_MAP.get(lang, LANG_MAP["繁體中文"])
-        self.btn_start.config(text=lang_map["開始錄製"] + f" ({self.hotkey_map['start']})")
-        self.btn_pause.config(text=lang_map["暫停/繼續"] + f" ({self.hotkey_map['pause']})")
-        self.btn_stop.config(text=lang_map["停止"] + f" ({self.hotkey_map['stop']})")
-        self.btn_play.config(text=lang_map["回放"] + f" ({self.hotkey_map['play']})")
-        self.tiny_mode_btn.config(text=lang_map["MiniMode"])
-        self.about_btn.config(text=lang_map["關於"])
-        self.lbl_speed.config(text=lang_map["回放速度:"])
-        self.btn_scripts_dir.config(text=lang_map["Script路徑"])
-        self.btn_hotkey.config(text=lang_map["快捷鍵"])
-        self.total_time_label_prefix.config(text=lang_map["總運作"])
-        self.countdown_label_prefix.config(text=lang_map["單次"])
-        self.time_label_prefix.config(text=lang_map["錄製"])
-        self.repeat_label.config(text=lang_map["重複次數:"])
-        self.repeat_unit_label.config(text=lang_map["次"])
-        self.repeat_time_label.config(text=lang_map["重複時間"])
-        self.script_menu_label.config(text=lang_map["Script:"])
-        self.user_config["language"] = lang
-        self.save_config()
-        self.update_idletasks()
-
-    def update_speed_tooltip(self):
-        lang = self.language_var.get()
-        tips = {
-            "繁體中文": "正常速度1倍=100,範圍1~1000",
-            "日本語": "標準速度1倍=100、範囲1～1000",
-            "English": "Normal speed 1x=100, range 1~1000"
-        }
-        tip_text = tips.get(lang, tips["繁體中文"])
-        if hasattr(self, "speed_tooltip") and self.speed_tooltip:
-            self.speed_tooltip.text = tip_text
-        # 額外更新顯示倍率
-        try:
-            speed_val = int(self.speed_var.get())
-            ratio = speed_val / 100.0
-            self.lbl_speed.config(text=f"回放速度: {ratio:.2f}:{speed_val}")
-        except:
-            self.lbl_speed.config(text="回放速度:")
-
     def __init__(self):
         self.user_config = load_user_config()
         skin = self.user_config.get("skin", "darkly")
         lang = self.user_config.get("language", "繁體中文")
         super().__init__(themename=skin)
-        self.language_var = tk.StringVar(self, value=lang)
+        self.language_var = tk.StringVar(self, value="Language")
         self._hotkey_handlers = {}
         self.tiny_window = None
 
@@ -436,6 +316,13 @@ class RecorderApp(tb.Window):
         self.repeat_time_label = tb.Label(frm_repeat, text="重複時間", style="My.TLabel")
         self.repeat_time_label.grid(row=0, column=4, padx=(0, 2))
 
+        # 新增「儲存」按鈕
+        self.save_script_btn = tb.Button(
+            frm_repeat, text="儲存", width=8, bootstyle=SUCCESS, style="My.TButton",
+            command=self.save_script_settings
+        )
+        self.save_script_btn.grid(row=0, column=5, padx=(8, 0))
+
         # 只允許輸入數字與冒號
         def validate_time_input(P):
             import re
@@ -521,18 +408,122 @@ class RecorderApp(tb.Window):
         self.after(1800, self.load_last_script)         
         self.after(1900, self.update_mouse_pos)         
 
-    def save_config(self):
-        self.user_config["skin"] = self.theme_var.get()
-        self.user_config["last_script"] = self.script_var.get()
-        self.user_config["repeat"] = self.repeat_var.get()
-        self.user_config["speed"] = self.speed_var.get()
-        self.user_config["script_dir"] = self.script_dir
-        self.user_config["language"] = self.language_var.get()
-        save_user_config(self.user_config)
+    def update_speed_tooltip(self):
+        lang = self.language_var.get()
+        tips = {
+            "繁體中文": "正常速度1倍=100,範圍1~1000",
+            "日本語": "標準速度1倍=100、範囲1～1000",
+            "English": "Normal speed 1x=100, range 1~1000"
+        }
+        tip_text = tips.get(lang, tips["繁體中文"])
+        if hasattr(self, "speed_tooltip") and self.speed_tooltip:
+            self.speed_tooltip.text = tip_text
+        # 額外更新顯示倍率
+        try:
+            speed_val = int(self.speed_var.get())
+            ratio = speed_val / 100.0
+            self.lbl_speed.config(text=f"回放速度: {ratio:.2f}:{speed_val}")
+        except:
+            self.lbl_speed.config(text="回放速度:")
 
-    def change_theme(self):
-        self.style.theme_use(self.theme_var.get())
+    def _parse_time_to_seconds(self, t):
+        """將 00:00:00 或 00:00 格式字串轉為秒數"""
+        if not t or not isinstance(t, str):
+            return 0
+        parts = t.strip().split(":")
+        try:
+            if len(parts) == 3:
+                h, m, s = map(int, parts)
+                return h * 3600 + m * 60 + s
+            elif len(parts) == 2:
+                m, s = map(int, parts)
+                return m * 60 + s
+            elif len(parts) == 1:
+                return int(parts[0])
+        except Exception:
+            return 0
+        return 0
+
+    def show_about_dialog(self):
+        about_win = tb.Toplevel(self)
+        about_win.title("關於 ChroLens_Mimic")
+        about_win.geometry("450x300")
+        about_win.resizable(False, False)
+        about_win.grab_set()
+        self.update_idletasks()
+        x = self.winfo_x() + (self.winfo_width() // 2) - 175
+        y = self.winfo_y() + 80
+        about_win.geometry(f"+{x}+{y}")
+        try:
+            import sys, os
+            if getattr(sys, 'frozen', False):
+                icon_path = os.path.join(sys._MEIPASS, "觸手眼鏡貓.ico")
+            else:
+                icon_path = "觸手眼鏡貓.ico"
+            about_win.iconbitmap(icon_path)
+        except Exception as e:
+            print(f"無法設定 about 視窗 icon: {e}")
+        frm = tb.Frame(about_win, padding=20)
+        frm.pack(fill="both", expand=True)
+        tb.Label(frm, text="ChroLens_Mimic\n可理解為按鍵精靈/操作錄製/掛機工具\n解決重複性高的作業或動作", font=("Microsoft JhengHei", 11,)).pack(anchor="w", pady=(0, 6))
+        link = tk.Label(frm, text="ChroLens_模擬器討論區", font=("Microsoft JhengHei", 10, "underline"), fg="#5865F2", cursor="hand2")
+        link.pack(anchor="w")
+        link.bind("<Button-1>", lambda e: os.startfile("https://discord.gg/72Kbs4WPPn"))
+        github = tk.Label(frm, text="查看更多工具(巴哈)", font=("Microsoft JhengHei", 10, "underline"), fg="#24292f", cursor="hand2")
+        github.pack(anchor="w", pady=(8, 0))
+        github.bind("<Button-1>", lambda e: os.startfile("https://home.gamer.com.tw/profile/index_creation.php?owner=umiwued&folder=523848"))
+        tb.Label(frm, text="Creat By Lucienwooo", font=("Microsoft JhengHei", 11,)).pack(anchor="w", pady=(0, 6))
+        tb.Button(frm, text="關閉", command=about_win.destroy, width=8, bootstyle=SECONDARY).pack(anchor="e", pady=(16, 0))
+
+    def _init_language(self, lang):
+        # 初始化 UI 語言，但下拉選單封面仍顯示 Language
+        self.language_var.set("Language")
+        lang_map = LANG_MAP.get(lang, LANG_MAP["繁體中文"])
+        self.btn_start.config(text=lang_map["開始錄製"] + f" ({self.hotkey_map['start']})")
+        self.btn_pause.config(text=lang_map["暫停/繼續"] + f" ({self.hotkey_map['pause']})")
+        self.btn_stop.config(text=lang_map["停止"] + f" ({self.hotkey_map['stop']})")
+        self.btn_play.config(text=lang_map["回放"] + f" ({self.hotkey_map['play']})")
+        self.tiny_mode_btn.config(text=lang_map["MiniMode"])
+        self.about_btn.config(text=lang_map["關於"])
+        self.lbl_speed.config(text=lang_map["回放速度:"])
+        self.btn_scripts_dir.config(text=lang_map["Script路徑"])
+        self.btn_hotkey.config(text=lang_map["快捷鍵"])
+        self.total_time_label_prefix.config(text=lang_map["總運作"])
+        self.countdown_label_prefix.config(text=lang_map["單次"])
+        self.time_label_prefix.config(text=lang_map["錄製"])
+        self.repeat_label.config(text=lang_map["重複次數:"])
+        self.repeat_unit_label.config(text=lang_map["次"])
+        self.repeat_time_label.config(text=lang_map["重複時間"])
+        self.script_menu_label.config(text=lang_map["Script:"])
+        # 其他 label 同 change_language
+        self.update_idletasks()
+        self.language_var.set("Language")
+
+    def change_language(self, event=None):
+        lang = self.language_var.get()
+        if lang == "Language":
+            return  # 不切換語言
+        # 切換語言並更新 UI
+        lang_map = LANG_MAP.get(lang, LANG_MAP["繁體中文"])
+        self.btn_start.config(text=lang_map["開始錄製"] + f" ({self.hotkey_map['start']})")
+        self.btn_pause.config(text=lang_map["暫停/繼續"] + f" ({self.hotkey_map['pause']})")
+        self.btn_stop.config(text=lang_map["停止"] + f" ({self.hotkey_map['stop']})")
+        self.btn_play.config(text=lang_map["回放"] + f" ({self.hotkey_map['play']})")
+        self.tiny_mode_btn.config(text=lang_map["MiniMode"])
+        self.about_btn.config(text=lang_map["關於"])
+        self.lbl_speed.config(text=lang_map["回放速度:"])
+        self.btn_scripts_dir.config(text=lang_map["Script路徑"])
+        self.btn_hotkey.config(text=lang_map["快捷鍵"])
+        self.total_time_label_prefix.config(text=lang_map["總運作"])
+        self.countdown_label_prefix.config(text=lang_map["單次"])
+        self.time_label_prefix.config(text=lang_map["錄製"])
+        self.repeat_label.config(text=lang_map["重複次數:"])
+        self.repeat_unit_label.config(text=lang_map["次"])
+        self.repeat_time_label.config(text=lang_map["重複時間"])
+        self.script_menu_label.config(text=lang_map["Script:"])
+        self.user_config["language"] = lang
         self.save_config()
+        self.update_idletasks()
 
     def log(self, msg):
         self.log_text.configure(state="normal")
@@ -954,13 +945,30 @@ class RecorderApp(tb.Window):
         except Exception as e:
             self.log(f"[{format_time(time.time())}] JSON 載入失敗: {e}")
 
+    def save_config(self):
+        self.user_config["skin"] = self.theme_var.get()
+        self.user_config["last_script"] = self.script_var.get()
+        self.user_config["repeat"] = self.repeat_var.get()
+        self.user_config["speed"] = self.speed_var.get()
+        self.user_config["script_dir"] = self.script_dir
+        self.user_config["language"] = self.language_var.get()
+        self.user_config["repeat_time"] = self.repeat_time_var.get()
+        save_user_config(self.user_config)
+
     def auto_save_script(self):
         try:
             ts = datetime.datetime.now().strftime("%Y_%m%d_%H%M_%S")
             filename = f"{ts}.json"
             path = os.path.join(self.script_dir, filename)
+            # 儲存時包含參數
+            script_data = {
+                "events": self.events,
+                "speed": self.speed_var.get(),
+                "repeat": self.repeat_var.get(),
+                "repeat_time": self.repeat_time_var.get()
+            }
             with open(path, "w", encoding="utf-8") as f:
-                json.dump(self.events, f, ensure_ascii=False, indent=2)
+                json.dump(script_data, f, ensure_ascii=False, indent=2)
             self.log(f"[{format_time(time.time())}] 自動存檔：{filename}，事件數：{len(self.events)}")
             self.refresh_script_list()
             self.script_var.set(filename)
@@ -969,24 +977,21 @@ class RecorderApp(tb.Window):
         except Exception as ex:
             self.log(f"[{format_time(time.time())}] 存檔失敗: {ex}")
 
-    def load_script(self):
-        from tkinter import filedialog
-        path = filedialog.askopenfilename(filetypes=[("JSON files", "*.json")], initialdir=self.script_dir)
-        if path:
-            with open(path, "r", encoding="utf-8") as f:
-                self.events = json.load(f)
-            self.log(f"[{format_time(time.time())}] 腳本已載入：{os.path.basename(path)}，共 {len(self.events)} 筆事件。")
-            self.refresh_script_list()
-            self.script_var.set(os.path.basename(path))
-            with open(LAST_SCRIPT_FILE, "w", encoding="utf-8") as f:
-                f.write(os.path.basename(path))
-
     def on_script_selected(self, event=None):
         script = self.script_var.get()
         if script:
             path = os.path.join(self.script_dir, script)
             with open(path, "r", encoding="utf-8") as f:
-                self.events = json.load(f)
+                data = json.load(f)
+            # 支援舊格式
+            if isinstance(data, dict) and "events" in data:
+                self.events = data["events"]
+                # 恢復參數
+                self.speed_var.set(data.get("speed", "100"))
+                self.repeat_var.set(data.get("repeat", "1"))
+                self.repeat_time_var.set(data.get("repeat_time", "00:00:00"))
+            else:
+                self.events = data
             self.log(f"[{format_time(time.time())}] 腳本已載入：{script}，共 {len(self.events)} 筆事件。")
             with open(LAST_SCRIPT_FILE, "w", encoding="utf-8") as f:
                 f.write(script)
@@ -998,22 +1003,42 @@ class RecorderApp(tb.Window):
                 self.update_countdown_label(0)
         self.save_config()
 
-    def refresh_script_list(self):
-        files = [f for f in os.listdir(self.script_dir) if f.endswith('.json')]
-        self.script_combo['values'] = files
-        # 若目前選擇的腳本不存在於新資料夾，不自動清空，讓用戶自己決定
-        # if self.script_var.get() not in files:
-        #     self.script_var.set("")
+    def load_script(self):
+        from tkinter import filedialog
+        path = filedialog.askopenfilename(filetypes=[("JSON files", "*.json")], initialdir=self.script_dir)
+        if path:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict) and "events" in data:
+                self.events = data["events"]
+                self.speed_var.set(data.get("speed", "100"))
+                self.repeat_var.set(data.get("repeat", "1"))
+                self.repeat_time_var.set(data.get("repeat_time", "00:00:00"))
+            else:
+                self.events = data
+            self.log(f"[{format_time(time.time())}] 腳本已載入：{os.path.basename(path)}，共 {len(self.events)} 筆事件。")
+            self.refresh_script_list()
+            self.script_var.set(os.path.basename(path))
+            with open(LAST_SCRIPT_FILE, "w", encoding="utf-8") as f:
+                f.write(os.path.basename(path))
+            self.save_config()
 
     def load_last_script(self):
         if os.path.exists(LAST_SCRIPT_FILE):
             with open(LAST_SCRIPT_FILE, "r", encoding="utf-8") as f:
                 last_script = f.read().strip()
             if last_script:
-                script_path = os.path.join(self.script_dir, last_script)  # 修正
+                script_path = os.path.join(self.script_dir, last_script)
                 if os.path.exists(script_path):
                     with open(script_path, "r", encoding="utf-8") as f:
-                        self.events = json.load(f)
+                        data = json.load(f)
+                    if isinstance(data, dict) and "events" in data:
+                        self.events = data["events"]
+                        self.speed_var.set(data.get("speed", "100"))
+                        self.repeat_var.set(data.get("repeat", "1"))
+                        self.repeat_time_var.set(data.get("repeat_time", "00:00:00"))
+                    else:
+                        self.events = data
                     self.script_var.set(last_script)
                     self.log(f"[{format_time(time.time())}] 已自動載入上次腳本：{last_script}，共 {len(self.events)} 筆事件。")
 
@@ -1242,6 +1267,42 @@ class RecorderApp(tb.Window):
         self.save_config()
         # 開啟資料夾
         os.startfile(self.script_dir)
+
+    def refresh_script_list(self):
+        """刷新腳本下拉選單內容"""
+        if not os.path.exists(self.script_dir):
+            os.makedirs(self.script_dir)
+        scripts = [f for f in os.listdir(self.script_dir) if f.endswith('.json')]
+        self.script_combo['values'] = scripts
+        # 若目前選擇的腳本不存在，則清空
+        if self.script_var.get() not in scripts:
+            self.script_var.set('')
+
+    def save_script_settings(self):
+        """將目前 speed/repeat/repeat_time 寫入當前腳本檔案"""
+        script = self.script_var.get()
+        if not script:
+            self.log("請先選擇一個腳本再儲存設定。")
+            return
+        path = os.path.join(self.script_dir, script)
+        if not os.path.exists(path):
+            self.log("找不到腳本檔案，請先錄製或載入腳本。")
+            return
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            # 若為舊格式，轉為新格式
+            if not (isinstance(data, dict) and "events" in data):
+                data = {"events": data}
+            data["speed"] = self.speed_var.get()
+            data["repeat"] = self.repeat_var.get()
+            data["repeat_time"] = self.repeat_time_var.get()
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            self.log(f"已將設定儲存到腳本：{script}")
+        except Exception as ex:
+            self.log(f"儲存腳本設定失敗: {ex}")
+
 
 CONFIG_FILE = "user_config.json"
 
