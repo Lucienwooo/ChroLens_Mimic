@@ -1,5 +1,5 @@
 #ChroLens Studio - Lucienwooo
-#pyinstaller --noconsole --onedir --icon=觸手眼鏡貓.ico --add-data "觸手眼鏡貓.ico;." ChroLens_Mimic2.2.py
+#pyinstaller --noconsole --onedir --icon=觸手眼鏡貓.ico --add-data "觸手眼鏡貓.ico;." ChroLens_Mimic2.3.py
 import ttkbootstrap as tb
 from ttkbootstrap.constants import *
 import tkinter as tk
@@ -95,6 +95,7 @@ LANG_MAP = {
         "單次": "單次",
         "錄製": "錄製",
         "刪除": "刪除",
+        "儲存": "儲存",
     },
     "日本語": {
         "開始錄製": "録画開始",
@@ -121,7 +122,8 @@ LANG_MAP = {
         "總運作": "総再生",
         "單次": "1回のみ",
         "錄製": "録画",
-        "刪除": "削除"
+        "刪除": "削除",
+        "儲存": "保存"
     },
     "English": {
         "開始錄製": "Start Recording",
@@ -147,7 +149,8 @@ LANG_MAP = {
         "總運作": "Total Runs",
         "單次": "Single Run",
         "錄製": "Record",
-        "刪除": "Delete"
+        "刪除": "Delete",
+        "儲存": "Save"
     }
 }
 
@@ -183,13 +186,23 @@ class RecorderApp(tb.Window):
     def __init__(self):
         self.user_config = load_user_config()
         skin = self.user_config.get("skin", "darkly")
+        # 讀取最後一次語言設定，預設繁體中文
         lang = self.user_config.get("language", "繁體中文")
         super().__init__(themename=skin)
-        self.language_var = tk.StringVar(self, value="Language")
+        self.language_var = tk.StringVar(self, value=lang)
         self._hotkey_handlers = {}
         self.tiny_window = None
 
-        # 統一字體 style
+        # 讀取 hotkey_map，若無則用預設
+        self.hotkey_map = self.user_config.get("hotkey_map", {
+            "start": "F10",
+            "pause": "F11",
+            "stop": "F9",
+            "play": "F12",
+            "tiny": "alt+`"
+        })
+
+        # ====== 統一字體 style ======
         self.style.configure("My.TButton", font=("Microsoft JhengHei", 9))
         self.style.configure("My.TLabel", font=("Microsoft JhengHei", 9))
         self.style.configure("My.TEntry", font=("Microsoft JhengHei", 9))
@@ -197,7 +210,7 @@ class RecorderApp(tb.Window):
         self.style.configure("My.TCheckbutton", font=("Microsoft JhengHei", 9))
         self.style.configure("TinyBold.TButton", font=("Microsoft JhengHei", 9, "bold"))
 
-        self.title("ChroLens_Mimic_2.2")
+        self.title("ChroLens_Mimic_2.3")
         try:
             import sys, os
             if getattr(sys, 'frozen', False):
@@ -228,15 +241,6 @@ class RecorderApp(tb.Window):
         self.script_dir = self.user_config.get("script_dir", SCRIPTS_DIR)
         if not os.path.exists(self.script_dir):
             os.makedirs(self.script_dir)
-
-        # 快捷鍵設定，新增 tiny
-        self.hotkey_map = {
-            "start": "F10",
-            "pause": "F11",
-            "stop": "F9",
-            "play": "F12",
-            "tiny": "alt+`"
-        }
 
         # ====== 上方操作區 ======
         frm_top = tb.Frame(self, padding=(8, 10, 8, 5))
@@ -298,8 +302,6 @@ class RecorderApp(tb.Window):
         lang_combo.bind("<<ComboboxSelected>>", self.change_language)
         self.language_combo = lang_combo
 
-
-
         # ====== 重複次數設定 ======
         frm_repeat = tb.Frame(self, padding=(8, 0, 8, 5))
         frm_repeat.pack(fill="x")
@@ -317,8 +319,9 @@ class RecorderApp(tb.Window):
         self.repeat_time_label.grid(row=0, column=4, padx=(0, 2))
 
         # 新增「儲存」按鈕
+        self.save_script_btn_text = tk.StringVar(value=LANG_MAP.get(lang, LANG_MAP["繁體中文"])["儲存"])
         self.save_script_btn = tb.Button(
-            frm_repeat, text="儲存", width=8, bootstyle=SUCCESS, style="My.TButton",
+            frm_repeat, textvariable=self.save_script_btn_text, width=8, bootstyle=SUCCESS, style="My.TButton",
             command=self.save_script_settings
         )
         self.save_script_btn.grid(row=0, column=5, padx=(8, 0))
@@ -476,8 +479,7 @@ class RecorderApp(tb.Window):
         tb.Button(frm, text="關閉", command=about_win.destroy, width=8, bootstyle=SECONDARY).pack(anchor="e", pady=(16, 0))
 
     def _init_language(self, lang):
-        # 初始化 UI 語言，但下拉選單封面仍顯示 Language
-        self.language_var.set("Language")
+        # 初始化 UI 語言
         lang_map = LANG_MAP.get(lang, LANG_MAP["繁體中文"])
         self.btn_start.config(text=lang_map["開始錄製"] + f" ({self.hotkey_map['start']})")
         self.btn_pause.config(text=lang_map["暫停/繼續"] + f" ({self.hotkey_map['pause']})")
@@ -495,15 +497,13 @@ class RecorderApp(tb.Window):
         self.repeat_unit_label.config(text=lang_map["次"])
         self.repeat_time_label.config(text=lang_map["重複時間"])
         self.script_menu_label.config(text=lang_map["Script:"])
-        # 其他 label 同 change_language
+        self.save_script_btn_text.set(lang_map["儲存"])
         self.update_idletasks()
-        self.language_var.set("Language")
 
     def change_language(self, event=None):
         lang = self.language_var.get()
         if lang == "Language":
-            return  # 不切換語言
-        # 切換語言並更新 UI
+            return
         lang_map = LANG_MAP.get(lang, LANG_MAP["繁體中文"])
         self.btn_start.config(text=lang_map["開始錄製"] + f" ({self.hotkey_map['start']})")
         self.btn_pause.config(text=lang_map["暫停/繼續"] + f" ({self.hotkey_map['pause']})")
@@ -521,6 +521,7 @@ class RecorderApp(tb.Window):
         self.repeat_unit_label.config(text=lang_map["次"])
         self.repeat_time_label.config(text=lang_map["重複時間"])
         self.script_menu_label.config(text=lang_map["Script:"])
+        self.save_script_btn_text.set(lang_map["儲存"])
         self.user_config["language"] = lang
         self.save_config()
         self.update_idletasks()
@@ -953,6 +954,7 @@ class RecorderApp(tb.Window):
         self.user_config["script_dir"] = self.script_dir
         self.user_config["language"] = self.language_var.get()
         self.user_config["repeat_time"] = self.repeat_time_var.get()
+        self.user_config["hotkey_map"] = self.hotkey_map
         save_user_config(self.user_config)
 
     def auto_save_script(self):
@@ -1152,6 +1154,7 @@ class RecorderApp(tb.Window):
                     self.hotkey_map[key] = val.lower()
             self._register_hotkeys()
             self._update_hotkey_labels()
+            self.save_config()  # 新增這行，確保儲存
             self.log("快捷鍵設定已更新。")
             win.destroy()
 
