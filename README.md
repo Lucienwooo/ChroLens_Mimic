@@ -1,4 +1,4 @@
-![ChroLens_Mimic](./clm2.2tw.png)
+![ChroLens_Mimic](./clm2.4.png)
 
 ## 功能介紹：</br>
 1.巨集錄製工具：可以錄製鍵盤和滑鼠的所有操作，並將其儲存為巨集。</br>
