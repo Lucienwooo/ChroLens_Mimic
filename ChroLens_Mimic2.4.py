@@ -311,13 +311,14 @@ class RecorderApp(tb.Window):
         self.repeat_label = tb.Label(frm_repeat, text="重複次數:", style="My.TLabel")
         self.repeat_label.grid(row=0, column=0, padx=(0, 2))
         self.repeat_var = tk.StringVar(value=self.user_config.get("repeat", "1"))
-        tb.Entry(frm_repeat, textvariable=self.repeat_var, width=6, style="My.TEntry").grid(row=0, column=1, padx=2)
+        entry_repeat = tb.Entry(frm_repeat, textvariable=self.repeat_var, width=6, style="My.TEntry")
+        entry_repeat.grid(row=0, column=1, padx=2)
         self.repeat_unit_label = tb.Label(frm_repeat, text="次", style="My.TLabel")
         self.repeat_unit_label.grid(row=0, column=2, padx=(0, 2))
 
         self.repeat_time_var = tk.StringVar(value="00:00:00")
-        repeat_time_entry = tb.Entry(frm_repeat, textvariable=self.repeat_time_var, width=10, style="My.TEntry", justify="center")
-        repeat_time_entry.grid(row=0, column=3, padx=(10, 2))
+        entry_repeat_time = tb.Entry(frm_repeat, textvariable=self.repeat_time_var, width=10, style="My.TEntry", justify="center")
+        entry_repeat_time.grid(row=0, column=3, padx=(10, 2))
         self.repeat_time_label = tb.Label(frm_repeat, text="重複時間", style="My.TLabel")
         self.repeat_time_label.grid(row=0, column=4, padx=(0, 2))
 
@@ -341,7 +342,7 @@ class RecorderApp(tb.Window):
             import re
             return re.fullmatch(r"[\d:]*", P) is not None
         vcmd = (self.register(validate_time_input), "%P")
-        repeat_time_entry.config(validate="key", validatecommand=vcmd)
+        entry_repeat_time.config(validate="key", validatecommand=vcmd)
         repeat_interval_entry.config(validate="key", validatecommand=vcmd)  # 新增驗證
 
         # 當重複時間變動時，更新總運作時間顯示
@@ -353,6 +354,41 @@ class RecorderApp(tb.Window):
             else:
                 self.update_total_time_label(0)
         self.repeat_time_var.trace_add("write", on_repeat_time_change)
+
+        # ====== 防呆機制：重複次數/重複時間只能二擇一 ======
+        def on_repeat_var_change(*args):
+            val = self.repeat_var.get().strip()
+            if val and val != "1":
+                # 使用者輸入次數，重複時間自動重設
+                if self.repeat_time_var.get() != "00:00:00":
+                    self.repeat_time_var.set("00:00:00")
+
+        def on_repeat_time_var_change(*args):
+            val = self.repeat_time_var.get().strip()
+            if val and val != "00:00:00":
+                # 使用者輸入時間，重複次數自動重設
+                if self.repeat_var.get() != "1":
+                    self.repeat_var.set("1")
+
+        self.repeat_var.trace_add("write", lambda *args: on_repeat_var_change())
+        self.repeat_time_var.trace_add("write", lambda *args: on_repeat_time_var_change())
+
+        def on_repeat_entry_return(event):
+            if not self.repeat_var.get().strip():
+                self.repeat_var.set("1")
+            return "break"
+
+        def on_repeat_time_entry_return(event):
+            if not self.repeat_time_var.get().strip():
+                self.repeat_time_var.set("00:00:00")
+            return "break"
+
+        entry_repeat.bind("<Return>", on_repeat_entry_return)
+        entry_repeat_time.bind("<Return>", on_repeat_time_entry_return)
+
+        # 初始化狀態
+        on_repeat_var_change()
+        on_repeat_time_var_change()
 
         # ====== 腳本選單區 ======
         frm_script = tb.Frame(self, padding=(8, 0, 8, 5))
