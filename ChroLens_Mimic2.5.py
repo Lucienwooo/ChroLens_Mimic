@@ -1,5 +1,5 @@
 #ChroLens Studio - Lucienwooo
-#pyinstaller --noconsole --onedir --icon=觸手眼鏡貓.ico --add-data "觸手眼鏡貓.ico;." ChroLens_Mimic2.4.py
+#pyinstaller --noconsole --onedir --icon=觸手眼鏡貓.ico --add-data "觸手眼鏡貓.ico;." ChroLens_Mimic2.5.py
 import ttkbootstrap as tb
 from ttkbootstrap.constants import *
 import tkinter as tk
@@ -9,6 +9,7 @@ import ctypes
 import win32api
 import tkinter.filedialog
 import sys
+import random
 # ====== UI 介面 row 對應說明 ======
 # row 0 (frm_top): 開始錄製（btn_start）、暫停/繼續（btn_pause）、停止（btn_stop）、回放（btn_play）、MiniMode（tiny_mode_btn）、skin下拉選單（theme_combo）
 # row 1 (frm_bottom): 回放速度（lbl_speed, speed_var 輸入框）、腳本路徑（btn_scripts_dir 按鈕）、快捷鍵（btn_hotkey 按鈕）、關於（about_btn）、語言下拉選單（lang_combo）
@@ -96,7 +97,8 @@ LANG_MAP = {
         "錄製": "錄製",
         "刪除": "刪除",
         "儲存": "儲存",
-        "重複間隔": "重複間隔"
+        "重複間隔": "重複間隔",
+        "剩餘": "剩餘"
     },
     "日本語": {
         "開始錄製": "録画開始",
@@ -125,7 +127,8 @@ LANG_MAP = {
         "錄製": "録画",
         "刪除": "削除",
         "儲存": "保存",
-        "重複間隔": "繰り返し間隔"
+        "重複間隔": "繰り返し間隔",
+        "剩餘": "残り"
     },
     "English": {
         "開始錄製": "Start Recording",
@@ -153,7 +156,8 @@ LANG_MAP = {
         "錄製": "Record",
         "刪除": "Delete",
         "儲存": "Save",
-        "重複間隔": "Repeat Interval"
+        "重複間隔": "Repeat Interval",
+        "剩餘": "Remain"
     }
 }
 
@@ -213,7 +217,7 @@ class RecorderApp(tb.Window):
         self.style.configure("My.TCheckbutton", font=("Microsoft JhengHei", 9))
         self.style.configure("TinyBold.TButton", font=("Microsoft JhengHei", 9, "bold"))
 
-        self.title("ChroLens_Mimic_2.4")
+        self.title("ChroLens_Mimic_2.5")
         try:
             import sys, os
             if getattr(sys, 'frozen', False):
@@ -355,40 +359,9 @@ class RecorderApp(tb.Window):
                 self.update_total_time_label(0)
         self.repeat_time_var.trace_add("write", on_repeat_time_change)
 
-        # ====== 防呆機制：重複次數/重複時間只能二擇一 ======
-        def on_repeat_var_change(*args):
-            val = self.repeat_var.get().strip()
-            if val and val != "1":
-                # 使用者輸入次數，重複時間自動重設
-                if self.repeat_time_var.get() != "00:00:00":
-                    self.repeat_time_var.set("00:00:00")
-
-        def on_repeat_time_var_change(*args):
-            val = self.repeat_time_var.get().strip()
-            if val and val != "00:00:00":
-                # 使用者輸入時間，重複次數自動重設
-                if self.repeat_var.get() != "1":
-                    self.repeat_var.set("1")
-
-        self.repeat_var.trace_add("write", lambda *args: on_repeat_var_change())
-        self.repeat_time_var.trace_add("write", lambda *args: on_repeat_time_var_change())
-
-        def on_repeat_entry_return(event):
-            if not self.repeat_var.get().strip():
-                self.repeat_var.set("1")
-            return "break"
-
-        def on_repeat_time_entry_return(event):
-            if not self.repeat_time_var.get().strip():
-                self.repeat_time_var.set("00:00:00")
-            return "break"
-
-        entry_repeat.bind("<Return>", on_repeat_entry_return)
-        entry_repeat_time.bind("<Return>", on_repeat_time_entry_return)
-
-        # 初始化狀態
-        on_repeat_var_change()
-        on_repeat_time_var_change()
+        entry_repeat.bind("<Button-3>", lambda e: self.repeat_var.set("0"))
+        entry_repeat_time.bind("<Button-3>", lambda e: self.repeat_time_var.set("00:00:00"))
+        repeat_interval_entry.bind("<Button-3>", lambda e: self.repeat_interval_var.set("00:00:00"))
 
         # ====== 腳本選單區 ======
         frm_script = tb.Frame(self, padding=(8, 0, 8, 5))
@@ -643,11 +616,27 @@ class RecorderApp(tb.Window):
                 else:
                     total_remain = max(0, self._total_play_time - (time.time() - self._play_start_time))
                 self.update_total_time_label(total_remain)
+                # 更新 MiniMode 倒數
+                if hasattr(self, "tiny_window") and self.tiny_window and self.tiny_window.winfo_exists():
+                    if hasattr(self, "tiny_countdown_label"):
+                        lang = self.language_var.get()
+                        lang_map = LANG_MAP.get(lang, LANG_MAP["繁體中文"])
+                        h = int(total_remain // 3600)
+                        m = int((total_remain % 3600) // 60)
+                        s = int(total_remain % 60)
+                        time_str = f"{h:02d}:{m:02d}:{s:02d}"
+                        self.tiny_countdown_label.config(text=f"{lang_map['剩餘']}: {time_str}")
             self.after(100, self._update_play_time)
         else:
             self.update_time_label(0)
             self.update_countdown_label(0)
             self.update_total_time_label(0)
+            # MiniMode倒數歸零
+            if hasattr(self, "tiny_window") and self.tiny_window and self.tiny_window.winfo_exists():
+                if hasattr(self, "tiny_countdown_label"):
+                    lang = self.language_var.get()
+                    lang_map = LANG_MAP.get(lang, LANG_MAP["繁體中文"])
+                    self.tiny_countdown_label.config(text=f"{lang_map['剩餘']}: 00:00:00")
 
     def start_record(self):
         if self.recording:
@@ -844,18 +833,13 @@ class RecorderApp(tb.Window):
         repeat_interval_sec = self._parse_time_to_seconds(self.repeat_interval_var.get())
         self._repeat_time_limit = repeat_time_sec if repeat_time_sec > 0 else None
 
-        # 只要有填寫重複時間，強制 repeat = -1（無限次數，讓時間控制）
-        if self._repeat_time_limit:
-            repeat = -1
-        else:
-            try:
-                repeat = int(self.repeat_var.get())
-                if repeat == 0:
-                    repeat = -1  # -1 代表無限次數
-                elif repeat < 0:
-                    repeat = 1
-            except:
+        # 讓 repeat 依照使用者設定
+        try:
+            repeat = int(self.repeat_var.get())
+            if repeat <= 0:
                 repeat = 1
+        except:
+            repeat = 1
 
         # 計算單次腳本時間
         if self.events:
@@ -864,14 +848,12 @@ class RecorderApp(tb.Window):
             single_time = 0
 
         # 計算總運作時間（包含間隔）
-        if repeat == -1:
-            total_time = self._repeat_time_limit if self._repeat_time_limit else 0
+        if self._repeat_time_limit and repeat > 0:
+            # 隨機間隔模式，總時間以重複時間為主
+            total_time = self._repeat_time_limit
         else:
-            # 重複次數 n，間隔 m，總時間 = n*單次 + (n-1)*間隔
+            # 傳統模式
             total_time = single_time * repeat + repeat_interval_sec * max(0, repeat - 1)
-            # 若有重複時間限制，取最小值
-            if self._repeat_time_limit:
-                total_time = min(total_time, self._repeat_time_limit)
         self._total_play_time = total_time
 
         self._play_start_time = time.time()
@@ -883,46 +865,42 @@ class RecorderApp(tb.Window):
         threading.Thread(target=self._play_thread, daemon=True).start()
         self.after(100, self._update_play_time)
 
-    def _update_play_time(self):
-        if self.playing:
-            idx = getattr(self, "_current_play_index", 0)
-            if idx == 0:
-                elapsed = 0
-            else:
-                elapsed = self.events[idx-1]['time'] - self.events[0]['time']
-            self.update_time_label(elapsed)
-            # 單次剩餘
-            total = self.events[-1]['time'] - self.events[0]['time'] if self.events else 0
-            remain = max(0, total - elapsed)
-            self.update_countdown_label(remain)
-            # 倒數顯示
-            if hasattr(self, "_play_start_time"):
-                if self._repeat_time_limit:
-                    total_remain = max(0, self._repeat_time_limit - (time.time() - self._play_start_time))
-                else:
-                    total_remain = max(0, self._total_play_time - (time.time() - self._play_start_time))
-                self.update_total_time_label(total_remain)
-            self.after(100, self._update_play_time)
-        else:
-            self.update_time_label(0)
-            self.update_countdown_label(0)
-            self.update_total_time_label(0)
-
     def _play_thread(self):
         self.playing = True
         self.paused = False
-        repeat = getattr(self, "_repeat_times", 1)
-        count = 0
-        play_start_time = time.time()
-        repeat_interval_sec = self._parse_time_to_seconds(self.repeat_interval_var.get())
+        try:
+            repeat = int(self.repeat_var.get())
+        except:
+            repeat = 1
+        repeat_time_limit = self._repeat_time_limit if hasattr(self, "_repeat_time_limit") else None
         single_time = (self.events[-1]['time'] - self.events[0]['time']) / self.speed if self.events else 0
-        while self.playing and (repeat == -1 or count < repeat):
-            # 強制時間到就結束所有動作
-            if hasattr(self, "_repeat_time_limit") and self._repeat_time_limit:
-                if time.time() - play_start_time >= self._repeat_time_limit:
-                    self.log("重複時間到，已強制停止所有動作。")
-                    self.playing = False
-                    break
+
+        # 隨機間隔模式（重複時間和重複次數都 > 0）
+        if repeat_time_limit and repeat > 0:
+            fixed_total = single_time * repeat
+            remain_time = max(0, repeat_time_limit - fixed_total)
+            intervals = []
+            if repeat > 1 and remain_time > 0:
+                ratios = [random.random() for _ in range(repeat-1)]
+                total_ratio = sum(ratios)
+                for r in ratios:
+                    intervals.append(int(remain_time * r / total_ratio))
+            else:
+                intervals = [0] * (repeat-1)
+            self.log(f"【隨機間隔模式啟用】重複時間={repeat_time_limit}秒，重複次數={repeat}，隨機間隔={intervals}")
+            repeat_mode = "fixed"
+        # 只填重複間隔時，無限重複且每次隨機間隔
+        elif self._parse_time_to_seconds(self.repeat_interval_var.get()) > 0 and (not repeat_time_limit) and (not repeat or repeat <= 0):
+            repeat_interval_sec = self._parse_time_to_seconds(self.repeat_interval_var.get())
+            repeat_mode = "infinite_random"
+            self.log(f"【無限隨機間隔模式啟用】每次間隔 1~{repeat_interval_sec} 秒")
+        else:
+            repeat_interval_sec = self._parse_time_to_seconds(self.repeat_interval_var.get())
+            intervals = [repeat_interval_sec] * (repeat-1 if repeat > 1 else 0)
+            repeat_mode = "normal"
+
+        count = 0
+        while self.playing and (repeat_mode == "infinite_random" or count < repeat):
             self._current_play_index = 0
             total_events = len(self.events)
             if total_events == 0 or not self.playing:
@@ -930,35 +908,23 @@ class RecorderApp(tb.Window):
             base_time = self.events[0]['time']
             play_start = time.time()
             while self._current_play_index < total_events:
-                # 強制時間到就結束所有動作
-                if hasattr(self, "_repeat_time_limit") and self._repeat_time_limit:
-                    if time.time() - play_start_time >= self._repeat_time_limit:
-                        self.log("重複時間到，已強制停止所有動作。")
-                        self.playing = False
-                        break
                 if not self.playing:
-                    break  # 強制中斷回放
+                    break
                 while self.paused:
                     if not self.playing:
-                        break  # 強制中斷回放
+                        break
                     time.sleep(0.05)
-                    play_start += 0.05  # 修正暫停期間的基準時間
+                    play_start += 0.05
                 if not self.playing:
-                    break  # 強制中斷回放
+                    break
                 i = self._current_play_index
                 e = self.events[i]
                 event_offset = (e['time'] - base_time) / self.speed
                 target_time = play_start + event_offset
                 while True:
                     now = time.time()
-                    # 強制時間到就結束所有動作
-                    if hasattr(self, "_repeat_time_limit") and self._repeat_time_limit:
-                        if now - play_start_time >= self._repeat_time_limit:
-                            self.log("重複時間到，已強制停止所有動作。")
-                            self.playing = False
-                            break
                     if not self.playing:
-                        break  # 強制中斷回放
+                        break
                     if now >= target_time:
                         break
                     if self.paused:
@@ -969,7 +935,7 @@ class RecorderApp(tb.Window):
                         continue
                     time.sleep(min(0.01, target_time - now))
                 if not self.playing:
-                    break  # 強制中斷回放
+                    break
                 if e['type'] == 'keyboard':
                     if e['event'] == 'down':
                         keyboard.press(e['name'])
@@ -990,24 +956,43 @@ class RecorderApp(tb.Window):
                         self.log(f"[{format_time(e['time'])}] 滑鼠: {e}")
                 self._current_play_index += 1
             if not self.playing:
-                break  # 強制中斷回放
+                break
             count += 1
-            # 插入重複間隔（不是最後一次才插入）
-            if repeat != -1 and count < repeat and repeat_interval_sec > 0:
-                self.log(f"重複間隔 {repeat_interval_sec} 秒，等待中...")
+            # 執行間隔
+            if repeat_mode == "fixed" and count < repeat and intervals:
+                interval_sec = intervals[count-1]
+                self.log(f"【間隔開始】第{count}次執行後，間隔 {interval_sec} 秒。")
                 interval_start = time.time()
-                while self.playing and time.time() - interval_start < repeat_interval_sec:
-                    # 檢查重複時間限制
-                    if hasattr(self, "_repeat_time_limit") and self._repeat_time_limit:
-                        if time.time() - play_start_time >= self._repeat_time_limit:
-                            self.log("重複時間到，已強制停止所有動作。")
-                            self.playing = False
-                            break
+                while self.playing and time.time() - interval_start < interval_sec:
                     if self.paused:
                         time.sleep(0.05)
                         interval_start += 0.05
                         continue
                     time.sleep(0.05)
+                self.log(f"【間隔結束】第{count}次執行後，已結束間隔。")
+            elif repeat_mode == "infinite_random":
+                repeat_interval_sec = self._parse_time_to_seconds(self.repeat_interval_var.get())
+                interval_sec = random.randint(1, repeat_interval_sec)
+                self.log(f"【間隔開始】第{count}次執行後，隨機間隔 {interval_sec} 秒。")
+                interval_start = time.time()
+                while self.playing and time.time() - interval_start < interval_sec:
+                    if self.paused:
+                        time.sleep(0.05)
+                        interval_start += 0.05
+                        continue
+                    time.sleep(0.05)
+                self.log(f"【間隔結束】第{count}次執行後，已結束間隔。")
+            elif repeat_mode == "normal" and count < repeat and intervals:
+                interval_sec = intervals[count-1]
+                if interval_sec > 0:
+                    self.log(f"重複間隔 {interval_sec} 秒，等待中...")
+                    interval_start = time.time()
+                    while self.playing and time.time() - interval_start < interval_sec:
+                        if self.paused:
+                            time.sleep(0.05)
+                            interval_start += 0.05
+                            continue
+                        time.sleep(0.05)
         self.playing = False
         self.paused = False
         self.log(f"[{format_time(time.time())}] 回放結束。")
@@ -1285,7 +1270,7 @@ class RecorderApp(tb.Window):
             if self.tiny_window is None or not self.tiny_window.winfo_exists():
                 self.tiny_window = tb.Toplevel(self)
                 self.tiny_window.title("ChroLens_Mimic MiniMode")
-                self.tiny_window.geometry("470x40")
+                self.tiny_window.geometry("620x40")  # 寬度加大100
                 self.tiny_window.overrideredirect(True)
                 self.tiny_window.resizable(False, False)
                 self.tiny_window.attributes("-topmost", True)
@@ -1294,6 +1279,16 @@ class RecorderApp(tb.Window):
                 except Exception as e:
                     print(f"無法設定 MiniMode icon: {e}")
                 self.tiny_btns = []
+                # 新增倒數Label（多語系）
+                lang = self.language_var.get()
+                lang_map = LANG_MAP.get(lang, LANG_MAP["繁體中文"])
+                self.tiny_countdown_label = tb.Label(
+                    self.tiny_window,
+                    text=f"{lang_map['剩餘']}: 00:00:00",
+                    font=("Microsoft JhengHei", 12),
+                    foreground="#FF95CA", width=13
+                )
+                self.tiny_countdown_label.grid(row=0, column=0, padx=2, pady=5)
                 # 拖曳功能
                 self.tiny_window.bind("<ButtonPress-1>", self._start_move_tiny)
                 self.tiny_window.bind("<B1-Motion>", self._move_tiny)
@@ -1317,7 +1312,7 @@ class RecorderApp(tb.Window):
                             "tiny": "toggle_tiny_mode"
                         }[key])
                     )
-                    btn.grid(row=0, column=i, padx=2, pady=5)
+                    btn.grid(row=0, column=i+1, padx=2, pady=5)
                     self.tiny_btns.append((btn, icon, key))
                 self.tiny_window.protocol("WM_DELETE_WINDOW", self._close_tiny_mode)
                 self.withdraw()
@@ -1396,6 +1391,7 @@ def load_user_config():
             pass
     # 首次開啟才預設繁體中文
     return {
+       
         "skin": "darkly",
         "last_script": "",
         "repeat": "1",

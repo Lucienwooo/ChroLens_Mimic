@@ -30,7 +30,7 @@
 
 ---
 
-![ChroLens_Mimic](./clm2.2jp.png)
+![ChroLens_Mimic](./pic/clm2.2jp.png)
 ## 🇯🇵 日本語の紹介
 
 **ChroLens_Mimic** は、Windows 上のマウス・キーボードの操作を滑らかかつシンプルに記録・再生できる **“マクロ録画＆再生ツール”** です。  
@@ -43,7 +43,7 @@ GitHub にて v2.2 を公開中。詳細やダウンロード、質問はこち�
 
 ---
 
-![ChroLens_Mimic](./clm2.2en.png)
+![ChroLens_Mimic](./pic/clm2.2en.png)
 ## 🇺🇸 English Introduction
 
 **ChroLens_Mimic** is a lightweight macro recorder for Windows that lets you record and replay mouse and keyboard actions—much like **TinyTask** or AutoHotkey’s built-in macro recorder.  
