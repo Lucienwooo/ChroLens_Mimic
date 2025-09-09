@@ -1,5 +1,5 @@
 #ChroLens Studio - Lucienwooo
-#pyinstaller --noconsole --onedir --icon=觸手眼鏡貓.ico --add-data "觸手眼鏡貓.ico;." ChroLens_Mimic2.5.py
+#pyinstaller --noconsole --onedir --icon=umi_奶茶色.ico --add-data "umi_奶茶色.ico;." ChroLens_Mimic2.5.py
 import ttkbootstrap as tb
 from ttkbootstrap.constants import *
 import tkinter as tk
@@ -221,9 +221,9 @@ class RecorderApp(tb.Window):
         try:
             import sys, os
             if getattr(sys, 'frozen', False):
-                icon_path = os.path.join(sys._MEIPASS, "觸手眼鏡貓.ico")
+                icon_path = os.path.join(sys._MEIPASS, "umi_奶茶色.ico")
             else:
-                icon_path = "觸手眼鏡貓.ico"
+                icon_path = "umi_奶茶色.ico"
             self.iconbitmap(icon_path)
         except Exception as e:
             print(f"無法設定 icon: {e}")
@@ -479,9 +479,9 @@ class RecorderApp(tb.Window):
         try:
             import sys, os
             if getattr(sys, 'frozen', False):
-                icon_path = os.path.join(sys._MEIPASS, "觸手眼鏡貓.ico")
+                icon_path = os.path.join(sys._MEIPASS, "umi_奶茶色.ico")
             else:
-                icon_path = "觸手眼鏡貓.ico"
+                icon_path = "umi_奶茶色.ico"
             about_win.iconbitmap(icon_path)
         except Exception as e:
             print(f"無法設定 about 視窗 icon: {e}")
@@ -1152,9 +1152,9 @@ class RecorderApp(tb.Window):
         try:
             import sys, os
             if getattr(sys, 'frozen', False):
-                icon_path = os.path.join(sys._MEIPASS, "觸手眼鏡貓.ico")
+                icon_path = os.path.join(sys._MEIPASS, "umi_奶茶色.ico")
             else:
-                icon_path = "觸手眼鏡貓.ico"
+                icon_path = "umi_奶茶色.ico"
             win.iconbitmap(icon_path)
         except Exception as e:
             print(f"無法設定快捷鍵視窗 icon: {e}")
@@ -1275,7 +1275,7 @@ class RecorderApp(tb.Window):
                 self.tiny_window.resizable(False, False)
                 self.tiny_window.attributes("-topmost", True)
                 try:
-                    self.tiny_window.iconbitmap("觸手眼鏡貓.ico")
+                    self.tiny_window.iconbitmap("umi_奶茶色.ico")
                 except Exception as e:
                     print(f"無法設定 MiniMode icon: {e}")
                 self.tiny_btns = []
