@@ -1,5 +1,5 @@
 #ChroLens Studio - Lucienwooo
-#pyinstaller --noconsole --onedir --icon=umi_奶茶色.ico --add-data "umi_奶茶色.ico;." ChroLens_Mimic2.5.py
+#pyinstaller --noconsole --onedir --icon=umi_奶茶色.ico --add-data "umi_奶茶色.ico;." ChroLens_Mimic2.6copy.py
 import ttkbootstrap as tb
 from ttkbootstrap.constants import *
 import tkinter as tk
@@ -8,17 +8,57 @@ import keyboard, mouse
 import ctypes
 import win32api
 import win32gui
-import tkinter.filedialog
-import sys
-import random
 import win32con
+import pywintypes
+
+def show_error_window(window_name):
+    ctypes.windll.user32.MessageBoxW(
+        0,
+        f'找不到 "{window_name}" 視窗，請重試',
+        '錯誤',
+        0x10  # MB_ICONERROR
+    )
+
+def client_to_screen(hwnd, rel_x, rel_y, window_name=""):
+    try:
+        left, top, right, bottom = win32gui.GetWindowRect(hwnd)
+        abs_x = left + rel_x
+        abs_y = top + rel_y
+        return abs_x, abs_y
+    except pywintypes.error:
+        ctypes.windll.user32.MessageBoxW(
+            0,
+            f'找不到 "{window_name}" 視窗，請重試',
+            '錯誤',
+            0x10  # MB_ICONERROR
+        )
+        raise
 
 # ====== UI 介面 row 對應說明 ======
-# row 0 (frm_top): 開始錄製（btn_start）、暫停/繼續（btn_pause）、停止（btn_stop）、回放（btn_play）、MiniMode（tiny_mode_btn）、skin下拉選單（theme_combo）
-# row 1 (frm_bottom): 回放速度（lbl_speed, speed_var 輸入框）、腳本路徑（btn_scripts_dir 按鈕）、快捷鍵（btn_hotkey 按鈕）、關於（about_btn）、語言下拉選單（lang_combo）
-# row 2 (frm_repeat): 重複次數（repeat_var 輸入框）、單位「次」、重複時間（repeat_time_var 輸入框）、重複時間標籤
-# row 3 (frm_script): 腳本選單（script_combo）、腳本重新命名輸入框（rename_entry）、Rename（rename_script 按鈕）
-# row 4 (frm_log): 滑鼠座標（mouse_pos_label）、總運作（total_time_label_prefix, total_time_label_time）、單次（countdown_label_prefix, countdown_label_time）、錄製（time_label_prefix, time_label_time）
+# row 0 (frm_top): 
+#   開始錄製（btn_start）、暫停/繼續（btn_pause）、停止（btn_stop）、回放（btn_play）
+#   MiniMode（tiny_mode_btn）、skin下拉選單（theme_combo）
+#
+# row 1 (frm_bottom): 
+#   回放速度（lbl_speed, speed_var 輸入框）、腳本路徑（btn_scripts_dir 按鈕）
+#   快捷鍵（btn_hotkey 按鈕）、關於（about_btn）、語言下拉選單（lang_combo）
+#
+# row 2 (frm_repeat): 
+#   重複次數（repeat_var 輸入框）、單位「次」
+#   重複時間（repeat_time_var 輸入框）、重複時間標籤（repeat_time_label）
+#   重複間隔（repeat_interval_var 輸入框）、重複間隔標籤（repeat_interval_label）
+#   儲存按鈕（save_script_btn）
+#
+# row 3 (frm_script): 
+#   腳本選單（script_combo）、腳本重新命名輸入框（rename_entry）、Rename（rename_script 按鈕）
+#   選擇目標視窗（select_target_window 按鈕）
+#
+# row 4 (frm_log): 
+#   滑鼠座標（mouse_pos_label）
+#   錄製（time_label_prefix, time_label_time）
+#   單次剩餘（countdown_label_prefix, countdown_label_time）
+#   總運作（total_time_label_prefix, total_time_label_time）
+#
 # 下方為日誌顯示區（log_text）
 
 # ====== 滑鼠控制函式放在這裡 ======
@@ -231,7 +271,7 @@ class RecorderApp(tb.Window):
         self.style.configure("My.TCheckbutton", font=("Microsoft JhengHei", 9))
         self.style.configure("TinyBold.TButton", font=("Microsoft JhengHei", 9, "bold"))
 
-        self.title("ChroLens_Mimic_2.5")
+        self.title("ChroLens_Mimic_2.6")
         try:
             import sys, os
             if getattr(sys, 'frozen', False):
@@ -427,11 +467,44 @@ class RecorderApp(tb.Window):
         self.total_time_label_prefix = tb.Label(log_title_frame, text="總運作: ", font=("Consolas", 12), foreground="#FF95CA")
         self.total_time_label_prefix.pack(side="right", padx=0)
 
-        self.log_text = tb.Text(frm_log, height=24, width=110, state="disabled", font=("Microsoft JhengHei", 9))
-        self.log_text.pack(fill="both", expand=True, pady=(4,0))
-        log_scroll = tb.Scrollbar(frm_log, command=self.log_text.yview)
-        log_scroll.pack(side="left", fill="y")
+        # ====== row5 分頁區域 ======
+        frm_page = tb.Frame(self, padding=(10, 0, 10, 10))
+        frm_page.pack(fill="both", expand=True)
+        frm_page.grid_rowconfigure(0, weight=1)
+        frm_page.grid_columnconfigure(1, weight=1)
+
+        # 左側選單
+        self.page_menu = tk.Listbox(frm_page, width=18, font=("Microsoft JhengHei", 11), height=5)
+        self.page_menu.insert(0, "1.日誌顯示")
+        self.page_menu.insert(1, "2.腳本設定")
+        self.page_menu.insert(2, "3.整體設定")
+        self.page_menu.grid(row=0, column=0, sticky="ns", padx=(0, 8), pady=4)
+        self.page_menu.bind("<<ListboxSelect>>", self.on_page_selected)
+
+        # 右側內容區（預設顯示日誌）
+        self.page_content_frame = tb.Frame(frm_page)
+        self.page_content_frame.grid(row=0, column=1, sticky="nsew")
+        self.page_content_frame.grid_rowconfigure(0, weight=1)
+        self.page_content_frame.grid_columnconfigure(0, weight=1)
+
+        # 日誌顯示區（原 log_text 搬到這裡）
+        self.log_text = tb.Text(self.page_content_frame, height=24, width=110, state="disabled", font=("Microsoft JhengHei", 9))
+        self.log_text.grid(row=0, column=0, sticky="nsew")
+        log_scroll = tb.Scrollbar(self.page_content_frame, command=self.log_text.yview)
+        log_scroll.grid(row=0, column=1, sticky="ns")
         self.log_text.config(yscrollcommand=log_scroll.set)
+
+        # 腳本設定區（預留，點選時顯示）
+        self.script_setting_frame = tb.Frame(self.page_content_frame)
+        tb.Label(self.script_setting_frame, text="腳本設定區", font=("Microsoft JhengHei", 12)).pack(pady=20)
+
+        # 整體設定區（預留，點選時顯示）
+        self.global_setting_frame = tb.Frame(self.page_content_frame)
+        tb.Label(self.global_setting_frame, text="整體設定區", font=("Microsoft JhengHei", 12)).pack(pady=20)
+
+        # 預設選擇第一項
+        self.page_menu.selection_set(0)
+        self.show_page(0)
 
         # ====== 其餘初始化 ======
         self.refresh_script_list()
@@ -767,7 +840,7 @@ class RecorderApp(tb.Window):
                 'time': now
             }
             if self.target_hwnd:
-                rel_x, rel_y = screen_to_client(self.target_hwnd, last_pos[0], last_pos[1])
+                rel_x, rel_y = screen_to_client(self.target_hwnd, last_pos[0], last_pos[1], window_name="xxx")
                 event['rel_x'] = rel_x
                 event['rel_y'] = rel_y
                 event['hwnd'] = self.target_hwnd
@@ -785,7 +858,7 @@ class RecorderApp(tb.Window):
                         'time': now
                     }
                     if self.target_hwnd:
-                        rel_x, rel_y = screen_to_client(self.target_hwnd, pos[0], pos[1])
+                        rel_x, rel_y = screen_to_client(self.target_hwnd, pos[0], pos[1], window_name="xxx")
                         event['rel_x'] = rel_x
                         event['rel_y'] = rel_y
                         event['hwnd'] = self.target_hwnd
@@ -876,10 +949,11 @@ class RecorderApp(tb.Window):
         # 讓 repeat 依照使用者設定
         try:
             repeat = int(self.repeat_var.get())
-            if repeat <= 0:
-                repeat = 1
         except:
             repeat = 1
+        # 修正：當 repeat<=0 時，進入無限重複
+        if repeat <= 0:
+            repeat = 0  # 代表無限重複
 
         # 計算單次腳本時間
         if self.events:
@@ -912,6 +986,8 @@ class RecorderApp(tb.Window):
             repeat = int(self.repeat_var.get())
         except:
             repeat = 1
+        # 修正：當 repeat<=0 時，進入無限重複
+        infinite_repeat = repeat <= 0
         repeat_time_limit = self._repeat_time_limit if hasattr(self, "_repeat_time_limit") else None
         single_time = (self.events[-1]['time'] - self.events[0]['time']) / self.speed if self.events else 0
 
@@ -940,7 +1016,12 @@ class RecorderApp(tb.Window):
             repeat_mode = "normal"
 
         count = 0
-        while self.playing and (repeat_mode == "infinite_random" or count < repeat):
+        play_start_time = time.time()
+        while self.playing and (infinite_repeat or count < repeat):
+            # 強化：若有重複時間限制，超過即停止
+            if repeat_time_limit and (time.time() - play_start_time) >= repeat_time_limit:
+                self.log(f"【重複時間到】已達 {repeat_time_limit} 秒，自動停止回放。")
+                break
             self._current_play_index = 0
             total_events = len(self.events)
             if total_events == 0 or not self.playing:
@@ -986,7 +1067,7 @@ class RecorderApp(tb.Window):
                             win32gui.SetForegroundWindow(e['hwnd'])
                         except Exception:
                             pass
-                        abs_x, abs_y = client_to_screen(e['hwnd'], e['rel_x'], e['rel_y'])
+                        abs_x, abs_y = client_to_screen(e['hwnd'], e['rel_x'], e['rel_y'], window_name="xxx")
                         if e.get('event') == 'move':
                             move_mouse_abs(abs_x, abs_y)
                         elif e.get('event') == 'down':
@@ -1034,6 +1115,10 @@ class RecorderApp(tb.Window):
                 self.log(f"【間隔開始】第{count}次執行後，間隔 {interval_sec} 秒。")
                 interval_start = time.time()
                 while self.playing and time.time() - interval_start < interval_sec:
+                    # 強化：若有重複時間限制，超過即停止
+                    if repeat_time_limit and (time.time() - play_start_time) >= repeat_time_limit:
+                        self.log(f"【重複時間到】已達 {repeat_time_limit} 秒，自動停止回放。")
+                        break
                     if self.paused:
                         time.sleep(0.05)
                         interval_start += 0.05
@@ -1046,6 +1131,10 @@ class RecorderApp(tb.Window):
                 self.log(f"【間隔開始】第{count}次執行後，隨機間隔 {interval_sec} 秒。")
                 interval_start = time.time()
                 while self.playing and time.time() - interval_start < interval_sec:
+                    # 強化：若有重複時間限制，超過即停止
+                    if repeat_time_limit and (time.time() - play_start_time) >= repeat_time_limit:
+                        self.log(f"【重複時間到】已達 {repeat_time_limit} 秒，自動停止回放。")
+                        break
                     if self.paused:
                         time.sleep(0.05)
                         interval_start += 0.05
@@ -1339,40 +1428,35 @@ class RecorderApp(tb.Window):
         if self.tiny_mode_on:
             if self.tiny_window is None or not self.tiny_window.winfo_exists():
                 self.tiny_window = tb.Toplevel(self)
-                self.tiny_window.title("ChroLens_Mimic MiniMode")
-                self.tiny_window.geometry("620x40")  # 寬度加大100
-                self.tiny_window.overrideredirect(True)
+                self.tiny_window.title("MiniMode")
+                self.tiny_window.geometry("300x200")
                 self.tiny_window.resizable(False, False)
-                self.tiny_window.attributes("-topmost", True)
-                try:
-                    self.tiny_window.iconbitmap("umi_奶茶色.ico")
-                except Exception as e:
-                    print(f"無法設定 MiniMode icon: {e}")
-                self.tiny_btns = []
-                # 新增倒數Label（多語系）
-                lang = self.language_var.get()
-                lang_map = LANG_MAP.get(lang, LANG_MAP["繁體中文"])
-                self.tiny_countdown_label = tb.Label(
-                    self.tiny_window,
-                    text=f"{lang_map['剩餘']}: 00:00:00",
-                    font=("Microsoft JhengHei", 12),
-                    foreground="#FF95CA", width=13
-                )
-                self.tiny_countdown_label.grid(row=0, column=0, padx=2, pady=5)
-                # 拖曳功能
-                self.tiny_window.bind("<ButtonPress-1>", self._start_move_tiny)
+                self.tiny_window.grab_set()
+                # 設定視窗透明度
+                self.tiny_window.attributes("-alpha", 0.9)
+                # 可拖曳
+                self.tiny_window.bind("<Button-1>", self._start_move_tiny)
                 self.tiny_window.bind("<B1-Motion>", self._move_tiny)
-                btn_defs = [
-                    ("⏺", "start"),
-                    ("⏸", "pause"),
-                    ("⏹", "stop"),
-                    ("▶︎", "play"),
-                    ("⤴︎", "tiny")
-                ]
-                for i, (icon, key) in enumerate(btn_defs):
+                # 最上層
+                self.tiny_window.wm_attributes("-topmost", True)
+
+                # 在這個視窗內放置小型的控制按鈕
+                btn_frame = tb.Frame(self.tiny_window, padding=10)
+                btn_frame.pack(fill="both", expand=True)
+
+                # 依原有功能自動產生按鈕
+                self.tiny_btns = []
+                for i, (key, hotkey) in enumerate(self.hotkey_map.items()):
+                    icon = {
+                        "start": "●錄",
+                        "pause": "▮▮",
+                        "stop": "■",
+                        "play": "▶",
+                        "tiny": "↔"
+                    }.get(key, "")
                     btn = tb.Button(
-                        self.tiny_window,
-                        text=f"{icon} {self.hotkey_map[key]}",
+                        btn_frame,
+                        text=f"{icon} {hotkey}",
                         width=7, style="My.TButton",
                         command=getattr(self, {
                             "start": "start_record",
@@ -1475,194 +1559,25 @@ class RecorderApp(tb.Window):
                 win.destroy()
         tk.Button(win, text="確定", command=on_select).pack()
 
-    def _register_hotkeys(self):
-        import keyboard
-        for handler in self._hotkey_handlers.values():
-            try:
-                keyboard.remove_hotkey(handler)
-            except Exception as ex:
-                self.log(f"移除快捷鍵時發生錯誤: {ex}")
-        self._hotkey_handlers.clear()
-        for key, hotkey in self.hotkey_map.items():
-            try:
-                handler = keyboard.add_hotkey(
-                    hotkey,
-                    getattr(self, {
-                        "start": "start_record",
-                        "pause": "toggle_pause",
-                        "stop": "stop_all",
-                        "play": "play_record",
-                        "tiny": "toggle_tiny_mode"
-                    }[key]),
-                    suppress=False,  # 不攔截原本的功能
-                    trigger_on_release=False
-                )
-                self._hotkey_handlers[key] = handler
-                self.log(f"已註冊快捷鍵: {hotkey} → {key}")
-            except Exception as ex:
-                self.log(f"快捷鍵 {hotkey} 註冊失敗: {ex}")
+    def on_page_selected(self, event=None):
+        idx = self.page_menu.curselection()
+        if not idx:
+            return
+        self.show_page(idx[0])
 
-    def _play_thread(self):
-        self.playing = True
-        self.paused = False
-        try:
-            repeat = int(self.repeat_var.get())
-        except:
-            repeat = 1
-        repeat_time_limit = self._repeat_time_limit if hasattr(self, "_repeat_time_limit") else None
-        single_time = (self.events[-1]['time'] - self.events[0]['time']) / self.speed if self.events else 0
-
-        # 隨機間隔模式（重複時間和重複次數都 > 0）
-        if repeat_time_limit and repeat > 0:
-            fixed_total = single_time * repeat
-            remain_time = max(0, repeat_time_limit - fixed_total)
-            intervals = []
-            if repeat > 1 and remain_time > 0:
-                ratios = [random.random() for _ in range(repeat-1)]
-                total_ratio = sum(ratios)
-                for r in ratios:
-                    intervals.append(int(remain_time * r / total_ratio))
-            else:
-                intervals = [0] * (repeat-1)
-            self.log(f"【隨機間隔模式啟用】重複時間={repeat_time_limit}秒，重複次數={repeat}，隨機間隔={intervals}")
-            repeat_mode = "fixed"
-        # 只填重複間隔時，無限重複且每次隨機間隔
-        elif self._parse_time_to_seconds(self.repeat_interval_var.get()) > 0 and (not repeat_time_limit) and (not repeat or repeat <= 0):
-            repeat_interval_sec = self._parse_time_to_seconds(self.repeat_interval_var.get())
-            repeat_mode = "infinite_random"
-            self.log(f"【無限隨機間隔模式啟用】每次間隔 1~{repeat_interval_sec} 秒")
-        else:
-            repeat_interval_sec = self._parse_time_to_seconds(self.repeat_interval_var.get())
-            intervals = [repeat_interval_sec] * (repeat-1 if repeat > 1 else 0)
-            repeat_mode = "normal"
-
-        count = 0
-        while self.playing and (repeat_mode == "infinite_random" or count < repeat):
-            self._current_play_index = 0
-            total_events = len(self.events)
-            if total_events == 0 or not self.playing:
-                break
-            base_time = self.events[0]['time']
-            play_start = time.time()
-            while self._current_play_index < total_events:
-                if not self.playing:
-                    break
-                while self.paused:
-                    if not self.playing:
-                        break
-                    time.sleep(0.05)
-                    play_start += 0.05
-                if not self.playing:
-                    break
-                i = self._current_play_index
-                e = self.events[i]
-                event_offset = (e['time'] - base_time) / self.speed
-                target_time = play_start + event_offset
-                while True:
-                    now = time.time()
-                    if not self.playing:
-                        break
-                    if now >= target_time:
-                        break
-                    if self.paused:
-                        if not self.playing:
-                            break
-                        time.sleep(0.05)
-                        target_time += 0.05
-                        continue
-                    time.sleep(min(0.01, target_time - now))
-                if not self.playing:
-                    break
-                # 滑鼠事件
-                if e['type'] == 'mouse':
-                    # 若有 rel_x, rel_y, hwnd，則映射到目標視窗
-                    if 'rel_x' in e and 'rel_y' in e and 'hwnd' in e:
-                        try:
-                            # bring window to front
-                            win32gui.ShowWindow(e['hwnd'], win32con.SW_RESTORE)
-                            win32gui.SetForegroundWindow(e['hwnd'])
-                        except Exception:
-                            pass
-                        abs_x, abs_y = client_to_screen(e['hwnd'], e['rel_x'], e['rel_y'])
-                        if e.get('event') == 'move':
-                            move_mouse_abs(abs_x, abs_y)
-                        elif e.get('event') == 'down':
-                            move_mouse_abs(abs_x, abs_y)
-                            mouse_event_win('down', button=e.get('button', 'left'))
-                            self.log(f"[{format_time(e['time'])}] 滑鼠: {e}")
-                        elif e.get('event') == 'up':
-                            move_mouse_abs(abs_x, abs_y)
-                            mouse_event_win('up', button=e.get('button', 'left'))
-                            self.log(f"[{format_time(e['time'])}] 滑鼠: {e}")
-                        elif e.get('event') == 'wheel':
-                            move_mouse_abs(abs_x, abs_y)
-                            mouse_event_win('wheel', delta=e.get('delta', 0))
-                            self.log(f"[{format_time(e['time'])}] 滑鼠: {e}")
-                    else:
-                        # 沒有指定視窗，照原本方式
-                        if e.get('event') == 'move':
-                            move_mouse_abs(e['x'], e['y'])
-                        elif e.get('event') == 'down':
-                            move_mouse_abs(e['x'], e['y'])
-                            mouse_event_win('down', button=e.get('button', 'left'))
-                            self.log(f"[{format_time(e['time'])}] 滑鼠: {e}")
-                        elif e.get('event') == 'up':
-                            move_mouse_abs(e['x'], e['y'])
-                            mouse_event_win('up', button=e.get('button', 'left'))
-                            self.log(f"[{format_time(e['time'])}] 滑鼠: {e}")
-                        elif e.get('event') == 'wheel':
-                            move_mouse_abs(e['x'], e['y'])
-                            mouse_event_win('wheel', delta=e.get('delta', 0))
-                            self.log(f"[{format_time(e['time'])}] 滑鼠: {e}")
-                # 鍵盤事件照原本方式
-                elif e['type'] == 'keyboard':
-                    if e['event'] == 'down':
-                        keyboard.press(e['name'])
-                    elif e['event'] == 'up':
-                        keyboard.release(e['name'])
-                    self.log(f"[{format_time(e['time'])}] 鍵盤: {e['event']} {e['name']}")
-                self._current_play_index += 1
-            if not self.playing:
-                break
-            count += 1
-            # 執行間隔
-            if repeat_mode == "fixed" and count < repeat and intervals:
-                interval_sec = intervals[count-1]
-                self.log(f"【間隔開始】第{count}次執行後，間隔 {interval_sec} 秒。")
-                interval_start = time.time()
-                while self.playing and time.time() - interval_start < interval_sec:
-                    if self.paused:
-                        time.sleep(0.05)
-                        interval_start += 0.05
-                        continue
-                    time.sleep(0.05)
-                self.log(f"【間隔結束】第{count}次執行後，已結束間隔。")
-            elif repeat_mode == "infinite_random":
-                repeat_interval_sec = self._parse_time_to_seconds(self.repeat_interval_var.get())
-                interval_sec = random.randint(1, repeat_interval_sec)
-                self.log(f"【間隔開始】第{count}次執行後，隨機間隔 {interval_sec} 秒。")
-                interval_start = time.time()
-                while self.playing and time.time() - interval_start < interval_sec:
-                    if self.paused:
-                        time.sleep(0.05)
-                        interval_start += 0.05
-                        continue
-                    time.sleep(0.05)
-                self.log(f"【間隔結束】第{count}次執行後，已結束間隔。")
-            elif repeat_mode == "normal" and count < repeat and intervals:
-                interval_sec = intervals[count-1]
-                if interval_sec > 0:
-                    self.log(f"重複間隔 {interval_sec} 秒，等待中...")
-                    interval_start = time.time()
-                    while self.playing and time.time() - interval_start < interval_sec:
-                        if self.paused:
-                            time.sleep(0.05)
-                            interval_start += 0.05
-                            continue
-                        time.sleep(0.05)
-        self.playing = False
-        self.paused = False
-        self.log(f"[{format_time(time.time())}] 回放結束。")
+    def show_page(self, idx):
+        # 清空內容區
+        for widget in self.page_content_frame.winfo_children():
+            widget.grid_forget()
+        if idx == 0:
+            self.log_text.grid(row=0, column=0, sticky="nsew")
+            for child in self.page_content_frame.winfo_children():
+                if isinstance(child, tb.Scrollbar):
+                    child.grid(row=0, column=1, sticky="ns")
+        elif idx == 1:
+            self.script_setting_frame.grid(row=0, column=0, sticky="nsew")
+        elif idx == 2:
+            self.global_setting_frame.grid(row=0, column=0, sticky="nsew")
 
 # ====== 設定檔讀寫 ======
 CONFIG_FILE = "user_config.json"
