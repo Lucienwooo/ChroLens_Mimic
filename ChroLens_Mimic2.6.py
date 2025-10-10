@@ -481,26 +481,29 @@ class RecorderApp(tb.Window):
         self.page_menu.grid(row=0, column=0, sticky="ns", padx=(0, 8), pady=4)
         self.page_menu.bind("<<ListboxSelect>>", self.on_page_selected)
 
-        # 右側內容區（預設顯示日誌）
-        self.page_content_frame = tb.Frame(frm_page)
+        # 右側內容區（固定高度，內容置中）
+        self.page_content_frame = tb.Frame(frm_page, width=700, height=320)
         self.page_content_frame.grid(row=0, column=1, sticky="nsew")
         self.page_content_frame.grid_rowconfigure(0, weight=1)
         self.page_content_frame.grid_columnconfigure(0, weight=1)
+        self.page_content_frame.pack_propagate(False)  # 固定大小
 
-        # 日誌顯示區（原 log_text 搬到這裡）
+        # 日誌顯示區
         self.log_text = tb.Text(self.page_content_frame, height=24, width=110, state="disabled", font=("Microsoft JhengHei", 9))
         self.log_text.grid(row=0, column=0, sticky="nsew")
         log_scroll = tb.Scrollbar(self.page_content_frame, command=self.log_text.yview)
         log_scroll.grid(row=0, column=1, sticky="ns")
         self.log_text.config(yscrollcommand=log_scroll.set)
 
-        # 腳本設定區（預留，點選時顯示）
-        self.script_setting_frame = tb.Frame(self.page_content_frame)
-        tb.Label(self.script_setting_frame, text="腳本設定區", font=("Microsoft JhengHei", 12)).pack(pady=20)
+        # 腳本設定區
+        self.script_setting_frame = tb.Frame(self.page_content_frame, width=700, height=320)
+        self.script_setting_frame.pack_propagate(False)
+        tb.Label(self.script_setting_frame, text="腳本設定區", font=("Microsoft JhengHei", 12)).place(relx=0.5, rely=0.5, anchor="center")
 
-        # 整體設定區（預留，點選時顯示）
-        self.global_setting_frame = tb.Frame(self.page_content_frame)
-        tb.Label(self.global_setting_frame, text="整體設定區", font=("Microsoft JhengHei", 12)).pack(pady=20)
+        # 整體設定區
+        self.global_setting_frame = tb.Frame(self.page_content_frame, width=700, height=320)
+        self.global_setting_frame.pack_propagate(False)
+        tb.Label(self.global_setting_frame, text="整體設定區", font=("Microsoft JhengHei", 12)).place(relx=0.5, rely=0.5, anchor="center")
 
         # 預設選擇第一項
         self.page_menu.selection_set(0)
@@ -1569,15 +1572,16 @@ class RecorderApp(tb.Window):
         # 清空內容區
         for widget in self.page_content_frame.winfo_children():
             widget.grid_forget()
+            widget.place_forget()
         if idx == 0:
             self.log_text.grid(row=0, column=0, sticky="nsew")
             for child in self.page_content_frame.winfo_children():
                 if isinstance(child, tb.Scrollbar):
                     child.grid(row=0, column=1, sticky="ns")
         elif idx == 1:
-            self.script_setting_frame.grid(row=0, column=0, sticky="nsew")
+            self.script_setting_frame.place(relx=0.5, rely=0.5, anchor="center")
         elif idx == 2:
-            self.global_setting_frame.grid(row=0, column=0, sticky="nsew")
+            self.global_setting_frame.place(relx=0.5, rely=0.5, anchor="center")
 
 # ====== 設定檔讀寫 ======
 CONFIG_FILE = "user_config.json"
