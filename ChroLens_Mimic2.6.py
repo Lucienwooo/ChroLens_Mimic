@@ -1,5 +1,5 @@
 #ChroLens Studio - Lucienwooo
-#pyinstaller --noconsole --onedir --icon=umi_奶茶色.ico --add-data "umi_奶茶色.ico;." ChroLens_Mimic2.6copy.py
+#pyinstaller --noconsole --onedir --icon=umi_奶茶色.ico --add-data "umi_奶茶色.ico;." ChroLens_Mimic2.6.py
 import ttkbootstrap as tb
 from ttkbootstrap.constants import *
 import tkinter as tk
@@ -10,6 +10,7 @@ import win32api
 import win32gui
 import win32con
 import pywintypes
+import random  # 新增
 
 def show_error_window(window_name):
     ctypes.windll.user32.MessageBoxW(
@@ -40,7 +41,7 @@ def client_to_screen(hwnd, rel_x, rel_y, window_name=""):
 #   MiniMode（tiny_mode_btn）、skin下拉選單（theme_combo）
 #
 # row 1 (frm_bottom): 
-#   回放速度（lbl_speed, speed_var 輸入框）、腳本路徑（btn_scripts_dir 按鈕）
+#   回放速度（lbl_speed, speed_var 輸入框）、script路徑（btn_scripts_dir 按鈕）
 #   快捷鍵（btn_hotkey 按鈕）、關於（about_btn）、語言下拉選單（lang_combo）
 #
 # row 2 (frm_repeat): 
@@ -339,7 +340,7 @@ class RecorderApp(tb.Window):
         self.update_speed_tooltip()
         self.speed_var = tk.StringVar(value=self.user_config.get("speed", "100"))  # 預設100
         tb.Entry(frm_bottom, textvariable=self.speed_var, width=6, style="My.TEntry").grid(row=0, column=1, padx=6)
-        self.btn_scripts_dir = tb.Button(frm_bottom, text="腳本路徑", command=self.use_default_script_dir, bootstyle=SECONDARY, width=10, style="My.TButton")
+        self.btn_scripts_dir = tb.Button(frm_bottom, text="script路徑", command=self.use_default_script_dir, bootstyle=SECONDARY, width=10, style="My.TButton")
         self.btn_scripts_dir.grid(row=0, column=3, padx=6)
         self.btn_hotkey = tb.Button(frm_bottom, text="快捷鍵", command=self.open_hotkey_settings, bootstyle=SECONDARY, width=10, style="My.TButton")
         self.btn_hotkey.grid(row=0, column=4, padx=6)
@@ -387,13 +388,20 @@ class RecorderApp(tb.Window):
         self.repeat_interval_label = tb.Label(frm_repeat, text="重複間隔", style="My.TLabel")
         self.repeat_interval_label.grid(row=0, column=6, padx=(0, 2))
 
-        # 新增「儲存」按鈕（位置往後移動）
+        # 新增「隨機」勾選框
+        self.random_interval_var = tk.BooleanVar(value=False)
+        self.random_interval_check = tb.Checkbutton(
+            frm_repeat, text="隨機", variable=self.random_interval_var, style="My.TCheckbutton"
+        )
+        self.random_interval_check.grid(row=0, column=7, padx=(8, 2))
+
+        # 儲存按鈕往後移動一格
         self.save_script_btn_text = tk.StringVar(value=LANG_MAP.get(lang, LANG_MAP["繁體中文"])["儲存"])
         self.save_script_btn = tb.Button(
             frm_repeat, textvariable=self.save_script_btn_text, width=8, bootstyle=SUCCESS, style="My.TButton",
             command=self.save_script_settings
         )
-        self.save_script_btn.grid(row=0, column=7, padx=(8, 0))
+        self.save_script_btn.grid(row=0, column=8, padx=(8, 0))
 
         # 只允許輸入數字與冒號
         def validate_time_input(P):
@@ -423,7 +431,7 @@ class RecorderApp(tb.Window):
         self.script_menu_label = tb.Label(frm_script, text="腳本選單:", style="My.TLabel")
         self.script_menu_label.grid(row=0, column=0, sticky="w", padx=(0, 2))
         self.script_var = tk.StringVar(value=self.user_config.get("last_script", ""))
-        self.script_combo = tb.Combobox(frm_script, textvariable=self.script_var, width=30, state="readonly", style="My.TCombobox")
+        self.script_combo = tb.Combobox(frm_script, textvariable=self.script_var, width=20, state="readonly", style="My.TCombobox")
         self.script_combo.grid(row=0, column=1, sticky="w", padx=4)
         self.rename_var = tk.StringVar()
         self.rename_entry = tb.Entry(frm_script, textvariable=self.rename_var, width=20, style="My.TEntry")
@@ -498,12 +506,65 @@ class RecorderApp(tb.Window):
         # 腳本設定區
         self.script_setting_frame = tb.Frame(self.page_content_frame, width=700, height=320)
         self.script_setting_frame.pack_propagate(False)
-        tb.Label(self.script_setting_frame, text="腳本設定區", font=("Microsoft JhengHei", 12)).place(relx=0.5, rely=0.5, anchor="center")
 
-        # 整體設定區
+        # ==SR1== 腳本設定右側區域 ScriptRight1
+
+        # 參考日誌視窗大小
+        log_height = 24
+        log_width = 110
+
+        # 腳本列表寬度為日誌視窗一半
+        script_listbox_width = log_width // 2  # 55
+        script_listbox_height = log_height     # 24
+
+        # 腳本列表視窗，靠左
+        self.script_listbox = tk.Listbox(
+            self.script_setting_frame,
+            width=script_listbox_width,
+            height=script_listbox_height,
+            font=("Microsoft JhengHei", 10)
+        )
+        self.script_listbox.place(x=0, y=0)
+        self.refresh_script_listbox()
+        self.script_listbox.bind("<<ListboxSelect>>", self.on_script_listbox_select)
+
+        # SR1 右側功能區域
+        self.script_right_frame = tb.Frame(self.script_setting_frame)
+        # 放在腳本列表右側，x 位置為腳本列表寬度
+        self.script_right_frame.place(x=script_listbox_width * 7.5, y=0, width=320, height=320)  # 7.5是每單位width約7.5px
+
+        # 快捷鍵捕捉框（寬度與按鈕一致）
+        self.hotkey_capture_var = tk.StringVar()
+        hotkey_entry = tb.Entry(self.script_right_frame, textvariable=self.hotkey_capture_var, font=("Consolas", 12), width=12)
+        hotkey_entry.grid(row=1, column=0, padx=8, pady=(0, 8))
+        hotkey_entry.bind("<KeyRelease>", self.on_hotkey_entry_key)
+
+        # 設定快捷鍵按鈕
+        set_hotkey_btn = tb.Button(self.script_right_frame, text="設定快捷鍵", width=12, bootstyle=SUCCESS, command=self.set_script_hotkey)
+        set_hotkey_btn.grid(row=2, column=0, padx=8, pady=8)
+
+        # script路徑按鈕
+        self.btn_scripts_dir_sr1 = tb.Button(self.script_right_frame, text="script路徑", command=self.use_default_script_dir, bootstyle=SECONDARY, width=12, style="My.TButton")
+        self.btn_scripts_dir_sr1.grid(row=3, column=0, padx=8, pady=8)
+
+        # 刪除按鈕
+        del_btn = tb.Button(self.script_right_frame, text="刪除", width=12, bootstyle=DANGER, command=self.delete_selected_script)
+        del_btn.grid(row=4, column=0, padx=8, pady=8)
+        # ==SR1== end
+
+        # 左側腳本列表（高度對齊左側選單）
+        self.script_listbox = tk.Listbox(self.script_setting_frame, width=32, font=("Microsoft JhengHei", 10), height=5)
+        self.script_listbox.place(relx=0.0, rely=0.5, anchor="w", height=220, y=20)
+        self.refresh_script_listbox()
+        self.script_listbox.bind("<<ListboxSelect>>", self.on_script_listbox_select)
+
+        # ==GR1== 整體設定右側區域 GlobalRight1
         self.global_setting_frame = tb.Frame(self.page_content_frame, width=700, height=320)
         self.global_setting_frame.pack_propagate(False)
-        tb.Label(self.global_setting_frame, text="整體設定區", font=("Microsoft JhengHei", 12)).place(relx=0.5, rely=0.5, anchor="center")
+        self.global_right_frame = tb.Frame(self.global_setting_frame)
+        self.global_right_frame.place(relx=0.5, rely=0.1, anchor="n", width=320, height=260)
+        tb.Label(self.global_right_frame, text="GlobalRight1", font=("Microsoft JhengHei", 12, "bold")).pack(pady=10)
+        # ==GR1== end
 
         # 預設選擇第一項
         self.page_menu.selection_set(0)
@@ -600,7 +661,6 @@ class RecorderApp(tb.Window):
         self.tiny_mode_btn.config(text=lang_map["MiniMode"])
         self.about_btn.config(text=lang_map["關於"])
         self.lbl_speed.config(text=lang_map["回放速度:"])
-        self.btn_scripts_dir.config(text=lang_map["Script路徑"])
         self.btn_hotkey.config(text=lang_map["快捷鍵"])
         self.total_time_label_prefix.config(text=lang_map["總運作"])
         self.countdown_label_prefix.config(text=lang_map["單次"])
@@ -625,7 +685,6 @@ class RecorderApp(tb.Window):
         self.tiny_mode_btn.config(text=lang_map["MiniMode"])
         self.about_btn.config(text=lang_map["關於"])
         self.lbl_speed.config(text=lang_map["回放速度:"])
-        self.btn_scripts_dir.config(text=lang_map["Script路徑"])
         self.btn_hotkey.config(text=lang_map["快捷鍵"])
         self.total_time_label_prefix.config(text=lang_map["總運作"])
         self.countdown_label_prefix.config(text=lang_map["單次"])
@@ -954,7 +1013,6 @@ class RecorderApp(tb.Window):
             repeat = int(self.repeat_var.get())
         except:
             repeat = 1
-        # 修正：當 repeat<=0 時，進入無限重複
         if repeat <= 0:
             repeat = 0  # 代表無限重複
 
@@ -966,10 +1024,8 @@ class RecorderApp(tb.Window):
 
         # 計算總運作時間（包含間隔）
         if self._repeat_time_limit and repeat > 0:
-            # 隨機間隔模式，總時間以重複時間為主
             total_time = self._repeat_time_limit
         else:
-            # 傳統模式
             total_time = single_time * repeat + repeat_interval_sec * max(0, repeat - 1)
         self._total_play_time = total_time
 
@@ -979,6 +1035,8 @@ class RecorderApp(tb.Window):
         self.playing = True
         self.paused = False
         self._repeat_times = repeat
+        # 傳遞隨機勾選狀態
+        self._random_interval = self.random_interval_var.get()
         threading.Thread(target=self._play_thread, daemon=True).start()
         self.after(100, self._update_play_time)
 
@@ -989,34 +1047,12 @@ class RecorderApp(tb.Window):
             repeat = int(self.repeat_var.get())
         except:
             repeat = 1
-        # 修正：當 repeat<=0 時，進入無限重複
         infinite_repeat = repeat <= 0
         repeat_time_limit = self._repeat_time_limit if hasattr(self, "_repeat_time_limit") else None
         single_time = (self.events[-1]['time'] - self.events[0]['time']) / self.speed if self.events else 0
 
-        # 隨機間隔模式（重複時間和重複次數都 > 0）
-        if repeat_time_limit and repeat > 0:
-            fixed_total = single_time * repeat
-            remain_time = max(0, repeat_time_limit - fixed_total)
-            intervals = []
-            if repeat > 1 and remain_time > 0:
-                ratios = [random.random() for _ in range(repeat-1)]
-                total_ratio = sum(ratios)
-                for r in ratios:
-                    intervals.append(int(remain_time * r / total_ratio))
-            else:
-                intervals = [0] * (repeat-1)
-            self.log(f"【隨機間隔模式啟用】重複時間={repeat_time_limit}秒，重複次數={repeat}，隨機間隔={intervals}")
-            repeat_mode = "fixed"
-        # 只填重複間隔時，無限重複且每次隨機間隔
-        elif self._parse_time_to_seconds(self.repeat_interval_var.get()) > 0 and (not repeat_time_limit) and (not repeat or repeat <= 0):
-            repeat_interval_sec = self._parse_time_to_seconds(self.repeat_interval_var.get())
-            repeat_mode = "infinite_random"
-            self.log(f"【無限隨機間隔模式啟用】每次間隔 1~{repeat_interval_sec} 秒")
-        else:
-            repeat_interval_sec = self._parse_time_to_seconds(self.repeat_interval_var.get())
-            intervals = [repeat_interval_sec] * (repeat-1 if repeat > 1 else 0)
-            repeat_mode = "normal"
+        repeat_interval_sec = self._parse_time_to_seconds(self.repeat_interval_var.get())
+        random_interval = getattr(self, "_random_interval", False)
 
         count = 0
         play_start_time = time.time()
@@ -1113,41 +1149,14 @@ class RecorderApp(tb.Window):
                 break
             count += 1
             # 執行間隔
-            if repeat_mode == "fixed" and count < repeat and intervals:
-                interval_sec = intervals[count-1]
-                self.log(f"【間隔開始】第{count}次執行後，間隔 {interval_sec} 秒。")
-                interval_start = time.time()
-                while self.playing and time.time() - interval_start < interval_sec:
-                    # 強化：若有重複時間限制，超過即停止
-                    if repeat_time_limit and (time.time() - play_start_time) >= repeat_time_limit:
-                        self.log(f"【重複時間到】已達 {repeat_time_limit} 秒，自動停止回放。")
-                        break
-                    if self.paused:
-                        time.sleep(0.05)
-                        interval_start += 0.05
-                        continue
-                    time.sleep(0.05)
-                self.log(f"【間隔結束】第{count}次執行後，已結束間隔。")
-            elif repeat_mode == "infinite_random":
-                repeat_interval_sec = self._parse_time_to_seconds(self.repeat_interval_var.get())
-                interval_sec = random.randint(1, repeat_interval_sec)
-                self.log(f"【間隔開始】第{count}次執行後，隨機間隔 {interval_sec} 秒。")
-                interval_start = time.time()
-                while self.playing and time.time() - interval_start < interval_sec:
-                    # 強化：若有重複時間限制，超過即停止
-                    if repeat_time_limit and (time.time() - play_start_time) >= repeat_time_limit:
-                        self.log(f"【重複時間到】已達 {repeat_time_limit} 秒，自動停止回放。")
-                        break
-                    if self.paused:
-                        time.sleep(0.05)
-                        interval_start += 0.05
-                        continue
-                    time.sleep(0.05)
-                self.log(f"【間隔結束】第{count}次執行後，已結束間隔。")
-            elif repeat_mode == "normal" and count < repeat and intervals:
-                interval_sec = intervals[count-1]
-                if interval_sec > 0:
-                    self.log(f"重複間隔 {interval_sec} 秒，等待中...")
+            if count < repeat or infinite_repeat:
+                if repeat_interval_sec > 0:
+                    if random_interval:
+                        interval_sec = random.randint(1, repeat_interval_sec)
+                        self.log(f"【隨機間隔】第{count}次執行後，隨機間隔 {interval_sec} 秒。")
+                    else:
+                        interval_sec = repeat_interval_sec
+                        self.log(f"【固定間隔】第{count}次執行後，間隔 {interval_sec} 秒。")
                     interval_start = time.time()
                     while self.playing and time.time() - interval_start < interval_sec:
                         if self.paused:
@@ -1179,6 +1188,7 @@ class RecorderApp(tb.Window):
         self.user_config["repeat_time"] = self.repeat_time_var.get()
         self.user_config["hotkey_map"] = self.hotkey_map
         save_user_config(self.user_config)
+        self.log("【整體設定已更新】")  # 新增：日誌顯示
 
     def auto_save_script(self):
         try:
@@ -1202,6 +1212,36 @@ class RecorderApp(tb.Window):
         except Exception as ex:
             self.log(f"[{format_time(time.time())}] 存檔失敗: {ex}")
 
+    # --- 儲存腳本設定 ---
+    def save_script_settings(self):
+        """將目前 speed/repeat/repeat_time/repeat_interval/random_interval 寫入當前腳本檔案"""
+        script = self.script_var.get()
+        if not script:
+            self.log("請先選擇一個腳本再儲存設定。")
+            return
+        path = os.path.join(self.script_dir, script)
+        if not os.path.exists(path):
+            self.log("找不到腳本檔案，請先錄製或載入腳本。")
+            return
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            # 若為舊格式，轉為新格式
+            if not (isinstance(data, dict) and "events" in data):
+                data = {"events": data}
+            data["speed"] = self.speed_var.get()
+            data["repeat"] = self.repeat_var.get()
+            data["repeat_time"] = self.repeat_time_var.get()
+            data["repeat_interval"] = self.repeat_interval_var.get()
+            data["random_interval"] = self.random_interval_var.get()
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            self.log(f"已將設定儲存到腳本：{script}")
+            self.log("【腳本設定已更新】")  # 新增：日誌顯示
+        except Exception as ex:
+            self.log(f"儲存腳本設定失敗: {ex}")
+
+    # --- 讀取腳本設定 ---
     def on_script_selected(self, event=None):
         script = self.script_var.get()
         if script:
@@ -1215,10 +1255,12 @@ class RecorderApp(tb.Window):
                 self.speed_var.set(data.get("speed", "100"))
                 self.repeat_var.set(data.get("repeat", "1"))
                 self.repeat_time_var.set(data.get("repeat_time", "00:00:00"))
-                self.repeat_interval_var.set(data.get("repeat_interval", "00:00:00"))  # 新增這行
+                self.repeat_interval_var.set(data.get("repeat_interval", "00:00:00"))
+                self.random_interval_var.set(data.get("random_interval", False))
             else:
                 self.events = data
             self.log(f"[{format_time(time.time())}] 腳本已載入：{script}，共 {len(self.events)} 筆事件。")
+            self.log("【腳本設定已載入】")  # 新增：日誌顯示
             with open(LAST_SCRIPT_FILE, "w", encoding="utf-8") as f:
                 f.write(script)
             # 讀取腳本後，顯示單次腳本時間
@@ -1405,7 +1447,7 @@ class RecorderApp(tb.Window):
                         "play": "play_record",
                         "tiny": "toggle_tiny_mode"
                     }[key]),
-                    suppress=False,  # 不攔截原本的功能
+                                       suppress=False,  # 不攔截原本的功能
                     trigger_on_release=False
                 )
                 self._hotkey_handlers[key] = handler
@@ -1420,6 +1462,7 @@ class RecorderApp(tb.Window):
         self.btn_play.config(text=f"回放 ({self.hotkey_map['play']})")
         # MiniMode 按鈕同步更新
         if hasattr(self, "tiny_btns"):
+
             for btn, icon, key in self.tiny_btns:
                 btn.config(text=f"{icon} {self.hotkey_map[key]}")
 
@@ -1437,7 +1480,7 @@ class RecorderApp(tb.Window):
                 self.tiny_window.grab_set()
                 # 設定視窗透明度
                 self.tiny_window.attributes("-alpha", 0.9)
-                # 可拖曳
+                # 可拖曮
                 self.tiny_window.bind("<Button-1>", self._start_move_tiny)
                 self.tiny_window.bind("<B1-Motion>", self._move_tiny)
                 # 最上層
@@ -1497,6 +1540,7 @@ class RecorderApp(tb.Window):
             os.makedirs(self.script_dir)
         self.refresh_script_list()
         self.save_config()
+
         # 開啟資料夾
         os.startfile(self.script_dir)
 
@@ -1510,57 +1554,14 @@ class RecorderApp(tb.Window):
         if self.script_var.get() not in scripts:
             self.script_var.set('')
 
-    def save_script_settings(self):
-        """將目前 speed/repeat/repeat_time/repeat_interval 寫入當前腳本檔案"""
-        script = self.script_var.get()
-        if not script:
-            self.log("請先選擇一個腳本再儲存設定。")
-            return
-        path = os.path.join(self.script_dir, script)
-        if not os.path.exists(path):
-            self.log("找不到腳本檔案，請先錄製或載入腳本。")
-            return
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            # 若為舊格式，轉為新格式
-            if not (isinstance(data, dict) and "events" in data):
-                data = {"events": data}
-            data["speed"] = self.speed_var.get()
-            data["repeat"] = self.repeat_var.get()
-            data["repeat_time"] = self.repeat_time_var.get()
-            data["repeat_interval"] = self.repeat_interval_var.get()  # 新增這行
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
-            self.log(f"已將設定儲存到腳本：{script}")
-        except Exception as ex:
-            self.log(f"儲存腳本設定失敗: {ex}")
-
-    def list_windows(self):
-        windows = []
-        def callback(hwnd, extra):
-            if win32gui.IsWindowVisible(hwnd) and win32gui.GetWindowText(hwnd):
-                windows.append((hwnd, win32gui.GetWindowText(hwnd)))
-        win32gui.EnumWindows(callback, None)
-        return windows
-
-    def select_target_window(self):
-        winlist = self.list_windows()
-        win = tk.Toplevel(self)
-        win.title("選擇目標視窗")
-        lb = tk.Listbox(win, width=60)
-        for hwnd, title in winlist:
-            lb.insert("end", f"{hwnd}: {title}")
-        lb.pack()
-        def on_select():
-            idx = lb.curselection()
-            if idx:
-                hwnd = winlist[idx[0]][0]
-                self.target_hwnd = hwnd
-                self.target_title = winlist[idx[0]][1]
-                self.log(f"已選擇目標視窗: {self.target_title} (HWND={hwnd})")
-                win.destroy()
-        tk.Button(win, text="確定", command=on_select).pack()
+    def refresh_script_listbox(self):
+        """刷新腳本設定區左側 Listbox"""
+        self.script_listbox.delete(0, "end")
+        if not os.path.exists(self.script_dir):
+            os.makedirs(self.script_dir)
+        scripts = [f for f in os.listdir(self.script_dir) if f.endswith('.json')]
+        for f in scripts:
+            self.script_listbox.insert("end", f)
 
     def on_page_selected(self, event=None):
         idx = self.page_menu.curselection()
@@ -1580,8 +1581,80 @@ class RecorderApp(tb.Window):
                     child.grid(row=0, column=1, sticky="ns")
         elif idx == 1:
             self.script_setting_frame.place(relx=0.5, rely=0.5, anchor="center")
+            # 額外刷新腳本列表
+            self.refresh_script_listbox()
         elif idx == 2:
             self.global_setting_frame.place(relx=0.5, rely=0.5, anchor="center")
+
+        def refresh_script_listbox(self):
+            self.script_listbox.delete(0, "end")
+        if not os.path.exists(self.script_dir):
+            os.makedirs(self.script_dir)
+        scripts = [f for f in os.listdir(self.script_dir) if f.endswith('.json')]
+        for f in scripts:
+            self.script_listbox.insert("end", f)
+
+    def on_script_listbox_select(self, event=None):
+        idx = self.script_listbox.curselection()
+        if idx:
+            script = self.script_listbox.get(idx[0])
+            self.script_var.set(script)
+            self.on_script_selected()
+            # 若腳本有快捷鍵，載入顯示
+            path = os.path.join(self.script_dir, script)
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                hotkey = data.get("script_hotkey", "")
+                self.hotkey_capture_var.set(hotkey)
+            except Exception:
+                self.hotkey_capture_var.set("")
+
+    def on_hotkey_entry_key(self, event):
+        keys = []
+        if event.state & 0x0001: keys.append("shift")
+        if event.state & 0x0004: keys.append("ctrl")
+        if event.state & 0x0008: keys.append("alt")
+        key_name = event.keysym.lower()
+        if key_name not in ("shift_l", "shift_r", "control_l", "control_r", "alt_l", "alt_r"):
+            keys.append(key_name)
+        self.hotkey_capture_var.set("+".join(keys))
+
+    def set_script_hotkey(self):
+        script = self.script_var.get()
+        hotkey = self.hotkey_capture_var.get()
+        if not script or not hotkey:
+            self.log("請選擇腳本並輸入快捷鍵。")
+            return
+        path = os.path.join(self.script_dir, script)
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            data["script_hotkey"] = hotkey
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            self.log(f"已設定腳本 {script} 的快捷鍵：{hotkey}")
+        except Exception as ex:
+            self.log(f"設定腳本快捷鍵失敗: {ex}")
+
+    def delete_selected_script(self):
+        idx = self.script_listbox.curselection()
+        if not idx:
+            self.log("請先選擇要刪除的腳本。")
+            return
+        script = self.script_listbox.get(idx[0])
+        path = os.path.join(self.script_dir, script)
+        try:
+            os.remove(path)
+            self.log(f"已刪除腳本：{script}")
+            self.refresh_script_listbox()
+            self.refresh_script_list()
+        except Exception as ex:
+            self.log(f"刪除腳本失敗: {ex}")
+
+    def select_target_window(self):
+        # 這裡可以加入選擇視窗的功能
+        self.log("【選擇目標視窗】功能尚未實作。")
 
 # ====== 設定檔讀寫 ======
 CONFIG_FILE = "user_config.json"
