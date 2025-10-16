@@ -40,7 +40,7 @@ class TinyMode:
                 pass
             lang = self.language_var.get()
             lang_map = LANG_MAP.get(lang, LANG_MAP["繁體中文"])
-            self.tiny_countdown_label = tb.Label(self.tiny_window, text=f"{lang_map['剩餘']}: 00:00:00", font=("Microsoft JhengHei", 12), foreground="#FF95CA", width=13)
+            self.tiny_countdown_label = tb.Label(self.tiny_window, text=f"{lang_map['剩餘']}: 00:00:00", font=("LINESeedTW_TTF_Rg", 12), foreground="#FF95CA", width=13)
             self.tiny_countdown_label.grid(row=0, column=0, padx=2, pady=5)
             self.tiny_window.bind("<ButtonPress-1>", self._start_move)
             self.tiny_window.bind("<B1-Motion>", self._move)

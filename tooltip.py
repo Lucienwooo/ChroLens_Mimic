@@ -19,7 +19,7 @@ class Tooltip:
         label = tk.Label(
             tw, text=self.text, background="#ffffe0",
             relief="solid", borderwidth=1,
-            font=("Microsoft JhengHei", 10)
+            font=("LINESeedTW_TTF_Rg", 10)
         )
         label.pack(ipadx=6, ipady=2)
 

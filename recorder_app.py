@@ -19,6 +19,16 @@ from utils import (
 from lang import LANG_MAP
 from tooltip import Tooltip
 
+# 新增：watchdog 可選支援（放在檔案頂端 import 區）
+try:
+    from watchdog.observers import Observer
+    from watchdog.events import FileSystemEventHandler
+    _HAVE_WATCHDOG = True
+except Exception:
+    Observer = None
+    FileSystemEventHandler = object
+    _HAVE_WATCHDOG = False
+
 class RecorderApp(tb.Window):
     def __init__(self):
         self.user_config = load_user_config()
@@ -76,7 +86,7 @@ class RecorderApp(tb.Window):
         if not os.path.exists(self.script_dir):
             os.makedirs(self.script_dir)
 
-        # top frame
+        # 頂部按鈕區域
         frm_top = tb.Frame(self, padding=(8, 10, 8, 5))
         frm_top.pack(fill="x")
 
@@ -98,7 +108,7 @@ class RecorderApp(tb.Window):
         self.tiny_mode_btn = tb.Button(frm_top, text="MiniMode", style="My.TButton", command=self.toggle_tiny_mode, width=10)
         self.tiny_mode_btn.grid(row=0, column=7, padx=4)
 
-        # bottom frame
+        # 底部設定區域
         frm_bottom = tb.Frame(self, padding=(8, 0, 8, 5))
         frm_bottom.pack(fill="x")
         self.lbl_speed = tb.Label(frm_bottom, text="回放速度:", style="My.TLabel")
@@ -107,8 +117,6 @@ class RecorderApp(tb.Window):
         self.update_speed_tooltip()
         self.speed_var = tk.StringVar(value=self.user_config.get("speed", "100"))
         tb.Entry(frm_bottom, textvariable=self.speed_var, width=6, style="My.TEntry").grid(row=0, column=1, padx=6)
-        self.btn_scripts_dir = tb.Button(frm_bottom, text="script路徑", command=self.use_default_script_dir, bootstyle=SECONDARY, width=10, style="My.TButton")
-        self.btn_scripts_dir.grid(row=0, column=3, padx=6)
         self.btn_hotkey = tb.Button(frm_bottom, text="快捷鍵", command=self.open_hotkey_settings, bootstyle=SECONDARY, width=10, style="My.TButton")
         self.btn_hotkey.grid(row=0, column=4, padx=6)
         self.about_btn = tb.Button(frm_bottom, text="關於", width=6, style="My.TButton", command=self.show_about_dialog, bootstyle=SECONDARY)
@@ -121,7 +129,7 @@ class RecorderApp(tb.Window):
         lang_combo.bind("<<ComboboxSelected>>", self.change_language)
         self.language_combo = lang_combo
 
-        # repeat frame
+        # 重複設定區域
         frm_repeat = tb.Frame(self, padding=(8, 0, 8, 5))
         frm_repeat.pack(fill="x")
         self.repeat_label = tb.Label(frm_repeat, text="重複次數:", style="My.TLabel")
@@ -172,7 +180,7 @@ class RecorderApp(tb.Window):
         entry_repeat_time.bind("<Button-3>", lambda e: self.repeat_time_var.set("00:00:00"))
         repeat_interval_entry.bind("<Button-3>", lambda e: self.repeat_interval_var.set("00:00:00"))
 
-        # script frame
+        # 腳本選單區域
         frm_script = tb.Frame(self, padding=(8, 0, 8, 5))
         frm_script.pack(fill="x")
         self.script_menu_label = tb.Label(frm_script, text="腳本選單:", style="My.TLabel")
@@ -187,7 +195,7 @@ class RecorderApp(tb.Window):
         tb.Button(frm_script, text="選擇目標視窗", command=self.select_target_window, bootstyle=INFO, width=14, style="My.TButton").grid(row=0, column=4, padx=4)
         self.script_combo.bind("<<ComboboxSelected>>", self.on_script_selected)
 
-        # log area
+        # 日誌標題區域
         frm_log = tb.Frame(self, padding=(10, 0, 10, 10))
         frm_log.pack(fill="both", expand=True)
         log_title_frame = tb.Frame(frm_log)
@@ -211,70 +219,110 @@ class RecorderApp(tb.Window):
         self.total_time_label_prefix = tb.Label(log_title_frame, text="總運作: ", font=("Consolas", 12), foreground="#FF95CA")
         self.total_time_label_prefix.pack(side="right", padx=0)
 
-        # pages
+        # 頁面區域
         frm_page = tb.Frame(self, padding=(10, 0, 10, 10))
         frm_page.pack(fill="both", expand=True)
         frm_page.grid_rowconfigure(0, weight=1)
         frm_page.grid_columnconfigure(1, weight=1)
 
-        self.page_menu = tk.Listbox(frm_page, width=18, font=("Microsoft JhengHei", 11), height=5)
+        self.page_menu = tk.Listbox(frm_page, width=18, font=("LINESeedTW_TTF_Rg", 9), height=5)
         self.page_menu.insert(0, "1.日誌顯示")
         self.page_menu.insert(1, "2.腳本設定")
         self.page_menu.insert(2, "3.整體設定")
         self.page_menu.grid(row=0, column=0, sticky="ns", padx=(0, 8), pady=4)
         self.page_menu.bind("<<ListboxSelect>>", self.on_page_selected)
 
+        # 主要內容區域
         self.page_content_frame = tb.Frame(frm_page, width=700, height=320)
         self.page_content_frame.grid(row=0, column=1, sticky="nsew")
         self.page_content_frame.grid_rowconfigure(0, weight=1)
         self.page_content_frame.grid_columnconfigure(0, weight=1)
         self.page_content_frame.pack_propagate(False)
 
-        self.log_text = tb.Text(self.page_content_frame, height=24, width=110, state="disabled", font=("Microsoft JhengHei", 9))
+# 在 __init__ 中的頁面初始化部分：
+
+        # 日誌顯示區域
+        self.log_text = tb.Text(self.page_content_frame, height=24, width=110, state="disabled", font=("LINESeedTW_TTF_Rg", 9))
         self.log_text.grid(row=0, column=0, sticky="nsew")
         log_scroll = tb.Scrollbar(self.page_content_frame, command=self.log_text.yview)
         log_scroll.grid(row=0, column=1, sticky="ns")
         self.log_text.config(yscrollcommand=log_scroll.set)
 
-        self.script_setting_frame = tb.Frame(self.page_content_frame, width=700, height=320)
-        self.script_setting_frame.pack_propagate(False)
+        # 腳本設定區域
+        self.script_setting_frame = tb.Frame(self.page_content_frame)
+        self.script_setting_frame.grid(row=0, column=0, sticky="nsew")
 
-        # script list & right area
-        log_height = 24
-        log_width = 110
-        script_listbox_width = log_width // 2
-        script_listbox_height = log_height
+        # 左側腳本列表框架
+        list_frame = tb.Frame(self.script_setting_frame)
+        list_frame.pack(side="left", fill="both", expand=True)
 
-        self.script_listbox = tk.Listbox(self.script_setting_frame, width=script_listbox_width, height=script_listbox_height, font=("Microsoft JhengHei", 10))
-        self.script_listbox.place(x=0, y=0)
-        self.refresh_script_listbox()
-        self.script_listbox.bind("<<ListboxSelect>>", self.on_script_listbox_select)
+        # 腳本列表
+        self.script_listbox = tk.Listbox(
+            list_frame, 
+            width=55,  # 原寬度的一半
+            height=24,
+            font=("LINESeedTW_TTF_Rg", 9)
+        )
+        self.script_listbox.pack(side="left", fill="both", expand=True)
+        self.script_listbox.bind('<<ListboxSelect>>', self.on_script_listbox_select)
 
-        self.script_right_frame = tb.Frame(self.script_setting_frame)
-        self.script_right_frame.place(x=script_listbox_width * 7.5, y=0, width=320, height=320)
+        # 添加捲動條
+        list_scroll = tb.Scrollbar(list_frame)
+        list_scroll.pack(side="right", fill="y")
+        self.script_listbox.config(yscrollcommand=list_scroll.set)
+        list_scroll.config(command=self.script_listbox.yview)
 
+        # 右側控制區域
+        control_frame = tb.Frame(self.script_setting_frame)
+        control_frame.pack(side="right", fill="y", padx=10)
+
+        # 按鍵捕捉框
         self.hotkey_capture_var = tk.StringVar()
-        hotkey_entry = tb.Entry(self.script_right_frame, textvariable=self.hotkey_capture_var, font=("Consolas", 12), width=12)
-        hotkey_entry.grid(row=1, column=0, padx=8, pady=(0, 8))
-        hotkey_entry.bind("<KeyRelease>", self.on_hotkey_entry_key)
-        set_hotkey_btn = tb.Button(self.script_right_frame, text="設定快捷鍵", width=12, bootstyle=SUCCESS, command=self.set_script_hotkey)
-        set_hotkey_btn.grid(row=2, column=0, padx=8, pady=8)
-        self.btn_scripts_dir_sr1 = tb.Button(self.script_right_frame, text="script路徑", command=self.use_default_script_dir, bootstyle=SECONDARY, width=12, style="My.TButton")
-        self.btn_scripts_dir_sr1.grid(row=3, column=0, padx=8, pady=8)
-        del_btn = tb.Button(self.script_right_frame, text="刪除", width=12, bootstyle=DANGER, command=self.delete_selected_script)
-        del_btn.grid(row=4, column=0, padx=8, pady=8)
+        self.hotkey_entry = tb.Entry(
+            control_frame,
+            textvariable=self.hotkey_capture_var,
+            width=20,
+            font=("LINESeedTW_TTF_Rg", 9),
+            justify="center"
+        )
+        self.hotkey_entry.pack(pady=(0, 5))
+        self.hotkey_entry.bind("<KeyPress>", self.on_hotkey_entry_key)
 
-        # second (left) script_listbox (updated)
-        self.script_listbox = tk.Listbox(self.script_setting_frame, width=32, font=("Microsoft JhengHei", 10), height=5)
-        self.script_listbox.place(relx=0.0, rely=0.5, anchor="w", height=220, y=20)
+        # 設定快捷鍵按鈕
+        set_hotkey_btn = tb.Button(
+            control_frame,
+            text="設定快捷鍵",
+            command=self.set_script_hotkey,
+            width=15,
+            style="My.TButton",
+            bootstyle=PRIMARY
+        )
+        set_hotkey_btn.pack(pady=5)
+
+        # 刪除按鈕
+        delete_btn = tb.Button(
+            control_frame,
+            text="刪除",
+            command=self.delete_selected_script,
+            width=15,
+            style="My.TButton",
+            bootstyle=DANGER
+        )
+        delete_btn.pack(pady=5)
+
+        # 初始化腳本列表
         self.refresh_script_listbox()
-        self.script_listbox.bind("<<ListboxSelect>>", self.on_script_listbox_select)
 
-        self.global_setting_frame = tb.Frame(self.page_content_frame, width=700, height=320)
-        self.global_setting_frame.pack_propagate(False)
-        self.global_right_frame = tb.Frame(self.global_setting_frame)
-        self.global_right_frame.place(relx=0.5, rely=0.1, anchor="n", width=320, height=260)
-        tb.Label(self.global_right_frame, text="GlobalRight1", font=("Microsoft JhengHei", 12, "bold")).pack(pady=10)
+        # 全域設定區域
+        self.global_setting_frame = tb.Frame(self.page_content_frame)
+        self.global_setting_frame.grid(row=0, column=0, sticky="nsew")
+
+        # 全域設定右側備用文字框
+        self.global_right_text = tb.Text(self.global_setting_frame, height=24, width=110, font=("LINESeedTW_TTF_Rg", 9))
+        self.global_right_text.grid(row=0, column=0, sticky="nsew")
+        global_right_scroll = tb.Scrollbar(self.global_setting_frame, command=self.global_right_text.yview)
+        global_right_scroll.grid(row=0, column=1, sticky="ns")
+        self.global_right_text.config(yscrollcommand=global_right_scroll.set)
 
         self.page_menu.selection_set(0)
         self.show_page(0)
@@ -346,14 +394,14 @@ class RecorderApp(tb.Window):
             print(f"無法設定 about 視窗 icon: {e}")
         frm = tb.Frame(about_win, padding=20)
         frm.pack(fill="both", expand=True)
-        tb.Label(frm, text="ChroLens_Mimic\n可理解為按鍵精靈/操作錄製/掛機工具\n解決重複性高的作業或動作", font=("Microsoft JhengHei", 11,)).pack(anchor="w", pady=(0, 6))
-        link = tk.Label(frm, text="ChroLens_模擬器討論區", font=("Microsoft JhengHei", 10, "underline"), fg="#5865F2", cursor="hand2")
+        tb.Label(frm, text="ChroLens_Mimic\n可理解為按鍵精靈/操作錄製/掛機工具\n解決重複性高的作業或動作", font=("LINESeedTW_TTF_Rg", 11,)).pack(anchor="w", pady=(0, 6))
+        link = tk.Label(frm, text="ChroLens_模擬器討論區", font=("LINESeedTW_TTF_Rg", 10, "underline"), fg="#5865F2", cursor="hand2")
         link.pack(anchor="w")
         link.bind("<Button-1>", lambda e: os.startfile("https://discord.gg/72Kbs4WPPn"))
-        github = tk.Label(frm, text="查看更多工具(巴哈)", font=("Microsoft JhengHei", 10, "underline"), fg="#24292f", cursor="hand2")
+        github = tk.Label(frm, text="查看更多工具(巴哈)", font=("LINESeedTW_TTF_Rg", 10, "underline"), fg="#24292f", cursor="hand2")
         github.pack(anchor="w", pady=(8, 0))
         github.bind("<Button-1>", lambda e: os.startfile("https://home.gamer.com.tw/profile/index_creation.php?owner=umiwued&folder=523848"))
-        tb.Label(frm, text="Creat By Lucienwooo", font=("Microsoft JhengHei", 11,)).pack(anchor="w", pady=(0, 6))
+        tb.Label(frm, text="Creat By Lucienwooo", font=("LINESeedTW_TTF_Rg", 11,)).pack(anchor="w", pady=(0, 6))
         tb.Button(frm, text="關閉", command=about_win.destroy, width=8, bootstyle=SECONDARY).pack(anchor="e", pady=(16, 0))
 
     def _init_language(self, lang):
@@ -1031,7 +1079,7 @@ class RecorderApp(tb.Window):
                 var.set(self.hotkey_map[key])
 
         for key, label in labels.items():
-            tb.Label(win, text=label, font=("Microsoft JhengHei", 11)).grid(row=row, column=0, padx=10, pady=8, sticky="w")
+            tb.Label(win, text=label, font=("LINESeedTW_TTF_Rg", 11)).grid(row=row, column=0, padx=10, pady=8, sticky="w")
             var = tk.StringVar(value=self.hotkey_map[key])
             entry = tb.Entry(win, textvariable=var, width=8, font=("Consolas", 11), state="normal")
             entry.grid(row=row, column=1, padx=10)
@@ -1112,7 +1160,7 @@ class RecorderApp(tb.Window):
                 self.tiny_countdown_label = tb.Label(
                     self.tiny_window,
                     text=f"{lang_map['剩餘']}: 00:00:00",
-                    font=("Microsoft JhengHei", 12),
+                    font=("LINESeedTW_TTF_Rg", 12),
                     foreground="#FF95CA", width=13
                 )
                 self.tiny_countdown_label.grid(row=0, column=0, padx=2, pady=5)
@@ -1196,19 +1244,20 @@ class RecorderApp(tb.Window):
         self.show_page(idx[0])
 
     def show_page(self, idx):
+        # 清除所有子元件的配置
         for widget in self.page_content_frame.winfo_children():
             widget.grid_forget()
-            widget.place_forget()
+            
+        # 統一使用 grid 佈局，並設定相同的配置參數
         if idx == 0:
             self.log_text.grid(row=0, column=0, sticky="nsew")
             for child in self.page_content_frame.winfo_children():
                 if isinstance(child, tb.Scrollbar):
                     child.grid(row=0, column=1, sticky="ns")
         elif idx == 1:
-            self.script_setting_frame.place(relx=0.5, rely=0.5, anchor="center")
-            self.refresh_script_listbox()
+            self.script_setting_frame.grid(row=0, column=0, sticky="nsew")
         elif idx == 2:
-            self.global_setting_frame.place(relx=0.5, rely=0.5, anchor="center")
+            self.global_setting_frame.grid(row=0, column=0, sticky="nsew")
 
     def on_script_listbox_select(self, event=None):
         idx = self.script_listbox.curselection()
@@ -1226,14 +1275,42 @@ class RecorderApp(tb.Window):
                 self.hotkey_capture_var.set("")
 
     def on_hotkey_entry_key(self, event):
+        """改進的按鍵捕捉處理"""
         keys = []
+        
+        # 檢測修飾鍵
         if event.state & 0x0001: keys.append("shift")
         if event.state & 0x0004: keys.append("ctrl")
         if event.state & 0x0008: keys.append("alt")
+        
+        # 獲取按鍵名稱
         key_name = event.keysym.lower()
-        if key_name not in ("shift_l", "shift_r", "control_l", "control_r", "alt_l", "alt_r"):
+        
+        # 特殊按鍵映射
+        special_keys = {
+            'space': 'space',
+            'return': 'enter',
+            'escape': 'esc',
+            'tab': 'tab'
+        }
+        
+        # 處理功能鍵 F1-F12
+        if key_name.startswith('f') and key_name[1:].isdigit():
+            if 1 <= int(key_name[1:]) <= 12:
+                keys.append(key_name)
+        # 處理特殊按鍵
+        elif key_name in special_keys:
+            keys.append(special_keys[key_name])
+        # 處理一般按鍵
+        elif key_name not in ("shift_l", "shift_r", "control_l", "control_r", "alt_l", "alt_r"):
             keys.append(key_name)
-        self.hotkey_capture_var.set("+".join(keys))
+        
+        # 組合並顯示按鍵
+        if keys:
+            self.hotkey_capture_var.set("+".join(keys))
+        
+        # 防止按鍵事件傳遞
+        return "break"
 
     def set_script_hotkey(self):
         script = self.script_var.get()
@@ -1269,3 +1346,80 @@ class RecorderApp(tb.Window):
 
     def select_target_window(self):
         self.log("【選擇目標視窗】功能尚未實作。")
+
+    # 新增：啟動檔案監聽或輪詢（低負載、即時顯示）
+    def _start_script_watcher(self):
+        if not os.path.exists(self.script_dir):
+            os.makedirs(self.script_dir)
+        if _HAVE_WATCHDOG and Observer is not None:
+            class _Handler(FileSystemEventHandler):
+                def __init__(self, app):
+                    self.app = app
+                def on_any_event(self, event):
+                    # 使用 after 保證在主線程更新 UI
+                    try:
+                        self.app.after(100, self.app.refresh_script_listbox)
+                    except Exception:
+                        pass
+            try:
+                handler = _Handler(self)
+                self._observer = Observer()
+                self._observer.schedule(handler, self.script_dir, recursive=False)
+                self._observer.daemon = True
+                self._observer.start()
+                # 初次載入
+                self.refresh_script_listbox()
+            except Exception:
+                # 若 observer 啟動失敗，退回輪詢
+                self._start_script_poller()
+        else:
+            # fallback: 輪詢（每 2 秒，比較檔案清單差異）
+            self._start_script_poller()
+
+    def _start_script_poller(self):
+        try:
+            self._last_scripts_snapshot = tuple(sorted([f for f in os.listdir(self.script_dir) if f.endswith('.json')]))
+        except Exception:
+            self._last_scripts_snapshot = ()
+        # 立即 refresh，之後靠 _poll_scripts 更新
+        self.refresh_script_listbox()
+        self.after(2000, self._poll_scripts)
+
+    def _poll_scripts(self):
+        try:
+            current = tuple(sorted([f for f in os.listdir(self.script_dir) if f.endswith('.json')]))
+        except Exception:
+            current = ()
+        if getattr(self, "_last_scripts_snapshot", None) != current:
+            self._last_scripts_snapshot = current
+            # 只在變更時更新 listbox（減少不必要 UI 更新）
+            try:
+                self.refresh_script_listbox()
+                self.refresh_script_list()
+            except Exception:
+                pass
+        # 下次輪詢（2 秒）
+        try:
+            self.after(2000, self._poll_scripts)
+        except Exception:
+            pass
+
+    # 新增：視窗關閉時清理 observer
+    def _on_close(self):
+        try:
+            if getattr(self, "_observer", None):
+                try:
+                    self._observer.stop()
+                    self._observer.join(timeout=1)
+                except Exception:
+                    pass
+                self._observer = None
+        except Exception:
+            pass
+        try:
+            super().destroy()
+        except Exception:
+            try:
+                self.destroy()
+            except Exception:
+                pass

@@ -1,4 +1,4 @@
-#python "c:\Users\Lucien\Documents\GitHub\ChroLens_Mimic\ChroLens_Mimic2.6.py"
+#Set-Location 'c:\Users\Lucien\Documents\GitHub\ChroLens_Mimic'; python .\ChroLens_Mimic2.6.py
 from recorder_app import RecorderApp
 
 if __name__ == "__main__":
