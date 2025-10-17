@@ -1352,70 +1352,16 @@ class RecorderApp(tb.Window):
         if not os.path.exists(self.script_dir):
             os.makedirs(self.script_dir)
         if _HAVE_WATCHDOG and Observer is not None:
-            class _Handler(FileSystemEventHandler):
-                def __init__(self, app):
-                    self.app = app
-                def on_any_event(self, event):
-                    # 使用 after 保證在主線程更新 UI
-                    try:
-                        self.app.after(100, self.app.refresh_script_listbox)
-                    except Exception:
-                        pass
-            try:
-                handler = _Handler(self)
-                self._observer = Observer()
-                self._observer.schedule(handler, self.script_dir, recursive=False)
-                self._observer.daemon = True
-                self._observer.start()
-                # 初次載入
-                self.refresh_script_listbox()
-            except Exception:
-                # 若 observer 啟動失敗，退回輪詢
-                self._start_script_poller()
+            self._observer = Observer()
+            self._observer.schedule(self, self.script_dir, recursive=False)
+            self._observer.start()
         else:
-            # fallback: 輪詢（每 2 秒，比較檔案清單差異）
             self._start_script_poller()
 
-    def _start_script_poller(self):
-        try:
-            self._last_scripts_snapshot = tuple(sorted([f for f in os.listdir(self.script_dir) if f.endswith('.json')]))
-        except Exception:
-            self._last_scripts_snapshot = ()
-        # 立即 refresh，之後靠 _poll_scripts 更新
-        self.refresh_script_listbox()
-        self.after(2000, self._poll_scripts)
-
-    def _poll_scripts(self):
-        try:
-            current = tuple(sorted([f for f in os.listdir(self.script_dir) if f.endswith('.json')]))
-        except Exception:
-            current = ()
-        if getattr(self, "_last_scripts_snapshot", None) != current:
-            self._last_scripts_snapshot = current
-            # 只在變更時更新 listbox（減少不必要 UI 更新）
-            try:
-                self.refresh_script_listbox()
-                self.refresh_script_list()
-            except Exception:
-                pass
-        # 下次輪詢（2 秒）
-        try:
-            self.after(2000, self._poll_scripts)
-        except Exception:
-            pass
-
-    # 新增：視窗關閉時清理 observer
     def _on_close(self):
-        try:
-            if getattr(self, "_observer", None):
-                try:
-                    self._observer.stop()
-                    self._observer.join(timeout=1)
-                except Exception:
-                    pass
-                self._observer = None
-        except Exception:
-            pass
+        if hasattr(self, '_observer'):
+            self._observer.stop()
+            self._observer.join()
         try:
             super().destroy()
         except Exception:
@@ -1423,3 +1369,25 @@ class RecorderApp(tb.Window):
                 self.destroy()
             except Exception:
                 pass
+
+    def on_modified(self, event):
+        if event.is_directory:
+            return
+        self.refresh_script_listbox()
+
+    def on_created(self, event):
+        if event.is_directory:
+            return
+        self.refresh_script_listbox()
+
+    def on_deleted(self, event):
+        if event.is_directory:
+            return
+        self.refresh_script_listbox()
+
+    def on_moved(self, event):
+        if event.is_directory:
+            return
+        self.refresh_script_listbox()
+
+# ...existing code...
