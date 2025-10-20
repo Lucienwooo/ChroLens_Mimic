@@ -145,17 +145,6 @@ class RecorderApp(tb.Window):
         self.update_speed_tooltip()
         self.speed_var = tk.StringVar(value=self.user_config.get("speed", "100"))
         tb.Entry(frm_bottom, textvariable=self.speed_var, width=6, style="My.TEntry").grid(row=0, column=1, padx=6)
-        self.btn_hotkey = tb.Button(frm_bottom, text="快捷鍵", command=self.open_hotkey_settings, bootstyle=SECONDARY, width=10, style="My.TButton")
-        self.btn_hotkey.grid(row=0, column=4, padx=6)
-        self.about_btn = tb.Button(frm_bottom, text="關於", width=6, style="My.TButton", command=self.show_about_dialog, bootstyle=SECONDARY)
-        self.about_btn.grid(row=0, column=5, padx=6, sticky="e")
-        saved_lang = self.user_config.get("language", "繁體中文")
-        # 是示 "Language" 預設（跟你原本 copy 保持一致）
-        self.language_var = tk.StringVar(self, value="Language")
-        lang_combo = tb.Combobox(frm_bottom, textvariable=self.language_var, values=["繁體中文", "日本語", "English"], state="readonly", width=10, style="My.TCombobox")
-        lang_combo.grid(row=0, column=6, padx=(6, 8), sticky="e")
-        lang_combo.bind("<<ComboboxSelected>>", self.change_language)
-        self.language_combo = lang_combo
 
         # 重複設定區域
         frm_repeat = tb.Frame(self, padding=(8, 0, 8, 5))
@@ -354,17 +343,16 @@ class RecorderApp(tb.Window):
         # 在整體設定頁面內複製 row1 的「快捷鍵 / 關於 / 語言」控制，並簡易排版
         top_controls = tb.Frame(self.global_setting_frame, padding=(8, 6))
         top_controls.pack(fill="x", side="top")
-        tb.Button(top_controls, text="快捷鍵", command=self.open_hotkey_settings, bootstyle=SECONDARY, width=10, style="My.TButton").pack(side="left", padx=(0,6))
-        tb.Button(top_controls, text="關於", command=self.show_about_dialog, bootstyle=SECONDARY, width=10, style="My.TButton").pack(side="left", padx=(0,6))
-        # 複製 language 下拉（同步回主語言設定）
-        lang_dup_var = tk.StringVar(value=self.user_config.get("language", "繁體中文"))
-        lang_dup = tb.Combobox(top_controls, textvariable=lang_dup_var, values=["繁體中文", "日本語", "English"], state="readonly", width=12, style="My.TCombobox")
+        # 改為存成 self 屬性，供 _init_language / change_language 等使用
+        self.btn_hotkey = tb.Button(top_controls, text="快捷鍵", command=self.open_hotkey_settings, bootstyle=SECONDARY, width=10, style="My.TButton")
+        self.btn_hotkey.pack(side="left", padx=(0,6))
+        self.about_btn = tb.Button(top_controls, text="關於", command=self.show_about_dialog, bootstyle=SECONDARY, width=10, style="My.TButton")
+        self.about_btn.pack(side="left", padx=(0,6))
+        # 使用已存在的 self.language_var（初始化時已建立），保持與主畫面同步
+        lang_dup = tb.Combobox(top_controls, textvariable=self.language_var, values=["繁體中文", "日本語", "English"], state="readonly", width=12, style="My.TCombobox")
         lang_dup.pack(side="right", padx=(6,0))
-        def _apply_dup_lang(event=None):
-            v = lang_dup_var.get()
-            self.language_var.set(v)
-            self.change_language()
-        lang_dup.bind("<<ComboboxSelected>>", _apply_dup_lang)
+        # 選擇即生效並儲存設定
+        lang_dup.bind("<<ComboboxSelected>>", lambda e: self.change_language())
 
         # 全域設定右側備用文字框
         content_frame = tb.Frame(self.global_setting_frame, padding=(8,6))
@@ -378,12 +366,6 @@ class RecorderApp(tb.Window):
 
         self.page_menu.selection_set(0)
         self.show_page(0)
-
-        self.refresh_script_list()
-        if self.script_var.get():
-            self.on_script_selected()
-        self._init_language(saved_lang)
-        self.after(1500, self._delayed_init)
 
     def _delayed_init(self):
         self.after(1600, self._register_hotkeys)
@@ -1474,7 +1456,7 @@ class RecorderApp(tb.Window):
                 self._observer = None
         except Exception:
             pass
-        # 停止 poller
+               # 停止 poller
         try:
             self._stop_watcher_flag = True
             if hasattr(self, "_poller_thread") and self._poller_thread.is_alive():
