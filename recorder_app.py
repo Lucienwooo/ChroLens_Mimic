@@ -1,3 +1,4 @@
+#Set-Location 'c:\Users\Lucien\Documents\GitHub\ChroLens_Mimic'; python .\ChroLens_Mimic2.6.py
 import ttkbootstrap as tb
 from ttkbootstrap.constants import *
 from tkinter import font
@@ -10,28 +11,68 @@ import win32gui
 import win32con
 import pywintypes
 import random
-
-from utils import (
-    move_mouse_abs, mouse_event_win, screen_to_client, client_to_screen,
-    SCRIPTS_DIR, LAST_SCRIPT_FILE, LAST_SKIN_FILE, MOUSE_SAMPLE_INTERVAL,
-    load_user_config, save_user_config, format_time
+from config import (
+    SCRIPTS_DIR, 
+    LAST_SCRIPT_FILE, 
+    MOUSE_SAMPLE_INTERVAL,
+    load_user_config, 
+    save_user_config
 )
-from lang import LANG_MAP
-from tooltip import Tooltip
 
-# 新增：watchdog 可選支援（放在檔案頂端 import 區）
+# optional watchdog (file system watcher) — 如果沒安裝則提供 fallback 以避免 NameError
 try:
     from watchdog.observers import Observer
     from watchdog.events import FileSystemEventHandler
     _HAVE_WATCHDOG = True
 except Exception:
     Observer = None
-    FileSystemEventHandler = object
+    # 建立最小的 fallback base class（讓後續繼承不會 crash）
+    class FileSystemEventHandler:
+        def __init__(self, *args, **kwargs):
+            pass
     _HAVE_WATCHDOG = False
+
+try:
+    from lang import LANG_MAP
+except Exception:
+    LANG_MAP = {
+        "繁體中文": {
+            "開始錄製":"開始錄製","暫停/繼續":"暫停/繼續","停止":"停止","回放":"回放",
+            "MiniMode":"MiniMode","關於":"關於","回放速度:":"回放速度:","快捷鍵":"快捷鍵",
+            "總運作":"總運作","單次":"單次","錄製":"錄製","重複次數:":"重複次數:",
+            "次":"次","重複時間":"重複時間","重複間隔":"重複間隔","Script:":"Script:",
+            "儲存":"儲存","剩餘":"剩餘"
+        }
+    }
+
+try:
+    from tooltip import Tooltip
+except Exception:
+    class Tooltip:
+        def __init__(self, widget, text): self.text = text
+
+# utils 裡的輔助若存在就匯入，否則提供最小 fallback 實作
+try:
+    from utils import format_time, move_mouse_abs, mouse_event_win, client_to_screen, screen_to_client
+except Exception:
+    def format_time(ts):
+        try:
+            return datetime.datetime.fromtimestamp(ts).strftime("%H:%M:%S")
+        except Exception:
+            return str(ts)
+    def move_mouse_abs(x, y):
+        pass
+    def mouse_event_win(action, **kwargs):
+        pass
+    def client_to_screen(hwnd, x, y): return x, y
+    def screen_to_client(hwnd, x, y): return x, y
 
 class RecorderApp(tb.Window):
     def __init__(self):
+
         self.user_config = load_user_config()
+        self.hotkey_map = self.user_config["hotkey_map"]  # 直接使用，因為 load_user_config 已確保存在
+
         skin = self.user_config.get("skin", "darkly")
         lang = self.user_config.get("language", "繁體中文")
         super().__init__(themename=skin)
@@ -40,14 +81,6 @@ class RecorderApp(tb.Window):
         self.tiny_window = None
         self.target_hwnd = None
         self.target_title = None
-
-        self.hotkey_map = self.user_config.get("hotkey_map", {
-            "start": "F10",
-            "pause": "F11",
-            "stop": "F9",
-            "play": "F12",
-            "tiny": "alt+`"
-        })
 
         self.style.configure("My.TButton", font=("LINESeedTW_TTF_Rg", 9))  # 替換為新的字體
         self.style.configure("My.TLabel", font=("LINESeedTW_TTF_Rg", 9))  # 替換為新的字體
@@ -69,7 +102,7 @@ class RecorderApp(tb.Window):
 
         self.icon_tip_label = tk.Label(self, width=2, height=1, bg=self.cget("background"))
         self.icon_tip_label.place(x=0, y=0)
-        Tooltip(self.icon_tip_label, f"{self.title()}_By_Lucien")
+
 
         self.geometry("900x550")
         self.resizable(True, True)
@@ -99,11 +132,6 @@ class RecorderApp(tb.Window):
         self.btn_play = tb.Button(frm_top, text=f"回放 ({self.hotkey_map['play']})", command=self.play_record, bootstyle=SUCCESS, width=10, style="My.TButton")
         self.btn_play.grid(row=0, column=3, padx=4)
 
-        themes = ["darkly", "cyborg", "superhero", "journal","minty", "united", "morph", "lumen"]
-        self.theme_var = tk.StringVar(value=self.style.theme_use())
-        theme_combo = tb.Combobox(frm_top, textvariable=self.theme_var, values=themes, state="readonly", width=6, style="My.TCombobox")
-        theme_combo.grid(row=0, column=8, padx=(4, 8), sticky="e")
-        theme_combo.bind("<<ComboboxSelected>>", lambda e: self.change_theme())
 
         self.tiny_mode_btn = tb.Button(frm_top, text="MiniMode", style="My.TButton", command=self.toggle_tiny_mode, width=10)
         self.tiny_mode_btn.grid(row=0, column=7, padx=4)
@@ -313,15 +341,39 @@ class RecorderApp(tb.Window):
         # 初始化腳本列表
         self.refresh_script_listbox()
 
+        # 啟動監視（watchdog 或 poller 備援），確保新產生的腳本能即時顯示
+        try:
+            self._start_script_watcher()
+        except Exception:
+            pass
+
         # 全域設定區域
         self.global_setting_frame = tb.Frame(self.page_content_frame)
         self.global_setting_frame.grid(row=0, column=0, sticky="nsew")
 
+        # 在整體設定頁面內複製 row1 的「快捷鍵 / 關於 / 語言」控制，並簡易排版
+        top_controls = tb.Frame(self.global_setting_frame, padding=(8, 6))
+        top_controls.pack(fill="x", side="top")
+        tb.Button(top_controls, text="快捷鍵", command=self.open_hotkey_settings, bootstyle=SECONDARY, width=10, style="My.TButton").pack(side="left", padx=(0,6))
+        tb.Button(top_controls, text="關於", command=self.show_about_dialog, bootstyle=SECONDARY, width=10, style="My.TButton").pack(side="left", padx=(0,6))
+        # 複製 language 下拉（同步回主語言設定）
+        lang_dup_var = tk.StringVar(value=self.user_config.get("language", "繁體中文"))
+        lang_dup = tb.Combobox(top_controls, textvariable=lang_dup_var, values=["繁體中文", "日本語", "English"], state="readonly", width=12, style="My.TCombobox")
+        lang_dup.pack(side="right", padx=(6,0))
+        def _apply_dup_lang(event=None):
+            v = lang_dup_var.get()
+            self.language_var.set(v)
+            self.change_language()
+        lang_dup.bind("<<ComboboxSelected>>", _apply_dup_lang)
+
         # 全域設定右側備用文字框
-        self.global_right_text = tb.Text(self.global_setting_frame, height=24, width=110, font=("LINESeedTW_TTF_Rg", 9))
-        self.global_right_text.grid(row=0, column=0, sticky="nsew")
-        global_right_scroll = tb.Scrollbar(self.global_setting_frame, command=self.global_right_text.yview)
-        global_right_scroll.grid(row=0, column=1, sticky="ns")
+        content_frame = tb.Frame(self.global_setting_frame, padding=(8,6))
+        content_frame.pack(fill="both", expand=True)
+
+        self.global_right_text = tb.Text(content_frame, height=24, width=110, font=("LINESeedTW_TTF_Rg", 9))
+        self.global_right_text.pack(side="left", fill="both", expand=True)
+        global_right_scroll = tb.Scrollbar(content_frame, command=self.global_right_text.yview)
+        global_right_scroll.pack(side="right", fill="y")
         self.global_right_text.config(yscrollcommand=global_right_scroll.set)
 
         self.page_menu.selection_set(0)
@@ -1347,21 +1399,96 @@ class RecorderApp(tb.Window):
     def select_target_window(self):
         self.log("【選擇目標視窗】功能尚未實作。")
 
-    # 新增：啟動檔案監聽或輪詢（低負載、即時顯示）
+    # 檔案監視：採用 watchdog handler（若可用）並以 poller 做備援
+    class _ScriptDirHandler(FileSystemEventHandler):
+        def __init__(self, app):
+            super().__init__()
+            self.app = app
+        def on_any_event(self, event):
+            # 任何變動都在主線程更新 listbox（使用 after）
+            if event.is_directory:
+                return
+            try:
+                self.app.after(80, self.app.refresh_script_listbox)
+            except Exception:
+                pass
+
     def _start_script_watcher(self):
+        """啟動 watchdog（優先）或 poller（備援）來即時更新腳本列表。"""
+        # 停止舊 watcher
+        self._stop_script_watcher()
         if not os.path.exists(self.script_dir):
             os.makedirs(self.script_dir)
+        # 優先 watchdog
         if _HAVE_WATCHDOG and Observer is not None:
-            self._observer = Observer()
-            self._observer.schedule(self, self.script_dir, recursive=False)
-            self._observer.start()
-        else:
-            self._start_script_poller()
+            try:
+                handler = RecorderApp._ScriptDirHandler(self)
+                self._observer = Observer()
+                self._observer.schedule(handler, self.script_dir, recursive=False)
+                self._observer.start()
+                self._watchdog_handler = handler
+                self.log("已啟動 watchdog 監視腳本目錄。")
+                return
+            except Exception as ex:
+                self.log(f"啟動 watchdog 失敗，切換 poller：{ex}")
+        # fallback: poller
+        self._start_script_poller()
+
+    def _start_script_poller(self):
+        """每秒輪詢一次目錄差異，變動時更新 listbox（備援方案）。"""
+        self._stop_script_watcher()
+        try:
+            current = set([f for f in os.listdir(self.script_dir) if f.endswith('.json')])
+        except Exception:
+            current = set()
+        self._script_snapshot = current
+        self._stop_watcher_flag = False
+
+        def _poll_loop():
+            while not getattr(self, "_stop_watcher_flag", False):
+                try:
+                    now = set([f for f in os.listdir(self.script_dir) if f.endswith('.json')])
+                    if now != getattr(self, "_script_snapshot", set()):
+                        self._script_snapshot = now
+                        try:
+                            self.after(80, self.refresh_script_listbox)
+                        except Exception:
+                            pass
+                    time.sleep(1.0)
+                except Exception:
+                    time.sleep(1.0)
+
+        self._poller_thread = threading.Thread(target=_poll_loop, daemon=True)
+        self._poller_thread.start()
+        self.log("已啟動 poller 監視腳本目錄（每秒檢查）。")
+
+    def _stop_script_watcher(self):
+        # 停止 watchdog
+        try:
+            if hasattr(self, "_observer") and self._observer:
+                try:
+                    self._observer.stop()
+                    self._observer.join(timeout=2)
+                except Exception:
+                    pass
+                self._observer = None
+        except Exception:
+            pass
+        # 停止 poller
+        try:
+            self._stop_watcher_flag = True
+            if hasattr(self, "_poller_thread") and self._poller_thread.is_alive():
+                self._poller_thread.join(timeout=0.5)
+            self._poller_thread = None
+        except Exception:
+            pass
 
     def _on_close(self):
-        if hasattr(self, '_observer'):
-            self._observer.stop()
-            self._observer.join()
+        # 關閉時確保停止監視
+        try:
+            self._stop_script_watcher()
+        except Exception:
+            pass
         try:
             super().destroy()
         except Exception:
@@ -1370,9 +1497,12 @@ class RecorderApp(tb.Window):
             except Exception:
                 pass
 
+
+
     def on_modified(self, event):
         if event.is_directory:
             return
+
         self.refresh_script_listbox()
 
     def on_created(self, event):
@@ -1390,4 +1520,6 @@ class RecorderApp(tb.Window):
             return
         self.refresh_script_listbox()
 
-# ...existing code...
+if __name__ == "__main__":
+    app = RecorderApp()
+    app.mainloop()

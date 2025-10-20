@@ -1,74 +1,59 @@
-# TinyMode 獨立模組（可直接 import 使用）
-import os
-import ttkbootstrap as tb
 import tkinter as tk
-from lang import LANG_MAP
+import ttkbootstrap as tb
 
-class TinyMode:
-    def __init__(self, parent, hotkey_map, language_var, style):
+class TinyWindow:
+    def __init__(self, parent):
         self.parent = parent
-        self.hotkey_map = hotkey_map
-        self.language_var = language_var
-        self.style = style
-        self.tiny_window = None
-        self.tiny_btns = []
-        self.tiny_mode_on = False
-
+        self.window = None
+        self.is_visible = False
+        
     def toggle(self):
-        if not self.tiny_mode_on:
-            self._open()
+        if not self.is_visible:
+            self.show()
         else:
-            self._close()
-
-    def _open(self):
-        self.tiny_mode_on = True
-        if self.tiny_window is None or not self.tiny_window.winfo_exists():
-            self.tiny_window = tb.Toplevel(self.parent)
-            self.tiny_window.title("ChroLens_Mimic MiniMode")
-            self.tiny_window.geometry("620x40")
-            self.tiny_window.overrideredirect(True)
-            self.tiny_window.resizable(False, False)
-            self.tiny_window.attributes("-topmost", True)
-            try:
-                import sys
-                if getattr(sys, 'frozen', False):
-                    icon_path = os.path.join(sys._MEIPASS, "umi_奶茶色.ico")
-                else:
-                    icon_path = "umi_奶茶色.ico"
-                self.tiny_window.iconbitmap(icon_path)
-            except Exception:
-                pass
-            lang = self.language_var.get()
-            lang_map = LANG_MAP.get(lang, LANG_MAP["繁體中文"])
-            self.tiny_countdown_label = tb.Label(self.tiny_window, text=f"{lang_map['剩餘']}: 00:00:00", font=("LINESeedTW_TTF_Rg", 12), foreground="#FF95CA", width=13)
-            self.tiny_countdown_label.grid(row=0, column=0, padx=2, pady=5)
-            self.tiny_window.bind("<ButtonPress-1>", self._start_move)
-            self.tiny_window.bind("<B1-Motion>", self._move)
-            btn_defs = [("⏺", "start"), ("⏸", "pause"), ("⏹", "stop"), ("▶︎", "play"), ("⤴︎", "tiny")]
-            for i, (icon, key) in enumerate(btn_defs):
-                btn = tb.Button(self.tiny_window, text=f"{icon} {self.hotkey_map.get(key, '')}", width=7, style="My.TButton", command=getattr(self.parent, {"start":"start_record","pause":"toggle_pause","stop":"stop_all","play":"play_record","tiny":"toggle_tiny_mode"}[key]))
-                btn.grid(row=0, column=i+1, padx=2, pady=5)
-                self.tiny_btns.append((btn, icon, key))
-            self.tiny_window.protocol("WM_DELETE_WINDOW", self._close)
-            try:
-                self.parent.withdraw()
-            except Exception:
-                pass
-
-    def _close(self):
-        if self.tiny_window and self.tiny_window.winfo_exists():
-            self.tiny_window.destroy()
-        self.tiny_mode_on = False
-        try:
-            self.parent.deiconify()
-        except Exception:
-            pass
-
-    def _start_move(self, event):
-        self._drag_x = event.x
-        self._drag_y = event.y
-
-    def _move(self, event):
-        x = self.tiny_window.winfo_x() + event.x - self._drag_x
-        y = self.tiny_window.winfo_y() + event.y - self._drag_y
-        self.tiny_window.geometry(f"+{x}+{y}")
+            self.hide()
+    
+    def show(self):
+        if not self.window or not self.window.winfo_exists():
+            self.window = tb.Toplevel(self.parent)
+            self.window.title("MiniMode")
+            self._setup_controls()
+            self._setup_position()
+        self.window.deiconify()
+        self.is_visible = True
+        
+    def hide(self):
+        if self.window:
+            self.window.withdraw()
+        self.is_visible = False
+        
+    def close(self):
+        if self.window:
+            self.window.destroy()
+            self.window = None
+        self.is_visible = False
+        
+    def _setup_controls(self):
+        frm = tb.Frame(self.window, padding=6)
+        frm.pack(fill="both", expand=True)
+        
+        # 基本控制按鈕
+        btn_start = tb.Button(frm, text="開始", width=8, 
+                            command=lambda: self.parent.start_record())
+        btn_pause = tb.Button(frm, text="暫停", width=8,
+                            command=lambda: self.parent.toggle_pause())
+        btn_stop = tb.Button(frm, text="停止", width=8,
+                            command=lambda: self.parent.stop_all())
+        btn_play = tb.Button(frm, text="播放", width=8,
+                            command=lambda: self.parent.play_record())
+                            
+        btn_start.grid(row=0, column=0, padx=4, pady=4)
+        btn_pause.grid(row=0, column=1, padx=4, pady=4)
+        btn_stop.grid(row=1, column=0, padx=4, pady=4)
+        btn_play.grid(row=1, column=1, padx=4, pady=4)
+        
+    def _setup_position(self):
+        # 設定初始位置（在主視窗右下角）
+        x = self.parent.winfo_x() + self.parent.winfo_width() - 200
+        y = self.parent.winfo_y() + self.parent.winfo_height() - 120
+        self.window.geometry(f"180x100+{x}+{y}")
