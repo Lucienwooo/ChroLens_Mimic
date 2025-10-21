@@ -22,6 +22,12 @@ try:
     from minimode import miniWindow
 except Exception:
     miniWindow = None
+
+# 新增匯入 TargetWindowSelector
+try:
+    from target_window_selector import TargetWindowSelector
+except Exception:
+    TargetWindowSelector = None
 from config import (
     SCRIPTS_DIR, 
     LAST_SCRIPT_FILE, 
@@ -74,6 +80,11 @@ except Exception:
         pass
     def client_to_screen(hwnd, x, y): return x, y
     def screen_to_client(hwnd, x, y): return x, y
+
+try:
+    import background_sender as bgsend
+except Exception:
+    bgsend = None
 
 class RecorderApp(tb.Window):
 
@@ -150,6 +161,18 @@ class RecorderApp(tb.Window):
                 self.mini.set_hotkeys(self.hotkey_map)
         except Exception:
             pass
+
+        # 掛載目標視窗選取器（若模組可用）
+        try:
+            if TargetWindowSelector:
+                self.target_selector = TargetWindowSelector(self)
+            else:
+                self.target_selector = None
+        except Exception:
+            self.target_selector = None
+
+        # 預設 selected_target（避免屬性不存在導致其他模組存取失敗）
+        self.selected_target = None
 
         self.style.configure("My.TButton", font=("LINESeedTW_TTF_Rg", 9))  
         self.style.configure("My.TLabel", font=("LINESeedTW_TTF_Rg", 9))  
@@ -477,6 +500,17 @@ class RecorderApp(tb.Window):
             return 0
         return 0
 
+    @property
+    def target_hwnd(self):
+        """向後相容屬性：回傳目前選取的目標視窗 hwnd 或 None。"""
+        try:
+            tgt = getattr(self, "selected_target", None)
+            if isinstance(tgt, dict):
+                return tgt.get("hwnd")
+        except Exception:
+            pass
+        return None
+
     def _init_language(self, lang):
         lang_map = LANG_MAP.get(lang, LANG_MAP["繁體中文"])
         self.btn_start.config(text=lang_map["開始錄製"] + f" ({self.hotkey_map['start']})")
@@ -616,7 +650,27 @@ class RecorderApp(tb.Window):
         self.update_countdown_label(0)
         self.update_total_time_label(0)
         self._update_play_time()
-        self._update_record_time()
+        try:
+            # 若有錄製時間更新函式則呼叫（原程式可能有，若無忽略）
+            self._update_record_time()
+        except Exception:
+            pass
+
+    def _wait_record_thread_finish(self, timeout=3.0):
+        """嘗試等待 recorder 的錄製執行緒結束（若找不到執行緒則立刻返回）。"""
+        try:
+            rt = None
+            # 常見字段名稱備援
+            for name in ("record_thread", "_record_thread", "thread"):
+                rt = getattr(self.recorder, name, None)
+                if rt:
+                    break
+            if rt and hasattr(rt, "is_alive"):
+                start = time.time()
+                while rt.is_alive() and (time.time() - start) < float(timeout):
+                    time.sleep(0.05)
+        except Exception:
+            pass
 
     def play_record(self):
         if self.playing:
@@ -1219,7 +1273,14 @@ class RecorderApp(tb.Window):
             self.log(f"刪除腳本失敗: {ex}")
 
     def select_target_window(self):
-        self.log("【選擇目標視窗】功能尚未實作。")
+        """開啟目標視窗選取器視窗（會在背景啟動監控）"""
+        try:
+            if hasattr(self, "target_selector") and self.target_selector:
+                self.target_selector.open()
+            else:
+                self.log("目標視窗選取模組不可用。")
+        except Exception as e:
+            self.log(f"開啟選取視窗失敗: {e}")
 
     def _start_script_watcher(self):
         """啟動或重新啟動 script_watcher（使用外部模組 script_watcher.ScriptWatcher）"""
@@ -1252,6 +1313,12 @@ class RecorderApp(tb.Window):
         try:
             if hasattr(self, "script_watcher") and self.script_watcher:
                 self.script_watcher.stop()
+        except Exception:
+            pass
+        # 停止目標視窗選取器的背景監控（若有）
+        try:
+            if hasattr(self, "target_selector") and self.target_selector:
+                self.target_selector.stop()
         except Exception:
             pass
 

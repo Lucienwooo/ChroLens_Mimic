@@ -1,0 +1,17 @@
+{
+  "skin": "darkly",
+  "language": "繁體中文",
+  "hotkey_map": {
+    "start": "F10",
+    "pause": "F11",
+    "stop": "F9",
+    "play": "F12",
+    "tiny": "alt+`"
+  },
+  "speed": "100",
+  "repeat": "1",
+  "script_dir": "C:\\Users\\Lucien\\Documents\\GitHub\\ChroLens_Mimic\\scripts",
+  "last_script": "",
+  "last_target_title": "Chrome Legacy Window",
+  "repeat_time": "00:00:00"
+}
