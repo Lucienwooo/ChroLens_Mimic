@@ -11,6 +11,17 @@ import win32gui
 import win32con
 import pywintypes
 import random
+from recorder_logic import RecorderLogic
+from hotkey_manager import HotkeyManager
+from script_watcher import ScriptWatcher
+try:
+    from about_dialog import show_about_dialog as _show_about_dialog_impl
+except Exception:
+    _show_about_dialog_impl = None
+try:
+    from minimode import miniWindow
+except Exception:
+    miniWindow = None
 from config import (
     SCRIPTS_DIR, 
     LAST_SCRIPT_FILE, 
@@ -19,14 +30,12 @@ from config import (
     save_user_config
 )
 
-# optional watchdog (file system watcher) — 如果沒安裝則提供 fallback 以避免 NameError
 try:
     from watchdog.observers import Observer
     from watchdog.events import FileSystemEventHandler
     _HAVE_WATCHDOG = True
 except Exception:
     Observer = None
-    # 建立最小的 fallback base class（讓後續繼承不會 crash）
     class FileSystemEventHandler:
         def __init__(self, *args, **kwargs):
             pass
@@ -38,7 +47,7 @@ except Exception:
     LANG_MAP = {
         "繁體中文": {
             "開始錄製":"開始錄製","暫停/繼續":"暫停/繼續","停止":"停止","回放":"回放",
-            "MiniMode":"MiniMode","關於":"關於","回放速度:":"回放速度:","快捷鍵":"快捷鍵",
+            "minimode":"minimode","關於":"關於","回放速度:":"回放速度:","快捷鍵":"快捷鍵",
             "總運作":"總運作","單次":"單次","錄製":"錄製","重複次數:":"重複次數:",
             "次":"次","重複時間":"重複時間","重複間隔":"重複間隔","Script:":"Script:",
             "儲存":"儲存","剩餘":"剩餘"
@@ -51,7 +60,6 @@ except Exception:
     class Tooltip:
         def __init__(self, widget, text): self.text = text
 
-# utils 裡的輔助若存在就匯入，否則提供最小 fallback 實作
 try:
     from utils import format_time, move_mouse_abs, mouse_event_win, client_to_screen, screen_to_client
 except Exception:
@@ -68,7 +76,50 @@ except Exception:
     def screen_to_client(hwnd, x, y): return x, y
 
 class RecorderApp(tb.Window):
+
+    def show_about_dialog(self):
+        if _show_about_dialog_impl:
+            try:
+                _show_about_dialog_impl(self)
+            except Exception as e:
+                try:
+                    self.log(f"開啟關於視窗失敗: {e}")
+                except Exception:
+                    pass
+        else:
+            try:
+                self.log("關於視窗模組不可用。")
+            except Exception:
+                pass
+
+    def start_record(self, *args, **kwargs):
+        if hasattr(self, "recorder") and hasattr(self.recorder, "start_record"):
+            return self.recorder.start_record(*args, **kwargs)
+        try:
+            self.log("start_record 尚未就緒。")
+        except Exception:
+            pass
+
+    def toggle_pause(self, *args, **kwargs):
+        if hasattr(self, "recorder") and hasattr(self.recorder, "toggle_pause"):
+            return self.recorder.toggle_pause(*args, **kwargs)
+        try:
+            self.log("toggle_pause 尚未就緒。")
+        except Exception:
+            pass
+
+    def stop_record(self, *args, **kwargs):
+        if hasattr(self, "recorder") and hasattr(self.recorder, "stop_record"):
+            return self.recorder.stop_record(*args, **kwargs)
+        try:
+            self.log("stop_record 尚未就緒。")
+        except Exception:
+            pass
+
     def __init__(self):
+
+        self.recorder = RecorderLogic(self)
+
 
         self.user_config = load_user_config()
         self.hotkey_map = self.user_config["hotkey_map"]  # 直接使用，因為 load_user_config 已確保存在
@@ -78,16 +129,34 @@ class RecorderApp(tb.Window):
         super().__init__(themename=skin)
         self.language_var = tk.StringVar(self, value=lang)
         self._hotkey_handlers = {}
-        self.tiny_window = None
-        self.target_hwnd = None
-        self.target_title = None
 
-        self.style.configure("My.TButton", font=("LINESeedTW_TTF_Rg", 9))  # 替換為新的字體
-        self.style.configure("My.TLabel", font=("LINESeedTW_TTF_Rg", 9))  # 替換為新的字體
-        self.style.configure("My.TEntry", font=("LINESeedTW_TTF_Rg", 9))  # 替換為新的字體
-        self.style.configure("My.TCombobox", font=("LINESeedTW_TTF_Rg", 9))  # 替換為新的字體
-        self.style.configure("My.TCheckbutton", font=("LINESeedTW_TTF_Rg", 9))  # 替換為新的字體
-        self.style.configure("TinyBold.TButton", font=("LINESeedTW_TTF_Bd", 9, "bold"))  # 替換為新的字體
+        self.mini = miniWindow(self) if miniWindow else None
+
+
+        self.hotkey_mgr = HotkeyManager(self)
+        try:
+            self.hotkey_mgr.register_all(self.hotkey_map)
+        except Exception:
+            pass
+
+        self.script_watcher = ScriptWatcher(self)
+        try:
+            self.script_watcher.start(self.script_dir, self.refresh_script_listbox)
+        except Exception:
+            pass
+
+        try:
+            if self.mini and hasattr(self.mini, "set_hotkeys"):
+                self.mini.set_hotkeys(self.hotkey_map)
+        except Exception:
+            pass
+
+        self.style.configure("My.TButton", font=("LINESeedTW_TTF_Rg", 9))  
+        self.style.configure("My.TLabel", font=("LINESeedTW_TTF_Rg", 9))  
+        self.style.configure("My.TEntry", font=("LINESeedTW_TTF_Rg", 9))  
+        self.style.configure("My.TCombobox", font=("LINESeedTW_TTF_Rg", 9))  
+        self.style.configure("My.TCheckbutton", font=("LINESeedTW_TTF_Rg", 9))  
+        self.style.configure("miniBold.TButton", font=("LINESeedTW_TTF_Bd", 9, "bold"))  
 
         self.title("ChroLens_Mimic_2.6")
         try:
@@ -119,7 +188,6 @@ class RecorderApp(tb.Window):
         if not os.path.exists(self.script_dir):
             os.makedirs(self.script_dir)
 
-        # 頂部按鈕區域
         frm_top = tb.Frame(self, padding=(8, 10, 8, 5))
         frm_top.pack(fill="x")
 
@@ -133,54 +201,60 @@ class RecorderApp(tb.Window):
         self.btn_play.grid(row=0, column=3, padx=4)
 
 
-        self.tiny_mode_btn = tb.Button(frm_top, text="MiniMode", style="My.TButton", command=self.toggle_tiny_mode, width=10)
-        self.tiny_mode_btn.grid(row=0, column=7, padx=4)
+        self.mini_mode_btn = tb.Button(frm_top, text="Minimode", style="My.TButton", command=self.toggle_mini_mode, width=10)
+        self.mini_mode_btn.grid(row=0, column=7, padx=4)
 
-        # 底部設定區域
-        frm_bottom = tb.Frame(self, padding=(8, 0, 8, 5))
-        frm_bottom.pack(fill="x")
-        self.lbl_speed = tb.Label(frm_bottom, text="回放速度:", style="My.TLabel")
-        self.lbl_speed.grid(row=0, column=0, padx=(0, 6))
+        # 合併回放速度與重複設定到同一列
+        frm_controls = tb.Frame(self, padding=(8, 0, 8, 5))
+        frm_controls.pack(fill="x")
+
+        # 回放速度
+        self.lbl_speed = tb.Label(frm_controls, text="回放速度:", style="My.TLabel")
+        self.lbl_speed.grid(row=0, column=0, padx=(0, 6), sticky="w")
         self.speed_tooltip = Tooltip(self.lbl_speed, "正常速度1倍=100,範圍1~1000")
         self.update_speed_tooltip()
         self.speed_var = tk.StringVar(value=self.user_config.get("speed", "100"))
-        tb.Entry(frm_bottom, textvariable=self.speed_var, width=6, style="My.TEntry").grid(row=0, column=1, padx=6)
+        tb.Entry(frm_controls, textvariable=self.speed_var, width=6, style="My.TEntry").grid(row=0, column=1, padx=(0, 12))
 
-        # 重複設定區域
-        frm_repeat = tb.Frame(self, padding=(8, 0, 8, 5))
-        frm_repeat.pack(fill="x")
-        self.repeat_label = tb.Label(frm_repeat, text="重複次數:", style="My.TLabel")
-        self.repeat_label.grid(row=0, column=0, padx=(0, 2))
+        # 重複次數
+        self.repeat_label = tb.Label(frm_controls, text="重複次數:", style="My.TLabel")
+        self.repeat_label.grid(row=0, column=2, padx=(0, 6), sticky="w")
         self.repeat_var = tk.StringVar(value=self.user_config.get("repeat", "1"))
-        entry_repeat = tb.Entry(frm_repeat, textvariable=self.repeat_var, width=6, style="My.TEntry")
-        entry_repeat.grid(row=0, column=1, padx=2)
-        self.repeat_unit_label = tb.Label(frm_repeat, text="次", style="My.TLabel")
-        self.repeat_unit_label.grid(row=0, column=2, padx=(0, 2))
+        entry_repeat = tb.Entry(frm_controls, textvariable=self.repeat_var, width=6, style="My.TEntry")
+        entry_repeat.grid(row=0, column=3, padx=(0, 6))
+        self.repeat_unit_label = tb.Label(frm_controls, text="次", style="My.TLabel")
+        self.repeat_unit_label.grid(row=0, column=4, padx=(0, 6))
 
+        # 重複時間
         self.repeat_time_var = tk.StringVar(value="00:00:00")
-        entry_repeat_time = tb.Entry(frm_repeat, textvariable=self.repeat_time_var, width=10, style="My.TEntry", justify="center")
-        entry_repeat_time.grid(row=0, column=3, padx=(10, 2))
-        self.repeat_time_label = tb.Label(frm_repeat, text="重複時間", style="My.TLabel")
-        self.repeat_time_label.grid(row=0, column=4, padx=(0, 2))
+        entry_repeat_time = tb.Entry(frm_controls, textvariable=self.repeat_time_var, width=10, style="My.TEntry", justify="center")
+        entry_repeat_time.grid(row=0, column=5, padx=(10, 6))
+        self.repeat_time_label = tb.Label(frm_controls, text="重複時間", style="My.TLabel")
+        self.repeat_time_label.grid(row=0, column=6, padx=(0, 6))
 
+        # 重複間隔
         self.repeat_interval_var = tk.StringVar(value="00:00:00")
-        repeat_interval_entry = tb.Entry(frm_repeat, textvariable=self.repeat_interval_var, width=10, style="My.TEntry", justify="center")
-        repeat_interval_entry.grid(row=0, column=5, padx=(10, 2))
-        self.repeat_interval_label = tb.Label(frm_repeat, text="重複間隔", style="My.TLabel")
-        self.repeat_interval_label.grid(row=0, column=6, padx=(0, 2))
+        repeat_interval_entry = tb.Entry(frm_controls, textvariable=self.repeat_interval_var, width=10, style="My.TEntry", justify="center")
+        repeat_interval_entry.grid(row=0, column=7, padx=(10, 6))
+        self.repeat_interval_label = tb.Label(frm_controls, text="重複間隔", style="My.TLabel")
+        self.repeat_interval_label.grid(row=0, column=8, padx=(0, 6))
 
+        # 隨機間隔 checkbox
         self.random_interval_var = tk.BooleanVar(value=False)
-        self.random_interval_check = tb.Checkbutton(frm_repeat, text="隨機", variable=self.random_interval_var, style="My.TCheckbutton")
-        self.random_interval_check.grid(row=0, column=7, padx=(8, 2))
+        self.random_interval_check = tb.Checkbutton(frm_controls, text="隨機", variable=self.random_interval_var, style="My.TCheckbutton")
+        self.random_interval_check.grid(row=0, column=9, padx=(8, 6))
 
+        # 儲存按鈕（放在同一列最右）
         self.save_script_btn_text = tk.StringVar(value=LANG_MAP.get(lang, LANG_MAP["繁體中文"])["儲存"])
-        self.save_script_btn = tb.Button(frm_repeat, textvariable=self.save_script_btn_text, width=8, bootstyle=SUCCESS, style="My.TButton", command=self.save_script_settings)
-        self.save_script_btn.grid(row=0, column=8, padx=(8, 0))
+        self.save_script_btn = tb.Button(frm_controls, textvariable=self.save_script_btn_text, width=8, bootstyle=SUCCESS, style="My.TButton", command=self.save_script_settings)
+        self.save_script_btn.grid(row=0, column=10, padx=(8, 0))
 
+        # input 驗證與監聽（沿用原本邏輯）
         def validate_time_input(P):
             import re
             return re.fullmatch(r"[\d:]*", P) is not None
         vcmd = (self.register(validate_time_input), "%P")
+        entry_repeat.config(validate="key", validatecommand=vcmd)
         entry_repeat_time.config(validate="key", validatecommand=vcmd)
         repeat_interval_entry.config(validate="key", validatecommand=vcmd)
 
@@ -255,8 +329,6 @@ class RecorderApp(tb.Window):
         self.page_content_frame.grid_rowconfigure(0, weight=1)
         self.page_content_frame.grid_columnconfigure(0, weight=1)
         self.page_content_frame.pack_propagate(False)
-
-# 在 __init__ 中的頁面初始化部分：
 
         # 日誌顯示區域
         self.log_text = tb.Text(self.page_content_frame, height=24, width=110, state="disabled", font=("LINESeedTW_TTF_Rg", 9))
@@ -343,12 +415,10 @@ class RecorderApp(tb.Window):
         # 在整體設定頁面內複製 row1 的「快捷鍵 / 關於 / 語言」控制，並簡易排版
         top_controls = tb.Frame(self.global_setting_frame, padding=(8, 6))
         top_controls.pack(fill="x", side="top")
-        # 改為存成 self 屬性，供 _init_language / change_language 等使用
         self.btn_hotkey = tb.Button(top_controls, text="快捷鍵", command=self.open_hotkey_settings, bootstyle=SECONDARY, width=10, style="My.TButton")
         self.btn_hotkey.pack(side="left", padx=(0,6))
         self.about_btn = tb.Button(top_controls, text="關於", command=self.show_about_dialog, bootstyle=SECONDARY, width=10, style="My.TButton")
         self.about_btn.pack(side="left", padx=(0,6))
-        # 使用已存在的 self.language_var（初始化時已建立），保持與主畫面同步
         lang_dup = tb.Combobox(top_controls, textvariable=self.language_var, values=["繁體中文", "日本語", "English"], state="readonly", width=12, style="My.TCombobox")
         lang_dup.pack(side="right", padx=(6,0))
         # 選擇即生效並儲存設定
@@ -407,44 +477,13 @@ class RecorderApp(tb.Window):
             return 0
         return 0
 
-    def show_about_dialog(self):
-        about_win = tb.Toplevel(self)
-        about_win.title("關於 ChroLens_Mimic")
-        about_win.geometry("450x300")
-        about_win.resizable(False, False)
-        about_win.grab_set()
-        self.update_idletasks()
-        x = self.winfo_x() + (self.winfo_width() // 2) - 175
-        y = self.winfo_y() + 80
-        about_win.geometry(f"+{x}+{y}")
-        try:
-            import sys
-            if getattr(sys, 'frozen', False):
-                icon_path = os.path.join(sys._MEIPASS, "umi_奶茶色.ico")
-            else:
-                icon_path = "umi_奶茶色.ico"
-            about_win.iconbitmap(icon_path)
-        except Exception as e:
-            print(f"無法設定 about 視窗 icon: {e}")
-        frm = tb.Frame(about_win, padding=20)
-        frm.pack(fill="both", expand=True)
-        tb.Label(frm, text="ChroLens_Mimic\n可理解為按鍵精靈/操作錄製/掛機工具\n解決重複性高的作業或動作", font=("LINESeedTW_TTF_Rg", 11,)).pack(anchor="w", pady=(0, 6))
-        link = tk.Label(frm, text="ChroLens_模擬器討論區", font=("LINESeedTW_TTF_Rg", 10, "underline"), fg="#5865F2", cursor="hand2")
-        link.pack(anchor="w")
-        link.bind("<Button-1>", lambda e: os.startfile("https://discord.gg/72Kbs4WPPn"))
-        github = tk.Label(frm, text="查看更多工具(巴哈)", font=("LINESeedTW_TTF_Rg", 10, "underline"), fg="#24292f", cursor="hand2")
-        github.pack(anchor="w", pady=(8, 0))
-        github.bind("<Button-1>", lambda e: os.startfile("https://home.gamer.com.tw/profile/index_creation.php?owner=umiwued&folder=523848"))
-        tb.Label(frm, text="Creat By Lucienwooo", font=("LINESeedTW_TTF_Rg", 11,)).pack(anchor="w", pady=(0, 6))
-        tb.Button(frm, text="關閉", command=about_win.destroy, width=8, bootstyle=SECONDARY).pack(anchor="e", pady=(16, 0))
-
     def _init_language(self, lang):
         lang_map = LANG_MAP.get(lang, LANG_MAP["繁體中文"])
         self.btn_start.config(text=lang_map["開始錄製"] + f" ({self.hotkey_map['start']})")
         self.btn_pause.config(text=lang_map["暫停/繼續"] + f" ({self.hotkey_map['pause']})")
         self.btn_stop.config(text=lang_map["停止"] + f" ({self.hotkey_map['stop']})")
         self.btn_play.config(text=lang_map["回放"] + f" ({self.hotkey_map['play']})")
-        self.tiny_mode_btn.config(text=lang_map["MiniMode"])
+        self.mini_mode_btn.config(text=lang_map["minimode"])
         self.about_btn.config(text=lang_map["關於"])
         self.lbl_speed.config(text=lang_map["回放速度:"])
         self.btn_hotkey.config(text=lang_map["快捷鍵"])
@@ -463,24 +502,7 @@ class RecorderApp(tb.Window):
         lang = self.language_var.get()
         if lang == "Language":
             return
-        lang_map = LANG_MAP.get(lang, LANG_MAP["繁體中文"])
-        self.btn_start.config(text=lang_map["開始錄製"] + f" ({self.hotkey_map['start']})")
-        self.btn_pause.config(text=lang_map["暫停/繼續"] + f" ({self.hotkey_map['pause']})")
-        self.btn_stop.config(text=lang_map["停止"] + f" ({self.hotkey_map['stop']})")
-        self.btn_play.config(text=lang_map["回放"] + f" ({self.hotkey_map['play']})")
-        self.tiny_mode_btn.config(text=lang_map["MiniMode"])
-        self.about_btn.config(text=lang_map["關於"])
-        self.lbl_speed.config(text=lang_map["回放速度:"])
-        self.btn_hotkey.config(text=lang_map["快捷鍵"])
-        self.total_time_label_prefix.config(text=lang_map["總運作"])
-        self.countdown_label_prefix.config(text=lang_map["單次"])
-        self.time_label_prefix.config(text=lang_map["錄製"])
-        self.repeat_label.config(text=lang_map["重複次數:"])
-        self.repeat_unit_label.config(text=lang_map["次"])
-        self.repeat_time_label.config(text=lang_map["重複時間"])
-        self.repeat_interval_label.config(text=lang_map["重複間隔"])
-        self.script_menu_label.config(text=lang_map["Script:"])
-        self.save_script_btn_text.set(lang_map["儲存"])
+        self._init_language(lang)
         self.user_config["language"] = lang
         self.save_config()
         self.update_idletasks()
@@ -538,169 +560,44 @@ class RecorderApp(tb.Window):
                 else:
                     total_remain = max(0, self._total_play_time - (time.time() - self._play_start_time))
                 self.update_total_time_label(total_remain)
-                if hasattr(self, "tiny_window") and self.tiny_window and self.tiny_window.winfo_exists():
-                    if hasattr(self, "tiny_countdown_label"):
-                        lang = self.language_var.get()
-                        lang_map = LANG_MAP.get(lang, LANG_MAP["繁體中文"])
-                        h = int(total_remain // 3600)
-                        m = int((total_remain % 3600) // 60)
-                        s = int(total_remain % 60)
-                        time_str = f"{h:02d}:{m:02d}:{s:02d}"
-                        self.tiny_countdown_label.config(text=f"{lang_map['剩餘']}: {time_str}")
+                try:
+                    h = int(total_remain // 3600)
+                    m = int((total_remain % 3600) // 60)
+                    s = int(total_remain % 60)
+                    time_str = f"{h:02d}:{m:02d}:{s:02d}"
+                    if hasattr(self, "mini") and getattr(self, "mini"):
+                        if hasattr(self.mini, "update_countdown"):
+                            try:
+                                self.mini.update_countdown(time_str)
+                            except Exception:
+                                pass
+                        elif hasattr(self.mini, "set_countdown_label"):
+                            try:
+                                self.mini.set_countdown_label(time_str)
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
             self.after(100, self._update_play_time)
         else:
             self.update_time_label(0)
             self.update_countdown_label(0)
             self.update_total_time_label(0)
-            if hasattr(self, "tiny_window") and self.tiny_window and self.tiny_window.winfo_exists():
-                if hasattr(self, "tiny_countdown_label"):
-                    lang = self.language_var.get()
-                    lang_map = LANG_MAP.get(lang, LANG_MAP["繁體中文"])
-                    self.tiny_countdown_label.config(text=f"{lang_map['剩餘']}: 00:00:00")
+            try:
+                if hasattr(self, "mini") and getattr(self, "mini"):
+                    if hasattr(self.mini, "update_countdown"):
+                        try:
+                            self.mini.update_countdown("00:00:00")
+                        except Exception:
+                            pass
+                    elif hasattr(self.mini, "set_countdown_label"):
+                        try:
+                            self.mini.set_countdown_label("00:00:00")
+                        except Exception:
+                            pass
+            except Exception:
+                pass
 
-    def start_record(self):
-        if self.recording:
-            return
-        self.events = []
-        self.recording = True
-        self.paused = False
-        self._record_start_time = time.time()
-        self.log(f"[{format_time(time.time())}] 開始錄製...")
-        self._record_thread_handle = threading.Thread(target=self._record_thread, daemon=True)
-        self._record_thread_handle.start()
-        self.after(100, self._update_record_time)
-
-    def _update_record_time(self):
-        if self.recording:
-            now = time.time()
-            elapsed = now - self._record_start_time
-            self.update_time_label(elapsed)
-            self.after(100, self._update_record_time)
-        else:
-            self.update_time_label(0)
-
-    def toggle_pause(self):
-        if self.recording:
-            self.paused = not self.paused
-            state = "暫停" if self.paused else "繼續"
-            mode = "錄製"
-            self.log(f"[{format_time(time.time())}] {mode}{state}。")
-            if self.paused:
-                if hasattr(self, "_keyboard_recording"):
-                    k_events = keyboard.stop_recording()
-                    if not hasattr(self, "_paused_k_events"):
-                        self._paused_k_events = []
-                    self._paused_k_events += k_events
-                    self._keyboard_recording = False
-            else:
-                keyboard.start_recording()
-                self._keyboard_recording = True
-        elif self.playing:
-            self.paused = not self.paused
-            state = "暫停" if self.paused else "繼續"
-            mode = "回放"
-            self.log(f"[{format_time(time.time())}] {mode}{state}。")
-
-    def _record_thread(self):
-        import keyboard
-        from pynput.mouse import Controller, Listener
-        try:
-            self._mouse_events = []
-            self._recording_mouse = True
-            self._record_start_time = time.time()
-            self._paused_k_events = []
-
-            keyboard.start_recording()
-            self._keyboard_recording = True
-
-            mouse_ctrl = Controller()
-            last_pos = mouse_ctrl.position
-
-            def on_click(x, y, button, pressed):
-                if self._recording_mouse and not self.paused:
-                    event = {
-                        'type': 'mouse',
-                        'event': 'down' if pressed else 'up',
-                        'button': str(button).replace('Button.', ''),
-                        'x': x,
-                        'y': y,
-                        'time': time.time()
-                    }
-                    if self.target_hwnd:
-                        rel_x, rel_y = screen_to_client(self.target_hwnd, x, y)
-                        event['rel_x'] = rel_x
-                        event['rel_y'] = rel_y
-                        event['hwnd'] = self.target_hwnd
-                    self._mouse_events.append(event)
-            def on_scroll(x, y, dx, dy):
-                if self._recording_mouse and not self.paused:
-                    event = {
-                        'type': 'mouse',
-                        'event': 'wheel',
-                        'delta': dy,
-                        'x': x,
-                        'y': y,
-                        'time': time.time()
-                    }
-                    if self.target_hwnd:
-                        rel_x, rel_y = screen_to_client(self.target_hwnd, x, y)
-                        event['rel_x'] = rel_x
-                        event['rel_y'] = rel_y
-                        event['hwnd'] = self.target_hwnd
-                    self._mouse_events.append(event)
-            import pynput.mouse
-            mouse_listener = pynput.mouse.Listener(on_click=on_click, on_scroll=on_scroll)
-            mouse_listener.start()
-
-            now = time.time()
-            event = {'type': 'mouse', 'event': 'move', 'x': last_pos[0], 'y': last_pos[1], 'time': now}
-            if self.target_hwnd:
-                rel_x, rel_y = screen_to_client(self.target_hwnd, last_pos[0], last_pos[1])
-                event['rel_x'] = rel_x
-                event['rel_y'] = rel_y
-                event['hwnd'] = self.target_hwnd
-            self._mouse_events.append(event)
-
-            while self.recording:
-                now = time.time()
-                pos = mouse_ctrl.position
-                if pos != last_pos and not self.paused:
-                    event = {'type': 'mouse', 'event': 'move', 'x': pos[0], 'y': pos[1], 'time': now}
-                    if self.target_hwnd:
-                        rel_x, rel_y = screen_to_client(self.target_hwnd, pos[0], pos[1])
-                        event['rel_x'] = rel_x
-                        event['rel_y'] = rel_y
-                        event['hwnd'] = self.target_hwnd
-                    self._mouse_events.append(event)
-                    last_pos = pos
-                time.sleep(MOUSE_SAMPLE_INTERVAL)
-            self._recording_mouse = False
-            mouse_listener.stop()
-            if hasattr(self, "_keyboard_recording") and self._keyboard_recording:
-                k_events = keyboard.stop_recording()
-            else:
-                k_events = []
-            all_k_events = []
-            if hasattr(self, "_paused_k_events"):
-                all_k_events += self._paused_k_events
-            all_k_events += k_events
-
-            filtered_k_events = [e for e in all_k_events if not (e.name == 'f10' and e.event_type in ('down', 'up'))]
-            self.events = sorted(
-                [{'type': 'keyboard', 'event': e.event_type, 'name': e.name, 'time': e.time} for e in filtered_k_events] +
-                self._mouse_events,
-                key=lambda e: e['time']
-            )
-            self.log(f"[{format_time(time.time())}] 錄製完成，共 {len(self.events)} 筆事件。")
-            self.log(f"事件預覽: {json.dumps(self.events[:10], ensure_ascii=False, indent=2)}")
-        except Exception as ex:
-            self.log(f"[{format_time(time.time())}] 錄製執行緒發生錯誤: {ex}")
-
-    def stop_record(self):
-        if self.recording:
-            self.recording = False
-            self.log(f"[{format_time(time.time())}] 停止錄製。")
-            self._wait_record_thread_finish()
 
     def stop_all(self):
         stopped = False
@@ -721,15 +618,7 @@ class RecorderApp(tb.Window):
         self._update_play_time()
         self._update_record_time()
 
-    def _wait_record_thread_finish(self):
-        if hasattr(self, '_record_thread_handle') and self._record_thread_handle.is_alive():
-            self.after(100, self._wait_record_thread_finish)
-        else:
-            self.auto_save_script()
-
     def play_record(self):
-        import keyboard
-        import mouse
         if self.playing:
             return
         if not self.events:
@@ -911,16 +800,31 @@ class RecorderApp(tb.Window):
             self.log(f"[{format_time(time.time())}] JSON 載入失敗: {e}")
 
     def save_config(self):
-        self.user_config["skin"] = self.theme_var.get()
-        self.user_config["last_script"] = self.script_var.get()
-        self.user_config["repeat"] = self.repeat_var.get()
-        self.user_config["speed"] = self.speed_var.get()
-        self.user_config["script_dir"] = self.script_dir
-        self.user_config["language"] = self.language_var.get()
-        self.user_config["repeat_time"] = self.repeat_time_var.get()
-        self.user_config["hotkey_map"] = self.hotkey_map
-        save_user_config(self.user_config)
-        self.log("【整體設定已更新】")
+        try:
+            skin = None
+            if hasattr(self, "theme_var"):
+                try:
+                    skin = self.theme_var.get()
+                except Exception:
+                    skin = None
+            if not skin:
+                try:
+                    skin = self.style.theme_use()
+                except Exception:
+                    skin = self.user_config.get("skin", "darkly")
+
+            self.user_config["skin"] = skin
+            self.user_config["last_script"] = self.script_var.get()
+            self.user_config["repeat"] = self.repeat_var.get()
+            self.user_config["speed"] = self.speed_var.get()
+            self.user_config["script_dir"] = self.script_dir
+            self.user_config["language"] = self.language_var.get()
+            self.user_config["repeat_time"] = self.repeat_time_var.get()
+            self.user_config["hotkey_map"] = self.hotkey_map
+            save_user_config(self.user_config)
+            self.log("【整體設定已更新】")
+        except Exception as e:
+            self.log(f"儲存設定發生錯誤: {e}")
 
     def auto_save_script(self):
         try:
@@ -1083,7 +987,7 @@ class RecorderApp(tb.Window):
 
         lang = self.language_var.get()
         lang_map = LANG_MAP.get(lang, LANG_MAP["繁體中文"])
-        labels = {"start": lang_map["開始錄製"], "pause": lang_map["暫停/繼續"], "stop": lang_map["停止"], "play": lang_map["回放"], "tiny": lang_map["MiniMode"]}
+        labels = {"start": lang_map["開始錄製"], "pause": lang_map["暫停/繼續"], "stop": lang_map["停止"], "play": lang_map["回放"], "mini": lang_map["minimode"]}
         vars = {}
         entries = {}
         row = 0
@@ -1138,114 +1042,48 @@ class RecorderApp(tb.Window):
         tb.Button(win, text="儲存", command=save_and_apply, width=10, bootstyle=SUCCESS).grid(row=row, column=0, columnspan=2, pady=16)
 
     def _register_hotkeys(self):
-        import keyboard
-        for handler in list(self._hotkey_handlers.values()):
-            try:
-                keyboard.remove_hotkey(handler)
-            except Exception as ex:
-                self.log(f"移除快捷鍵時發生錯誤: {ex}")
-        self._hotkey_handlers.clear()
-        for key, hotkey in self.hotkey_map.items():
-            try:
-                target = getattr(self, {"start": "start_record", "pause": "toggle_pause", "stop": "stop_all", "play": "play_record", "tiny": "toggle_tiny_mode"}[key])
-                handler = keyboard.add_hotkey(hotkey, target, suppress=False, trigger_on_release=False)
-                self._hotkey_handlers[key] = handler
-                self.log(f"已註冊快捷鍵: {hotkey} → {key}")
-            except Exception as ex:
-                self.log(f"快捷鍵 {hotkey} 註冊失敗: {ex}")
+        try:
+            if hasattr(self, "hotkey_mgr") and self.hotkey_mgr:
+                self.hotkey_mgr.register_all(self.hotkey_map)
+        except Exception as ex:
+            try: self.log(f"註冊熱鍵失敗: {ex}") 
+            except: pass
 
     def _update_hotkey_labels(self):
         self.btn_start.config(text=f"開始錄製 ({self.hotkey_map['start']})")
         self.btn_pause.config(text=f"暫停/繼續 ({self.hotkey_map['pause']})")
         self.btn_stop.config(text=f"停止 ({self.hotkey_map['stop']})")
         self.btn_play.config(text=f"回放 ({self.hotkey_map['play']})")
-        # MiniMode 按鈕同步更新（若存在 tiny 按鈕）
-        if hasattr(self, "tiny_btns"):
-            for btn, icon, key in self.tiny_btns:
-                btn.config(text=f"{icon} {self.hotkey_map.get(key, '')}")
-
-    def toggle_tiny_mode(self):
-        # 使用 2.5 版本的 MiniMode 行為
-        if not hasattr(self, "tiny_mode_on"):
-            self.tiny_mode_on = False
-        self.tiny_mode_on = not self.tiny_mode_on
-        if self.tiny_mode_on:
-            if self.tiny_window is None or not self.tiny_window.winfo_exists():
-                self.tiny_window = tb.Toplevel(self)
-                self.tiny_window.title("ChroLens_Mimic MiniMode")
-                # 2.5: 寬 620，高 40 的迷你列
-                self.tiny_window.geometry("620x40")
-                self.tiny_window.overrideredirect(True)
-                self.tiny_window.resizable(False, False)
-                self.tiny_window.attributes("-topmost", True)
-                try:
-                    import sys
-                    if getattr(sys, 'frozen', False):
-                        icon_path = os.path.join(sys._MEIPASS, "umi_奶茶色.ico")
-                    else:
-                        icon_path = "umi_奶茶色.ico"
-                    self.tiny_window.iconbitmap(icon_path)
-                except Exception as e:
-                    print(f"無法設定 MiniMode icon: {e}")
-                self.tiny_btns = []
-                # 倒數 label（多語系）
-                lang = self.language_var.get()
-                lang_map = LANG_MAP.get(lang, LANG_MAP["繁體中文"])
-                self.tiny_countdown_label = tb.Label(
-                    self.tiny_window,
-                    text=f"{lang_map['剩餘']}: 00:00:00",
-                    font=("LINESeedTW_TTF_Rg", 12),
-                    foreground="#FF95CA", width=13
-                )
-                self.tiny_countdown_label.grid(row=0, column=0, padx=2, pady=5)
-                # 拖曳功能
-                self.tiny_window.bind("<ButtonPress-1>", self._start_move_tiny)
-                self.tiny_window.bind("<B1-Motion>", self._move_tiny)
-                # 按鈕定義（圖示 + 對應 hotkey map key）
-                btn_defs = [
-                    ("⏺", "start"),
-                    ("⏸", "pause"),
-                    ("⏹", "stop"),
-                    ("▶︎", "play"),
-                    ("⤴︎", "tiny")
-                ]
-                for i, (icon, key) in enumerate(btn_defs):
-                    text = f"{icon} {self.hotkey_map.get(key, '')}"
-                    cmd = getattr(self, {"start": "start_record", "pause": "toggle_pause", "stop": "stop_all", "play": "play_record", "tiny": "toggle_tiny_mode"}[key])
-                    btn = tb.Button(
-                        self.tiny_window,
-                        text=text,
-                        width=7, style="My.TButton",
-                        command=cmd
-                    )
-                    btn.grid(row=0, column=i+1, padx=2, pady=5)
-                    self.tiny_btns.append((btn, icon, key))
-                self.tiny_window.protocol("WM_DELETE_WINDOW", self._close_tiny_mode)
-                # 隱藏主視窗，顯示迷你列
-                try:
-                    self.withdraw()
-                except Exception:
-                    pass
-        else:
-            self._close_tiny_mode()
-
-    def _close_tiny_mode(self):
-        if self.tiny_window and self.tiny_window.winfo_exists():
-            self.tiny_window.destroy()
-        self.tiny_mode_on = False
         try:
-            self.deiconify()
+            if hasattr(self, "mini") and getattr(self, "mini"):
+                if hasattr(self.mini, "set_hotkeys"):
+                    try:
+                        self.mini.set_hotkeys(self.hotkey_map)
+                    except Exception:
+                        pass
         except Exception:
             pass
 
-    def _start_move_tiny(self, event):
-        self._tiny_drag_x = event.x
-        self._tiny_drag_y = event.y
+    def toggle_mini_mode(self):
+        """委派給 minimode.miniWindow（若有）"""
+        if hasattr(self, "mini") and self.mini:
+            try:
+                self.mini.toggle()
+            except Exception as e:
+                self.log(f"minimode 切換失敗: {e}")
+        else:
+            self.log("minimode 未載入或不可用。")
 
-    def _move_tiny(self, event):
-        x = self.tiny_window.winfo_x() + event.x - self._tiny_drag_x
-        y = self.tiny_window.winfo_y() + event.y - self._tiny_drag_y
-        self.tiny_window.geometry(f"+{x}+{y}")
+    def _close_mini_mode(self):
+        if hasattr(self, "mini") and self.mini:
+            try:
+                self.mini.hide()
+            except Exception:
+                pass
+    def _start_move_mini(self, event):
+        return
+    def _move_mini(self, event):
+        return
 
     def use_default_script_dir(self):
         self.script_dir = SCRIPTS_DIR
@@ -1258,10 +1096,14 @@ class RecorderApp(tb.Window):
     def refresh_script_list(self):
         if not os.path.exists(self.script_dir):
             os.makedirs(self.script_dir)
-        scripts = [f for f in os.listdir(self.script_dir) if f.endswith('.json')]
-        self.script_combo['values'] = scripts
-        if self.script_var.get() not in scripts:
-            self.script_var.set('')
+        try:
+            self.refresh_script_listbox()
+            scripts = [f for f in os.listdir(self.script_dir) if f.endswith('.json')]
+            self.script_combo['values'] = scripts
+            if self.script_var.get() not in scripts:
+                self.script_var.set('')
+        except Exception:
+            pass
 
     def refresh_script_listbox(self):
         self.script_listbox.delete(0, "end")
@@ -1278,11 +1120,9 @@ class RecorderApp(tb.Window):
         self.show_page(idx[0])
 
     def show_page(self, idx):
-        # 清除所有子元件的配置
         for widget in self.page_content_frame.winfo_children():
             widget.grid_forget()
             
-        # 統一使用 grid 佈局，並設定相同的配置參數
         if idx == 0:
             self.log_text.grid(row=0, column=0, sticky="nsew")
             for child in self.page_content_frame.winfo_children():
@@ -1381,126 +1221,39 @@ class RecorderApp(tb.Window):
     def select_target_window(self):
         self.log("【選擇目標視窗】功能尚未實作。")
 
-    # 檔案監視：採用 watchdog handler（若可用）並以 poller 做備援
-    class _ScriptDirHandler(FileSystemEventHandler):
-        def __init__(self, app):
-            super().__init__()
-            self.app = app
-        def on_any_event(self, event):
-            # 任何變動都在主線程更新 listbox（使用 after）
-            if event.is_directory:
-                return
-            try:
-                self.app.after(80, self.app.refresh_script_listbox)
-            except Exception:
-                pass
-
     def _start_script_watcher(self):
-        """啟動 watchdog（優先）或 poller（備援）來即時更新腳本列表。"""
-        # 停止舊 watcher
-        self._stop_script_watcher()
-        if not os.path.exists(self.script_dir):
-            os.makedirs(self.script_dir)
-        # 優先 watchdog
-        if _HAVE_WATCHDOG and Observer is not None:
-            try:
-                handler = RecorderApp._ScriptDirHandler(self)
-                self._observer = Observer()
-                self._observer.schedule(handler, self.script_dir, recursive=False)
-                self._observer.start()
-                self._watchdog_handler = handler
-                self.log("已啟動 watchdog 監視腳本目錄。")
-                return
-            except Exception as ex:
-                self.log(f"啟動 watchdog 失敗，切換 poller：{ex}")
-        # fallback: poller
-        self._start_script_poller()
-
-    def _start_script_poller(self):
-        """每秒輪詢一次目錄差異，變動時更新 listbox（備援方案）。"""
-        self._stop_script_watcher()
+        """啟動或重新啟動 script_watcher（使用外部模組 script_watcher.ScriptWatcher）"""
         try:
-            current = set([f for f in os.listdir(self.script_dir) if f.endswith('.json')])
-        except Exception:
-            current = set()
-        self._script_snapshot = current
-        self._stop_watcher_flag = False
-
-        def _poll_loop():
-            while not getattr(self, "_stop_watcher_flag", False):
-                try:
-                    now = set([f for f in os.listdir(self.script_dir) if f.endswith('.json')])
-                    if now != getattr(self, "_script_snapshot", set()):
-                        self._script_snapshot = now
-                        try:
-                            self.after(80, self.refresh_script_listbox)
-                        except Exception:
-                            pass
-                    time.sleep(1.0)
-                except Exception:
-                    time.sleep(1.0)
-
-        self._poller_thread = threading.Thread(target=_poll_loop, daemon=True)
-        self._poller_thread.start()
-        self.log("已啟動 poller 監視腳本目錄（每秒檢查）。")
+            if not os.path.exists(self.script_dir):
+                os.makedirs(self.script_dir)
+            # 若尚未建立 ScriptWatcher，建立一個；否則重新啟動現有 watcher
+            if not hasattr(self, "script_watcher") or self.script_watcher is None:
+                self.script_watcher = ScriptWatcher(self)
+            # 委派給 ScriptWatcher.start（會自行選擇 watchdog 或 poller）
+            self.script_watcher.start(self.script_dir, self.refresh_script_listbox)
+        except Exception as ex:
+            try: self.log(f"啟動腳本監視器失敗: {ex}") 
+            except: pass
 
     def _stop_script_watcher(self):
-        # 停止 watchdog
+        """委派停止給 ScriptWatcher"""
         try:
-            if hasattr(self, "_observer") and self._observer:
-                try:
-                    self._observer.stop()
-                    self._observer.join(timeout=2)
-                except Exception:
-                    pass
-                self._observer = None
-        except Exception:
-            pass
-               # 停止 poller
-        try:
-            self._stop_watcher_flag = True
-            if hasattr(self, "_poller_thread") and self._poller_thread.is_alive():
-                self._poller_thread.join(timeout=0.5)
-            self._poller_thread = None
+            if hasattr(self, "script_watcher") and self.script_watcher:
+                self.script_watcher.stop()
         except Exception:
             pass
 
     def _on_close(self):
-        # 關閉時確保停止監視
         try:
-            self._stop_script_watcher()
+            if hasattr(self, "hotkey_mgr") and self.hotkey_mgr:
+                self.hotkey_mgr.remove_all()
         except Exception:
             pass
         try:
-            super().destroy()
+            if hasattr(self, "script_watcher") and self.script_watcher:
+                self.script_watcher.stop()
         except Exception:
-            try:
-                self.destroy()
-            except Exception:
-                pass
-
-
-
-    def on_modified(self, event):
-        if event.is_directory:
-            return
-
-        self.refresh_script_listbox()
-
-    def on_created(self, event):
-        if event.is_directory:
-            return
-        self.refresh_script_listbox()
-
-    def on_deleted(self, event):
-        if event.is_directory:
-            return
-        self.refresh_script_listbox()
-
-    def on_moved(self, event):
-        if event.is_directory:
-            return
-        self.refresh_script_listbox()
+            pass
 
 if __name__ == "__main__":
     app = RecorderApp()
