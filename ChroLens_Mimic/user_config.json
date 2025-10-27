@@ -1,0 +1,15 @@
+{
+  "skin": "darkly",
+  "last_script": "",
+  "repeat": "1",
+  "speed": "100",
+  "script_dir": "scripts",
+  "language": "日本語",
+  "hotkey_map": {
+    "start": "F10",
+    "pause": "F11",
+    "stop": "F9",
+    "play": "F12",
+    "tiny": "alt+`"
+  }
+}
