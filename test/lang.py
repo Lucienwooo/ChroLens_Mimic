@@ -1,3 +1,4 @@
+
 LANG_MAP = {
     "繁體中文": {
         "開始錄製": "開始錄製",
@@ -78,6 +79,7 @@ LANG_MAP = {
         "Script:": "Script:",
         "重新命名": "Rename",
         "Script": "Script",
+        "合併並儲存": "Merge & Save",
         "所有Script": "All Scripts",
         "新Script名稱：": "New Script Name:",
         "確定": "Confirm",
@@ -93,3 +95,7 @@ LANG_MAP = {
         "剩餘": "Remain"
     }
 }
+
+def get_lang_map(lang_key: str):
+    """回傳指定語言的字典，預設為繁體中文"""
+    return LANG_MAP.get(lang_key, LANG_MAP["繁體中文"])
