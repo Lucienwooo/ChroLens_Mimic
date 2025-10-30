@@ -348,11 +348,18 @@ class RecorderApp(tb.Window):
         self.btn_play.grid(row=0, column=3, padx=4)
 
         # ====== skin下拉選單 ======
-        themes = ["darkly", "cyborg", "superhero", "journal","minty", "united", "morph", "lumen"]
-        self.theme_var = tk.StringVar(value=self.style.theme_use())
-        theme_combo = tb.Combobox(frm_top, textvariable=self.theme_var, values=themes, state="readonly", width=6, style="My.TCombobox")
-        theme_combo.grid(row=0, column=8, padx=(4, 8), sticky="e")
-        theme_combo.bind("<<ComboboxSelected>>", lambda e: self.change_theme())
+        #themes = ["darkly", "cyborg", "superhero", "journal","minty", "united", "morph", "lumen"]
+        #self.theme_var = tk.StringVar(value=self.style.theme_use())
+        # 顯示目前 theme，但取消下拉選單的變更功能（保留顯示）
+        #theme_combo = tb.Combobox(
+        #    frm_top,
+        #    textvariable=self.theme_var,
+        #    values=themes,
+        #    state="disabled",   # 停用選單，僅顯示當前樣式
+        #    width=6,
+        #    style="My.TCombobox"
+        #)
+        #theme_combo.grid(row=0, column=8, padx=(4, 8), sticky="e")
 
         # MiniMode 按鈕（skin下拉選單左側）
         self.mini_mode_btn = tb.Button(
@@ -370,58 +377,61 @@ class RecorderApp(tb.Window):
         self.update_speed_tooltip()
         self.speed_var = tk.StringVar(value=self.user_config.get("speed", "100"))  # 預設100
         tb.Entry(frm_bottom, textvariable=self.speed_var, width=6, style="My.TEntry").grid(row=0, column=1, padx=6)
-        # 移除 frm_bottom 的「script 路徑」按鈕與「快捷鍵/關於/Language」
-        # 這些控制項已移到「整體設定」頁面（global_setting_frame）
+        # 合併：在同一列顯示「回放速度」與「重複次數 / 重複時間 / 重複間隔 / 隨機 / 儲存按鈕」
         saved_lang = self.user_config.get("language", "繁體中文")
-        # 建立 language var（但下拉會在整體設定頁中建立）
         self.language_var = tk.StringVar(self, value=saved_lang)
 
-        # ====== 重複次數設定 ======
-        frm_repeat = tb.Frame(self, padding=(8, 0, 8, 5))
-        frm_repeat.pack(fill="x")
-        self.repeat_label = tb.Label(frm_repeat, text="重複次數:", style="My.TLabel")
-        self.repeat_label.grid(row=0, column=0, padx=(0, 2))
+        # ----------------- 以下為合併後的重複參數（原本單獨在 frm_repeat） -----------------
+        # 重複次數
+        self.repeat_label = tb.Label(frm_bottom, text="重複次數:", style="My.TLabel")
+        self.repeat_label.grid(row=0, column=2, padx=(8, 2))
         self.repeat_var = tk.StringVar(value=self.user_config.get("repeat", "1"))
-        entry_repeat = tb.Entry(frm_repeat, textvariable=self.repeat_var, width=6, style="My.TEntry")
-        entry_repeat.grid(row=0, column=1, padx=2)
-        self.repeat_unit_label = tb.Label(frm_repeat, text="次", style="My.TLabel")
-        self.repeat_unit_label.grid(row=0, column=2, padx=(0, 2))
+        entry_repeat = tb.Entry(frm_bottom, textvariable=self.repeat_var, width=6, style="My.TEntry")
+        entry_repeat.grid(row=0, column=3, padx=2)
 
+        # 重複時間
         self.repeat_time_var = tk.StringVar(value="00:00:00")
-        entry_repeat_time = tb.Entry(frm_repeat, textvariable=self.repeat_time_var, width=10, style="My.TEntry", justify="center")
-        entry_repeat_time.grid(row=0, column=3, padx=(10, 2))
-        self.repeat_time_label = tb.Label(frm_repeat, text="重複時間", style="My.TLabel")
-        self.repeat_time_label.grid(row=0, column=4, padx=(0, 2))
+        entry_repeat_time = tb.Entry(frm_bottom, textvariable=self.repeat_time_var, width=10, style="My.TEntry", justify="center")
+        # 調整欄位位置：如果覺得擁擠，可調整 column index (目前放在 col=5)
+        entry_repeat_time.grid(row=0, column=5, padx=(10, 2))
+        self.repeat_time_label = tb.Label(frm_bottom, text="重複時間", style="My.TLabel")
+        self.repeat_time_label.grid(row=0, column=6, padx=(0, 2))
 
-        # 新增「重複間隔」輸入框和標籤
+        # 重複間隔
         self.repeat_interval_var = tk.StringVar(value="00:00:00")
-        repeat_interval_entry = tb.Entry(frm_repeat, textvariable=self.repeat_interval_var, width=10, style="My.TEntry", justify="center")
-        repeat_interval_entry.grid(row=0, column=5, padx=(10, 2))
-        self.repeat_interval_label = tb.Label(frm_repeat, text="重複間隔", style="My.TLabel")
-        self.repeat_interval_label.grid(row=0, column=6, padx=(0, 2))
+        repeat_interval_entry = tb.Entry(frm_bottom, textvariable=self.repeat_interval_var, width=10, style="My.TEntry", justify="center")
+        repeat_interval_entry.grid(row=0, column=7, padx=(10, 2))
+        self.repeat_interval_label = tb.Label(frm_bottom, text="重複間隔", style="My.TLabel")
+        self.repeat_interval_label.grid(row=0, column=8, padx=(0, 2))
 
-        # 新增「隨機」勾選框
+        # 隨機勾選
         self.random_interval_var = tk.BooleanVar(value=False)
         self.random_interval_check = tb.Checkbutton(
-            frm_repeat, text="隨機", variable=self.random_interval_var, style="My.TCheckbutton"
+            frm_bottom, text="隨機", variable=self.random_interval_var, style="My.TCheckbutton"
         )
-        self.random_interval_check.grid(row=0, column=7, padx=(8, 2))
+        self.random_interval_check.grid(row=0, column=9, padx=(8, 2))
 
-        # 儲存按鈕往後移動一格
-        self.save_script_btn_text = tk.StringVar(value=LANG_MAP.get(lang, LANG_MAP["繁體中文"])["儲存"])
+        # 儲存按鈕（放到同一列）
+        self.save_script_btn_text = tk.StringVar(value=LANG_MAP.get(saved_lang, LANG_MAP["繁體中文"])["儲存"])
         self.save_script_btn = tb.Button(
-            frm_repeat, textvariable=self.save_script_btn_text, width=8, bootstyle=SUCCESS, style="My.TButton",
+            frm_bottom, textvariable=self.save_script_btn_text, width=8, bootstyle=SUCCESS, style="My.TButton",
             command=self.save_script_settings
         )
-        self.save_script_btn.grid(row=0, column=8, padx=(8, 0))
+        self.save_script_btn.grid(row=0, column=10, padx=(8, 0))
+        # ----------------- 合併結束 -----------------
 
-        # 只允許輸入數字與冒號
+        # 只允許輸入數字與冒號（驗證器共用）
         def validate_time_input(P):
             import re
             return re.fullmatch(r"[\d:]*", P) is not None
         vcmd = (self.register(validate_time_input), "%P")
         entry_repeat_time.config(validate="key", validatecommand=vcmd)
-        repeat_interval_entry.config(validate="key", validatecommand=vcmd)  # 新增驗證
+        repeat_interval_entry.config(validate="key", validatecommand=vcmd)
+
+        # 右鍵清除快速設定（保持原行為）
+        entry_repeat.bind("<Button-3>", lambda e: self.repeat_var.set("0"))
+        entry_repeat_time.bind("<Button-3>", lambda e: self.repeat_time_var.set("00:00:00"))
+        repeat_interval_entry.bind("<Button-3>", lambda e: self.repeat_interval_var.set("00:00:00"))
 
         # 當重複時間變動時，更新總運作時間顯示
         def on_repeat_time_change(*args):
@@ -432,10 +442,6 @@ class RecorderApp(tb.Window):
             else:
                 self.update_total_time_label(0)
         self.repeat_time_var.trace_add("write", on_repeat_time_change)
-
-        entry_repeat.bind("<Button-3>", lambda e: self.repeat_var.set("0"))
-        entry_repeat_time.bind("<Button-3>", lambda e: self.repeat_time_var.set("00:00:00"))
-        repeat_interval_entry.bind("<Button-3>", lambda e: self.repeat_interval_var.set("00:00:00"))
 
         # ====== 腳本選單區 ======
         frm_script = tb.Frame(self, padding=(8, 0, 8, 5))
@@ -655,7 +661,6 @@ class RecorderApp(tb.Window):
         self.countdown_label_prefix.config(text=lang_map["單次"])
         self.time_label_prefix.config(text=lang_map["錄製"])
         self.repeat_label.config(text=lang_map["重複次數:"])
-        self.repeat_unit_label.config(text=lang_map["次"])
         self.repeat_time_label.config(text=lang_map["重複時間"])
         self.repeat_interval_label.config(text=lang_map["重複間隔"])
         self.script_menu_label.config(text=lang_map["Script:"])
@@ -679,7 +684,6 @@ class RecorderApp(tb.Window):
         self.countdown_label_prefix.config(text=lang_map["單次"])
         self.time_label_prefix.config(text=lang_map["錄製"])
         self.repeat_label.config(text=lang_map["重複次數:"])
-        self.repeat_unit_label.config(text=lang_map["次"])
         self.repeat_time_label.config(text=lang_map["重複時間"])
         self.repeat_interval_label.config(text=lang_map["重複間隔"])
         self.script_menu_label.config(text=lang_map["Script:"])
@@ -1467,6 +1471,7 @@ class RecorderApp(tb.Window):
     def on_hotkey_entry_key(self, event):
         keys = []
         if event.state & 0x0001: keys.append("shift")
+       
         if event.state & 0x0004: keys.append("ctrl")
         if event.state & 0x0008: keys.append("alt")
         key_name = event.keysym.lower()
