@@ -1,4 +1,5 @@
 #ChroLens Studio - Lucienwooo
+#python "c:\Users\Lucien\Documents\GitHub\ChroLens_Mimic\test\test2.6.py"
 #pyinstaller --noconsole --onedir --icon=umi_奶茶色.ico --add-data "umi_奶茶色.ico;." ChroLens_Mimic2.6.py
 
 # ====== UI 介面 row 對應說明 ======
@@ -18,7 +19,7 @@
 #
 # row 3 (frm_script):
 #   腳本選單（script_combo）、腳本重新命名輸入框（rename_entry）、Rename（rename_script 按鈕）
-#   選擇目標視窗（select_target_window 按鈕）
+#   選擇視窗（select_target_window 按鈕）
 #
 # row 4 (frm_log):
 #   滑鼠座標（mouse_pos_label）
@@ -111,6 +112,13 @@ try:
     import mini
 except Exception as e:
     print(f"無法匯入 mini 模組: {e}")
+
+# 新增：匯入 window_selector 模組
+try:
+    from window_selector import WindowSelectorDialog
+except Exception as e:
+    print(f"無法匯入 window_selector 模組: {e}")
+    WindowSelectorDialog = None
 
 # 新增：註冊專案內的 LINESeedTW TTF（若存在），並提供通用 font_tuple() 幫助函式
 TTF_PATH = os.path.join(os.path.dirname(__file__), "TTF", "LINESeedTW_TTF_Rg.ttf")
@@ -318,8 +326,11 @@ class RecorderApp(tb.Window):
         self.icon_tip_label.place(x=0, y=0)
         Tooltip(self.icon_tip_label, f"{self.title()}_By_Lucien")
 
-        self.geometry("900x550")
-        self.resizable(True, True)
+        # 設定最小視窗尺寸並允許彈性調整
+        self.minsize(900, 550)  # 最小尺寸限制，確保功能不被遮擋
+        self.geometry("900x550")  # 初始尺寸
+        self.resizable(True, True)  # 允許調整大小
+        
         self.recording = False
         self.playing = False
         self.paused = False
@@ -456,8 +467,33 @@ class RecorderApp(tb.Window):
         self.rename_entry.grid(row=0, column=2, padx=4)
         tb.Button(frm_script, text="Rename", command=self.rename_script, bootstyle=WARNING, width=12, style="My.TButton").grid(row=0, column=3, padx=4)
 
-        # 新增「選擇目標視窗」按鈕
-        tb.Button(frm_script, text="選擇目標視窗", command=self.select_target_window, bootstyle=INFO, width=14, style="My.TButton").grid(row=0, column=4, padx=4)
+        # 新增「選擇視窗」按鈕
+        self.select_target_btn = tb.Button(frm_script, text="選擇視窗", command=self.select_target_window, bootstyle=INFO, width=14, style="My.TButton")
+        self.select_target_btn.grid(row=0, column=4, padx=4)
+
+        # 新增「後台模式」下拉選單
+        self.background_mode_label = tb.Label(frm_script, text="後台模式:", style="My.TLabel")
+        self.background_mode_label.grid(row=0, column=5, sticky="w", padx=(12, 2))
+        self.background_mode_var = tk.StringVar(value=self.user_config.get("background_mode", "smart"))
+        background_mode_combo = tb.Combobox(
+            frm_script,
+            textvariable=self.background_mode_var,
+            values=["smart", "fast_switch", "postmessage", "foreground"],
+            state="readonly",
+            width=12,
+            style="My.TCombobox"
+        )
+        background_mode_combo.grid(row=0, column=6, sticky="w", padx=4)
+        background_mode_combo.bind("<<ComboboxSelected>>", self.on_background_mode_changed)
+        
+        # 模式說明 Tooltip
+        mode_tips = {
+            "smart": "智能模式：自動選擇最佳方法",
+            "fast_switch": "快速切換：高相容性（推薦）",
+            "postmessage": "純後台：不移動滑鼠（可能不相容部分程式）",
+            "foreground": "前景模式：傳統方式"
+        }
+        Tooltip(background_mode_combo, mode_tips.get(self.background_mode_var.get(), ""))
 
         self.script_combo.bind("<<ComboboxSelected>>", self.on_script_selected)
 
@@ -470,10 +506,20 @@ class RecorderApp(tb.Window):
 
         self.mouse_pos_label = tb.Label(
             log_title_frame, text="( X:0, Y:0 )",
-            font=font_tuple(12, "bold", monospace=True),
+            font=font_tuple(11, monospace=True),  # 縮小一個單位，套用預設字體
             foreground="#668B9B"
         )
         self.mouse_pos_label.pack(side="left", padx=8)
+
+        # 顯示目前選定的目標視窗（緊接在滑鼠座標右邊，但不要卡到總運作）
+        self.target_label = tb.Label(
+            log_title_frame, text="",
+            font=font_tuple(9),
+            foreground="#FF9500",
+            anchor="w",
+            width=25  # 限制最大寬度
+        )
+        self.target_label.pack(side="left", padx=(0, 4))
 
         # 錄製時間
         self.time_label_time = tb.Label(log_title_frame, text="00:00:00", font=font_tuple(12, monospace=True), foreground="#888888")
@@ -497,7 +543,8 @@ class RecorderApp(tb.Window):
         frm_page = tb.Frame(self, padding=(10, 0, 10, 10))
         frm_page.pack(fill="both", expand=True)
         frm_page.grid_rowconfigure(0, weight=1)
-        frm_page.grid_columnconfigure(1, weight=1)
+        frm_page.grid_columnconfigure(0, weight=0)  # 左側選單固定寬度
+        frm_page.grid_columnconfigure(1, weight=1)  # 右側內容區彈性擴展
 
         # 左側選單
         self.page_menu = tk.Listbox(frm_page, width=18, font=("Microsoft JhengHei", 11), height=5)
@@ -507,70 +554,68 @@ class RecorderApp(tb.Window):
         self.page_menu.grid(row=0, column=0, sticky="ns", padx=(0, 8), pady=4)
         self.page_menu.bind("<<ListboxSelect>>", self.on_page_selected)
 
-        # <<< 調整點: page_content_frame 大小與位置 在此處 (可調整 width/height/pack/placement) >>>
-        # 右側內容區（固定高度，內容置中）
-        self.page_content_frame = tb.Frame(frm_page, width=700, height=320)
+        # 右側內容區（隨視窗大小調整）
+        self.page_content_frame = tb.Frame(frm_page)
         self.page_content_frame.grid(row=0, column=1, sticky="nsew")
         self.page_content_frame.grid_rowconfigure(0, weight=1)
         self.page_content_frame.grid_columnconfigure(0, weight=1)
-        self.page_content_frame.pack_propagate(False)  # 固定大小
 
-        # 日誌顯示區
-        self.log_text = tb.Text(self.page_content_frame, height=24, width=110, state="disabled", font=font_tuple(9))
+        # 日誌顯示區（彈性調整）
+        self.log_text = tb.Text(self.page_content_frame, state="disabled", font=font_tuple(9))
         self.log_text.grid(row=0, column=0, sticky="nsew")
         log_scroll = tb.Scrollbar(self.page_content_frame, command=self.log_text.yview)
         log_scroll.grid(row=0, column=1, sticky="ns")
         self.log_text.config(yscrollcommand=log_scroll.set)
 
-        # 腳本設定區
-        self.script_setting_frame = tb.Frame(self.page_content_frame, width=700, height=320)
-        self.script_setting_frame.pack_propagate(False)
+        # 腳本設定區（彈性調整）
+        self.script_setting_frame = tb.Frame(self.page_content_frame)
+        self.script_setting_frame.grid_rowconfigure(0, weight=1)
+        self.script_setting_frame.grid_columnconfigure(0, weight=1)
+        self.script_setting_frame.grid_columnconfigure(1, weight=0)
 
-        # 左側腳本列表
-        # <<< 調整點: 腳本列表高度 在此處 (height=18) >>> 
-        # 若要改高度請調整下方 height 參數
+        # 左側腳本列表（隨視窗調整）
         self.script_listbox = tk.Listbox(
             self.script_setting_frame,
-            width=40,
-            height=14,  # <-- 可在此修改 height
-            font=font_tuple(10)
+            width=35,
+            font=font_tuple(9)
         )
-        self.script_listbox.grid(row=0, column=0, rowspan=8, sticky="nsw", padx=(8,6), pady=8)
+        self.script_listbox.grid(row=0, column=0, rowspan=8, sticky="nsew", padx=(8,6), pady=8)
         self.script_listbox.bind("<<ListboxSelect>>", self.on_script_listbox_select)
 
         # 右側控制區（垂直排列）
         self.script_right_frame = tb.Frame(self.script_setting_frame, padding=6)
-        self.script_right_frame.grid(row=0, column=1, sticky="n", padx=(8,0), pady=8)
+        self.script_right_frame.grid(row=0, column=1, sticky="nw", padx=(6,8), pady=8)
 
         # 快捷鍵捕捉（可捕捉任意按鍵或組合鍵）
         self.hotkey_capture_var = tk.StringVar(value="")
         hotkey_label = tb.Label(self.script_right_frame, text="捕捉快捷鍵：", style="My.TLabel")
         hotkey_label.pack(anchor="w", pady=(2,2))
-        hotkey_entry = tb.Entry(self.script_right_frame, textvariable=self.hotkey_capture_var, font=font_tuple(12, monospace=True), width=18)
+        hotkey_entry = tb.Entry(self.script_right_frame, textvariable=self.hotkey_capture_var, font=font_tuple(10, monospace=True), width=16)
         hotkey_entry.pack(pady=(0,8))
-        hotkey_entry.bind("<KeyRelease>", self.on_hotkey_entry_key)
+        # 改用 KeyPress 事件以正確捕捉組合鍵
+        hotkey_entry.bind("<KeyPress>", self.on_hotkey_entry_key)
         hotkey_entry.bind("<FocusIn>", lambda e: self.hotkey_capture_var.set("輸入按鍵"))
         hotkey_entry.bind("<FocusOut>", lambda e: None)
 
         # a) 設定快捷鍵按鈕：將捕捉到的快捷鍵寫入選定腳本並註冊
-        set_hotkey_btn = tb.Button(self.script_right_frame, text="設定快捷鍵", width=18, bootstyle=SUCCESS, command=self.set_script_hotkey)
-        set_hotkey_btn.pack(pady=6)
+        set_hotkey_btn = tb.Button(self.script_right_frame, text="設定快捷鍵", width=16, bootstyle=SUCCESS, command=self.set_script_hotkey)
+        set_hotkey_btn.pack(pady=4)
 
         # b) 直接開啟腳本資料夾（輔助功能）
-        open_dir_btn = tb.Button(self.script_right_frame, text="開啟腳本資料夾", width=18, bootstyle=SECONDARY, command=self.open_scripts_dir)
-        open_dir_btn.pack(pady=6)
+        open_dir_btn = tb.Button(self.script_right_frame, text="開啟資料夾", width=16, bootstyle=SECONDARY, command=self.open_scripts_dir)
+        open_dir_btn.pack(pady=4)
 
         # c) 刪除按鈕：直接刪除檔案並取消註冊其快捷鍵（若有）
-        del_btn = tb.Button(self.script_right_frame, text="刪除腳本", width=18, bootstyle=DANGER, command=self.delete_selected_script)
-        del_btn.pack(pady=6)
+        del_btn = tb.Button(self.script_right_frame, text="刪除腳本", width=16, bootstyle=DANGER, command=self.delete_selected_script)
+        del_btn.pack(pady=4)
 
         # 初始化清單
         self.refresh_script_listbox()
 
         # --- 建立「整體設定」頁面內容區 (global_setting_frame) ---
-        # 你可以在這裡調整位置/大小/內部佈局
-        self.global_setting_frame = tb.Frame(self.page_content_frame, width=700, height=320)
-        self.global_setting_frame.pack_propagate(False)
+        self.global_setting_frame = tb.Frame(self.page_content_frame)
+        self.global_setting_frame.grid_rowconfigure(0, weight=1)
+        self.global_setting_frame.grid_columnconfigure(0, weight=1)
         # 將原本的「快捷鍵」「關於」「Language」移到這裡
         self.btn_hotkey = tb.Button(self.global_setting_frame, text="快捷鍵", command=self.open_hotkey_settings, bootstyle=SECONDARY, width=12, style="My.TButton")
         self.btn_hotkey.pack(pady=6)
@@ -608,6 +653,15 @@ class RecorderApp(tb.Window):
         self.after(1700, self.refresh_script_list)
         self.after(1800, self.load_last_script)
         self.after(1900, self.update_mouse_pos)
+        # 設定後台模式
+        self.after(2000, self._init_background_mode)
+
+    def _init_background_mode(self):
+        """初始化後台模式設定"""
+        mode = self.user_config.get("background_mode", "smart")
+        if hasattr(self.core_recorder, 'set_background_mode'):
+            self.core_recorder.set_background_mode(mode)
+        self.log(f"後台模式：{mode}")
 
     def update_speed_tooltip(self):
         lang = self.language_var.get()
@@ -691,6 +745,25 @@ class RecorderApp(tb.Window):
         self.user_config["language"] = lang
         self.save_config()
         self.update_idletasks()
+
+    def on_background_mode_changed(self, event=None):
+        """後台模式切換時的處理"""
+        mode = self.background_mode_var.get()
+        # 儲存到設定檔
+        self.user_config["background_mode"] = mode
+        self.save_config()
+        # 更新 core_recorder 的模式
+        if hasattr(self.core_recorder, 'set_background_mode'):
+            self.core_recorder.set_background_mode(mode)
+        
+        # 顯示模式說明
+        mode_names = {
+            "smart": "智能模式：自動選擇最佳方法",
+            "fast_switch": "快速切換：視窗快速切換，高相容性",
+            "postmessage": "純後台：不移動滑鼠，可能不相容部分程式",
+            "foreground": "前景模式：傳統方式，移動真實滑鼠"
+        }
+        self.log(f"已切換至：{mode_names.get(mode, mode)}")
 
     def log(self, msg):
         self.log_text.configure(state="normal")
@@ -798,6 +871,9 @@ class RecorderApp(tb.Window):
             self.reset_to_defaults()
         except Exception:
             pass
+        # 確保 core_recorder 知道目標視窗設定
+        if hasattr(self.core_recorder, 'set_target_window'):
+            self.core_recorder.set_target_window(self.target_hwnd)
         # 清空目前 events（避免舊資料殘留），並啟動 recorder
         self.events = []
         self.recording = True
@@ -957,10 +1033,13 @@ class RecorderApp(tb.Window):
 
         if self.recording:
             self.recording = False
+            # 確保 core_recorder 的 recording 標記也設為 False
+            if hasattr(self.core_recorder, 'recording'):
+                self.core_recorder.recording = False
             self.core_recorder.stop_record()
             self.events = self.core_recorder.events
             stopped = True
-            self.log(f"[{format_time(time.time())}] 停止錄製。")
+            self.log(f"[{format_time(time.time())}] 停止錄製，共 {len(self.events)} 筆事件。")
             self._wait_record_thread_finish()
 
         if self.playing:
@@ -990,7 +1069,29 @@ class RecorderApp(tb.Window):
         # 如果 core_recorder 已完成，從 core_recorder 取回 events 並存檔
         try:
             self.events = getattr(self.core_recorder, "events", []) or []
-            self.log(f"[{format_time(time.time())}] 錄製執行緒已完成，取得事件數：{len(self.events)}")
+            # 若使用者選定了目標視窗，僅保留視窗內的滑鼠事件（其他事件保留）
+            if getattr(self, "target_hwnd", None):
+                try:
+                    rect = win32gui.GetWindowRect(self.target_hwnd)
+                    l, t, r, b = rect
+                    def _inside(e):
+                        x = y = None
+                        if isinstance(e, dict):
+                            if 'x' in e and 'y' in e:
+                                x, y = e.get('x'), e.get('y')
+                            elif 'pos' in e and isinstance(e.get('pos'), (list, tuple)) and len(e.get('pos')) >= 2:
+                                x, y = e.get('pos')[0], e.get('pos')[1]
+                        # 若找不到座標則視為非滑鼠事件，保留
+                        if x is None or y is None:
+                            return True
+                        return (l <= int(x) <= r) and (t <= int(y) <= b)
+                    filtered = [e for e in self.events if _inside(e)]
+                    self.log(f"[{format_time(time.time())}] 錄製完成，原始事件數：{len(self.events)}，過濾後：{len(filtered)}（僅保留目標視窗內滑鼠動作）")
+                    self.events = filtered
+                except Exception as ex:
+                    self.log(f"[{format_time(time.time())}] 依目標視窗過濾事件時發生錯誤: {ex}")
+            else:
+                self.log(f"[{format_time(time.time())}] 錄製執行緒已完成，取得事件數：{len(self.events)}")
             # 再次確保不會在尚未寫入時呼叫 auto_save
             self.auto_save_script()
         except Exception as ex:
@@ -1202,20 +1303,76 @@ class RecorderApp(tb.Window):
         row = 0
 
         def on_entry_key(event, key, var):
+            """強化版快捷鍵捕捉"""
             keys = []
-            if event.state & 0x0001: keys.append("shift")
-            if event.state & 0x0004: keys.append("ctrl")
-            if event.state & 0x0008: keys.append("alt")
+            
+            # 檢測修飾鍵
+            if event.state & 0x0001 or event.keysym in ('Shift_L', 'Shift_R'):  # Shift
+                keys.append("shift")
+            if event.state & 0x0004 or event.keysym in ('Control_L', 'Control_R'):  # Ctrl
+                keys.append("ctrl")
+            if event.state & 0x0008 or event.state & 0x20000 or event.keysym in ('Alt_L', 'Alt_R'):  # Alt
+                keys.append("alt")
+            if event.state & 0x0040:  # Win key
+                keys.append("win")
+            
+            # 取得主按鍵
             key_name = event.keysym.lower()
-            if key_name not in ("shift_l", "shift_r", "control_l", "control_r", "alt_l", "alt_r"):
+            
+            # 特殊按鍵映射
+            special_keys = {
+                'return': 'enter',
+                'prior': 'page_up',
+                'next': 'page_down',
+                'backspace': 'backspace',
+                'delete': 'delete',
+                'insert': 'insert',
+                'home': 'home',
+                'end': 'end',
+                'tab': 'tab',
+                'escape': 'esc',
+                'space': 'space',
+                'caps_lock': 'caps_lock',
+                'num_lock': 'num_lock',
+                'scroll_lock': 'scroll_lock',
+                'print': 'print_screen',
+                'pause': 'pause',
+            }
+            
+            # 功能鍵 F1-F24
+            if key_name.startswith('f') and key_name[1:].isdigit():
+                key_name = key_name  # F1-F24 保持原樣
+            # 方向鍵
+            elif key_name in ('up', 'down', 'left', 'right'):
+                key_name = key_name
+            # 特殊按鍵
+            elif key_name in special_keys:
+                key_name = special_keys[key_name]
+            # 修飾鍵本身不加入（已經在 keys 列表中）
+            elif key_name in ("shift_l", "shift_r", "control_l", "control_r", "alt_l", "alt_r", "win_l", "win_r"):
+                # 如果只按修飾鍵，顯示修飾鍵本身
+                if not keys:
+                    keys.append(key_name.replace('_l', '').replace('_r', ''))
+                key_name = None
+            # 數字鍵盤
+            elif key_name.startswith('kp_'):
+                key_name = key_name.replace('kp_', 'num_')
+            
+            # 組合按鍵字串
+            if key_name and key_name not in [k for k in keys]:
                 keys.append(key_name)
-            var.set("+".join(keys))
-            return "break"
-
-        def on_entry_release(event, key, var):
-            key_name = event.keysym.lower()
-            if key_name not in ("shift_l", "shift_r", "control_l", "control_r", "alt_l", "alt_r"):
-                var.set(key_name)
+            
+            # 去除重複並排序（ctrl, alt, shift, win, 主鍵）
+            modifier_order = {'ctrl': 0, 'alt': 1, 'shift': 2, 'win': 3}
+            modifiers = [k for k in keys if k in modifier_order]
+            main_key = [k for k in keys if k not in modifier_order]
+            
+            modifiers.sort(key=lambda x: modifier_order[x])
+            result = modifiers + main_key
+            
+            if result:
+                var.set("+".join(result))
+            
             return "break"
 
         def on_entry_focus_in(event, var):
@@ -1228,11 +1385,12 @@ class RecorderApp(tb.Window):
         for key, label in labels.items():
             tb.Label(win, text=label, font=("Microsoft JhengHei", 11)).grid(row=row, column=0, padx=10, pady=8, sticky="w")
             var = tk.StringVar(value=self.hotkey_map[key])
-            entry = tb.Entry(win, textvariable=var, width=8, font=("Consolas", 11), state="normal")  # 寬度縮短
+            entry = tb.Entry(win, textvariable=var, width=15, font=("Consolas", 10), state="normal")
             entry.grid(row=row, column=1, padx=10)
             vars[key] = var
             entries[key] = entry
-            entry.bind("<KeyRelease>", lambda e, k=key, v=var: on_entry_release(e, k, v))
+            # 強化版：只用 KeyPress 事件
+            entry.bind("<KeyPress>", lambda e, k=key, v=var: on_entry_key(e, k, v))
             entry.bind("<FocusIn>", lambda e, v=var: on_entry_focus_in(e, v))
             entry.bind("<FocusOut>", lambda e, k=key, v=var: on_entry_focus_out(e, k, v))
             row += 1
@@ -1254,14 +1412,19 @@ class RecorderApp(tb.Window):
 
     def _register_hotkeys(self):
         import keyboard
+        # 先移除所有已註冊的快捷鍵
         for handler in self._hotkey_handlers.values():
             try:
                 keyboard.remove_hotkey(handler)
             except Exception as ex:
-                self.log(f"移除快捷鍵時發生錯誤: {ex}")
+                pass  # 忽略移除錯誤
         self._hotkey_handlers.clear()
+        
+        # 重新註冊快捷鍵
         for key, hotkey in self.hotkey_map.items():
             try:
+                # 對於 stop 使用 suppress=True 確保能攔截
+                use_suppress = (key == "stop")
                 handler = keyboard.add_hotkey(
                     hotkey,
                     getattr(self, {
@@ -1271,7 +1434,7 @@ class RecorderApp(tb.Window):
                         "play": "play_record",
                         "mini": "toggle_mini_mode"
                     }[key]),
-                                       suppress=False,  # 不攔截原本的功能
+                    suppress=use_suppress,  # stop 使用 suppress=True
                     trigger_on_release=False
                 )
                 self._hotkey_handlers[key] = handler
@@ -1469,15 +1632,76 @@ class RecorderApp(tb.Window):
             pass
 
     def on_hotkey_entry_key(self, event):
+        """強化版快捷鍵捕捉（用於腳本快捷鍵）"""
         keys = []
-        if event.state & 0x0001: keys.append("shift")
-       
-        if event.state & 0x0004: keys.append("ctrl")
-        if event.state & 0x0008: keys.append("alt")
+        
+        # 檢測修飾鍵
+        if event.state & 0x0001 or event.keysym in ('Shift_L', 'Shift_R'):  # Shift
+            keys.append("shift")
+        if event.state & 0x0004 or event.keysym in ('Control_L', 'Control_R'):  # Ctrl
+            keys.append("ctrl")
+        if event.state & 0x0008 or event.state & 0x20000 or event.keysym in ('Alt_L', 'Alt_R'):  # Alt
+            keys.append("alt")
+        if event.state & 0x0040:  # Win key
+            keys.append("win")
+        
+        # 取得主按鍵
         key_name = event.keysym.lower()
-        if key_name not in ("shift_l", "shift_r", "control_l", "control_r", "alt_l", "alt_r"):
+        
+        # 特殊按鍵映射
+        special_keys = {
+            'return': 'enter',
+            'prior': 'page_up',
+            'next': 'page_down',
+            'backspace': 'backspace',
+            'delete': 'delete',
+            'insert': 'insert',
+            'home': 'home',
+            'end': 'end',
+            'tab': 'tab',
+            'escape': 'esc',
+            'space': 'space',
+            'caps_lock': 'caps_lock',
+            'num_lock': 'num_lock',
+            'scroll_lock': 'scroll_lock',
+            'print': 'print_screen',
+            'pause': 'pause',
+        }
+        
+        # 功能鍵 F1-F24
+        if key_name.startswith('f') and key_name[1:].isdigit():
+            key_name = key_name  # F1-F24 保持原樣
+        # 方向鍵
+        elif key_name in ('up', 'down', 'left', 'right'):
+            key_name = key_name
+        # 特殊按鍵
+        elif key_name in special_keys:
+            key_name = special_keys[key_name]
+        # 修飾鍵本身不加入（已經在 keys 列表中）
+        elif key_name in ("shift_l", "shift_r", "control_l", "control_r", "alt_l", "alt_r", "win_l", "win_r"):
+            # 如果只按修飾鍵，顯示修飾鍵本身
+            if not keys:
+                keys.append(key_name.replace('_l', '').replace('_r', ''))
+            key_name = None
+        # 數字鍵盤
+        elif key_name.startswith('kp_'):
+            key_name = key_name.replace('kp_', 'num_')
+        
+        # 組合按鍵字串
+        if key_name and key_name not in [k for k in keys]:
             keys.append(key_name)
-        self.hotkey_capture_var.set("+".join(keys))
+        
+        # 去除重複並排序（ctrl, alt, shift, win, 主鍵）
+        modifier_order = {'ctrl': 0, 'alt': 1, 'shift': 2, 'win': 3}
+        modifiers = [k for k in keys if k in modifier_order]
+        main_key = [k for k in keys if k not in modifier_order]
+        
+        modifiers.sort(key=lambda x: modifier_order[x])
+        result = modifiers + main_key
+        
+        if result:
+            self.hotkey_capture_var.set("+".join(result))
+        
         return "break"
 
     def set_script_hotkey(self):
@@ -1547,8 +1771,115 @@ class RecorderApp(tb.Window):
             self.log(f"刪除腳本失敗: {ex}")
 
     def select_target_window(self):
-        # 這裡可以加入選擇視窗的功能
-        self.log("【選擇目標視窗】功能尚未實作。")
+        """開啟視窗選擇器，選定後只錄製該視窗內的滑鼠動作"""
+        if WindowSelectorDialog is None:
+            self.log("視窗選擇器模組不可用，無法選擇視窗。")
+            return
+
+        def on_selected(hwnd, title):
+            # 清除先前 highlight
+            try:
+                self.clear_window_highlight()
+            except Exception:
+                pass
+            if not hwnd:
+                # 清除選定
+                self.target_hwnd = None
+                self.target_title = None
+                self.target_label.config(text="")
+                # 告訴 core_recorder 取消視窗限定
+                if hasattr(self.core_recorder, 'set_target_window'):
+                    self.core_recorder.set_target_window(None)
+                self.log("已清除目標視窗設定。")
+                return
+            # 驗證 hwnd 是否有效
+            try:
+                if not win32gui.IsWindow(hwnd) or not win32gui.IsWindowVisible(hwnd):
+                    self.log("選取的視窗不可見或不存在。")
+                    return
+            except Exception:
+                pass
+            self.target_hwnd = hwnd
+            self.target_title = title
+            # 更新 UI 顯示
+            short = title if len(title) <= 30 else title[:27] + "..."
+            self.target_label.config(text=f"🎯 {short}")
+            self.log(f"已選定目標視窗：{title} (hwnd={hwnd})")
+            # 為使用者在畫面上畫出框框提示
+            try:
+                self.show_window_highlight(hwnd)
+            except Exception:
+                pass
+            # 告訴 core_recorder（若支援）只捕捉該 hwnd
+            if hasattr(self.core_recorder, 'set_target_window'):
+                self.core_recorder.set_target_window(hwnd)
+            try:
+                setattr(self.core_recorder, "target_hwnd", hwnd)
+            except Exception:
+                pass
+
+        WindowSelectorDialog(self, on_selected)
+
+    # 新增：在畫面上以 topmost 無邊框視窗顯示選定視窗的邊框提示
+    def show_window_highlight(self, hwnd):
+        try:
+            rect = win32gui.GetWindowRect(hwnd)
+        except Exception:
+            return
+        l, t, r, b = rect
+        w = max(2, r - l)
+        h = max(2, b - t)
+        # 清除已存在
+        self.clear_window_highlight()
+        try:
+            win = tk.Toplevel(self)
+            win.overrideredirect(True)
+            win.attributes("-topmost", True)
+            # 半透明背景，內側以 frame 畫出 border
+            win.attributes("-alpha", 0.5)
+            win.geometry(f"{w}x{h}+{l}+{t}")
+            
+            # 設定視窗為 click-through（滑鼠事件穿透）
+            hwnd_win = win.winfo_id()
+            try:
+                # WS_EX_TRANSPARENT = 0x00000020, WS_EX_LAYERED = 0x00080000
+                GWL_EXSTYLE = -20
+                WS_EX_LAYERED = 0x00080000
+                WS_EX_TRANSPARENT = 0x00000020
+                style = ctypes.windll.user32.GetWindowLongW(hwnd_win, GWL_EXSTYLE)
+                ctypes.windll.user32.SetWindowLongW(hwnd_win, GWL_EXSTYLE, style | WS_EX_LAYERED | WS_EX_TRANSPARENT)
+            except Exception:
+                pass
+            
+            # 顯示邊框
+            frm = tk.Frame(win, bg="#00ff00", bd=4, relief="solid")
+            frm.pack(fill="both", expand=True, padx=2, pady=2)
+            
+            # 中央顯示提示文字
+            label = tk.Label(frm, text="✓ 已設定目標視窗", 
+                           font=("Microsoft JhengHei", 16, "bold"),
+                           fg="#00ff00", bg="#000000")
+            label.place(relx=0.5, rely=0.5, anchor="center")
+            
+            self._highlight_win = win
+            
+            # 2秒後自動清除高亮框
+            self.after(2000, self.clear_window_highlight)
+        except Exception as ex:
+            self._highlight_win = None
+            self.log(f"顯示高亮框時發生錯誤: {ex}")
+
+    def clear_window_highlight(self):
+        """清除視窗高亮框"""
+        w = getattr(self, "_highlight_win", None)
+        if w:
+            try:
+                if w.winfo_exists():
+                    w.destroy()
+            except Exception:
+                pass
+            finally:
+                self._highlight_win = None
 
 # ====== 設定檔讀寫 ======
 CONFIG_FILE = "user_config.json"
