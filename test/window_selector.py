@@ -31,19 +31,20 @@ class WindowSelectorDialog(tb.Toplevel):
     def __init__(self, parent, on_select):
         super().__init__(parent)
         self.title("選擇目標視窗")
-        self.resizable(False, False)
+        self.resizable(True, True)  # 允許調整大小
         self.transient(parent)
         self.grab_set()
         self.on_select = on_select
-        self.geometry("520x380")
+        self.geometry("700x450")  # 增大初始尺寸
+        self.minsize(600, 350)  # 設置最小尺寸
 
-        frm = tb.Frame(self, padding=8)
+        frm = tb.Frame(self, padding=10)
         frm.pack(fill="both", expand=True)
 
         lb_frame = tb.Frame(frm)
         lb_frame.pack(fill="both", expand=True, side="left")
 
-        self.listbox = tk.Listbox(lb_frame, width=48, height=18, activestyle="dotbox", exportselection=False)
+        self.listbox = tk.Listbox(lb_frame, width=65, height=20, activestyle="dotbox", exportselection=False)
         self.listbox.pack(side="left", fill="both", expand=True)
         self.scroll = tb.Scrollbar(lb_frame, command=self.listbox.yview)
         self.scroll.pack(side="right", fill="y")
@@ -52,19 +53,19 @@ class WindowSelectorDialog(tb.Toplevel):
 
         # 右側按鈕列
         btn_frame = tb.Frame(frm)
-        btn_frame.pack(fill="y", side="right", padx=(8,0))
+        btn_frame.pack(fill="y", side="right", padx=(10,0))
 
-        self.select_btn = tb.Button(btn_frame, text="選擇", bootstyle=SUCCESS, width=12, command=self._on_select)
-        self.select_btn.pack(pady=(8,4))
+        self.select_btn = tb.Button(btn_frame, text="選擇", bootstyle=SUCCESS, width=14, command=self._on_select)
+        self.select_btn.pack(pady=(8,6), fill="x")
 
-        self.refresh_btn = tb.Button(btn_frame, text="重新整理", bootstyle=SECONDARY, width=12, command=self.refresh)
-        self.refresh_btn.pack(pady=4)
+        self.refresh_btn = tb.Button(btn_frame, text="重整", bootstyle=SECONDARY, width=14, command=self.refresh)
+        self.refresh_btn.pack(pady=6, fill="x")
 
-        self.clear_btn = tb.Button(btn_frame, text="清除選取", bootstyle=WARNING, width=12, command=self._on_clear)
-        self.clear_btn.pack(pady=4)
+        self.clear_btn = tb.Button(btn_frame, text="清除", bootstyle=WARNING, width=14, command=self._on_clear)
+        self.clear_btn.pack(pady=6, fill="x")
 
-        self.cancel_btn = tb.Button(btn_frame, text="取消", bootstyle=SECONDARY, width=12, command=self._on_cancel)
-        self.cancel_btn.pack(pady=(12,4))
+        self.cancel_btn = tb.Button(btn_frame, text="取消", bootstyle=SECONDARY, width=14, command=self._on_cancel)
+        self.cancel_btn.pack(pady=(12,6), fill="x")
 
         self._items = []
         self.refresh()
