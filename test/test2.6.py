@@ -2,33 +2,6 @@
 #python "c:\Users\Lucien\Documents\GitHub\ChroLens_Mimic\test\test2.6.py"
 #pyinstaller --noconsole --onedir --icon=umi_奶茶色.ico --add-data "umi_奶茶色.ico;." ChroLens_Mimic2.6.py
 
-# ====== UI 介面 row 對應說明 ======
-# row 0 (frm_top):
-#   開始錄製（btn_start）、暫停/繼續（btn_pause）、停止（btn_stop）、回放（btn_play）
-#   MiniMode（mini_mode_btn）、skin下拉選單（theme_combo）
-#
-# row 1 (frm_bottom):
-#   回放速度（lbl_speed, speed_var 輸入框）、script路徑（btn_scripts_dir 按鈕）
-#   快捷鍵（btn_hotkey 按鈕）、關於（about_btn）、語言下拉選單（lang_combo）
-#
-# row 2 (frm_repeat):
-#   重複次數（repeat_var 輸入框）、單位「次」
-#   重複時間（repeat_time_var 輸入框）、重複時間標籤（repeat_time_label）
-#   重複間隔（repeat_interval_var 輸入框）、重複間隔標籤（repeat_interval_label）
-#   儲存按鈕（save_script_btn）
-#
-# row 3 (frm_script):
-#   腳本選單（script_combo）、腳本重新命名輸入框（rename_entry）、Rename（rename_script 按鈕）
-#   選擇視窗（select_target_window 按鈕）
-#
-# row 4 (frm_log):
-#   滑鼠座標（mouse_pos_label）
-#   錄製（time_label_prefix, time_label_time）
-#   單次剩餘（countdown_label_prefix, countdown_label_time）
-#   總運作（total_time_label_prefix, total_time_label_time）
-#
-# 下方為日誌顯示區（log_text）
-
 import ttkbootstrap as tb
 from ttkbootstrap.constants import *
 import tkinter as tk
@@ -645,28 +618,38 @@ class ScriptEditorWindow(tk.Toplevel):
                 with open(filepath, "r", encoding="utf-8") as f:
                     data = json.load(f)
                 
+                self.log_output(f"[資訊] 檔案已載入，開始解析...")
+                self.log_output(f"[資訊] 檔案包含的鍵: {list(data.keys())}")
+                
                 # 優先檢查是否包含動作列表
                 if "settings" in data and "script_actions" in data["settings"]:
                     self.actions = data["settings"]["script_actions"]
+                    self.log_output(f"[資訊] 檢測到動作列表格式，共 {len(self.actions)} 個動作")
                     self.update_tree()
                     self.log_output(f"[成功] 已載入動作列表：{filepath}")
                 # 檢查是否包含 script_code（舊格式相容）
                 elif "settings" in data and "script_code" in data["settings"]:
                     # 將腳本程式碼轉換為動作列表
                     code = data["settings"]["script_code"]
+                    self.log_output(f"[資訊] 檢測到腳本程式碼格式")
                     self.actions = self._script_to_actions(code)
                     self.update_tree()
                     self.log_output(f"[成功] 已載入腳本（已轉換為動作列表）：{filepath}")
                 elif "events" in data:
                     # 如果是錄製的 JSON，轉換為動作列表
+                    self.log_output(f"[資訊] 檢測到錄製事件格式，共 {len(data['events'])} 個事件")
                     self.actions = self._events_to_actions(data["events"])
+                    self.log_output(f"[資訊] 轉換後得到 {len(self.actions)} 個動作")
                     self.update_tree()
                     self.log_output(f"[成功] 已從錄製事件轉換為動作列表：{filepath}")
                 else:
                     self.log_output("[錯誤] 無法識別的檔案格式")
+                    self.log_output(f"[錯誤] 預期包含 'script_actions'、'script_code' 或 'events' 鍵")
                     return
             except Exception as e:
                 self.log_output(f"[錯誤] 載入失敗：{e}")
+                import traceback
+                self.log_output(f"[錯誤] 詳細錯誤: {traceback.format_exc()}")
     
     def _script_to_actions(self, code):
         """將腳本程式碼轉換為動作列表（簡單解析）"""
@@ -690,90 +673,87 @@ class ScriptEditorWindow(tk.Toplevel):
     def _events_to_actions(self, events):
         """將錄製的事件轉換為動作列表"""
         if not events:
+            self.log_output("[警告] 事件列表為空")
             return []
         
         actions = []
         last_time = events[0].get('time', 0)
         
+        self.log_output(f"[資訊] 開始轉換 {len(events)} 個事件...")
+        
+        # 添加詳細調試：檢查前3個事件的結構
+        for i in range(min(3, len(events))):
+            self.log_output(f"[調試] 事件 #{i}: {events[i]}")
+        
+        # 統計事件類型
+        event_types = {}
         for event in events:
-            event_type = event.get('type', '')
-            x, y = event.get('x', 0), event.get('y', 0)
-            current_time = event.get('time', 0)
-            
-            # 計算延遲
-            delay_ms = int((current_time - last_time) * 1000)
-            
-            # 轉換事件為動作
-            if event_type == 'mouse_move':
-                actions.append({
-                    "command": "move_to",
-                    "params": f"{x}, {y}",
-                    "delay": str(delay_ms) if delay_ms > 50 else "0"
-                })
-            elif event_type == 'mouse_click':
-                button = event.get('button', 'left')
-                pressed = event.get('pressed', True)
-                # 只處理按下事件，避免重複
-                if pressed:
-                    if button == 'left':
-                        actions.append({
-                            "command": "click",
-                            "params": f"{x}, {y}" if x or y else "",
-                            "delay": str(delay_ms) if delay_ms > 50 else "0"
-                        })
-                    elif button == 'right':
-                        actions.append({
-                            "command": "right_click",
-                            "params": f"{x}, {y}" if x or y else "",
-                            "delay": str(delay_ms) if delay_ms > 50 else "0"
-                        })
-            elif event_type == 'mouse_double_click':
-                actions.append({
-                    "command": "double_click",
-                    "params": f"{x}, {y}" if x or y else "",
-                    "delay": str(delay_ms) if delay_ms > 50 else "0"
-                })
-            elif event_type == 'key_press':
-                key = event.get('key', '')
-                if key:
-                    # 判斷是否為單一字元
-                    if len(key) == 1 and key.isprintable():
-                        actions.append({
-                            "command": "type_text",
-                            "params": f'"{key}"',
-                            "delay": str(delay_ms) if delay_ms > 50 else "0"
-                        })
-                    else:
+            event_type = event.get('type', 'unknown')
+            event_types[event_type] = event_types.get(event_type, 0) + 1
+        self.log_output(f"[資訊] 事件類型統計: {event_types}")
+        
+        for idx, event in enumerate(events):
+            try:
+                event_type = event.get('type', '')
+                x, y = event.get('x', 0), event.get('y', 0)
+                current_time = event.get('time', 0)
+                
+                # 計算延遲
+                delay_ms = int((current_time - last_time) * 1000) if current_time > last_time else 0
+                last_time = current_time
+                
+                # 轉換事件為動作
+                if event_type == 'mouse_move':
+                    actions.append({
+                        "command": "move_to",
+                        "params": f"{x}, {y}",
+                        "delay": str(max(0, delay_ms))
+                    })
+                elif event_type == 'mouse_click':
+                    button = event.get('button', 'left')
+                    pressed = event.get('pressed', True)
+                    # 只處理按下事件，避免重複
+                    if pressed:
+                        if button == 'left':
+                            actions.append({
+                                "command": "click",
+                                "params": f"{x}, {y}",
+                                "delay": str(max(0, delay_ms))
+                            })
+                        elif button == 'right':
+                            actions.append({
+                                "command": "right_click",
+                                "params": f"{x}, {y}",
+                                "delay": str(max(0, delay_ms))
+                            })
+                elif event_type == 'mouse_double_click':
+                    actions.append({
+                        "command": "double_click",
+                        "params": f"{x}, {y}",
+                        "delay": str(max(0, delay_ms))
+                    })
+                elif event_type == 'key_press':
+                    key = event.get('key', '')
+                    if key:
                         # 特殊按鍵
                         actions.append({
                             "command": "press_key",
-                            "params": f'"{key}"',
-                            "delay": str(delay_ms) if delay_ms > 50 else "0"
+                            "params": key,
+                            "delay": str(max(0, delay_ms))
                         })
-            elif event_type == 'key_release':
-                # 通常不需要處理釋放事件
-                pass
-            elif event_type == 'text_input':
-                text = event.get('text', '')
-                if text:
-                    # 跳脫引號
-                    text = text.replace('\\', '\\\\').replace('"', '\\"')
+                elif event_type == 'scroll':
+                    # 滾輪事件
+                    delta = event.get('delta', 0)
                     actions.append({
-                        "command": "type_text",
-                        "params": f'"{text}"',
-                        "delay": str(delay_ms) if delay_ms > 50 else "0"
+                        "command": "scroll",
+                        "params": str(delta),
+                        "delay": str(max(0, delay_ms))
                     })
-            elif event_type == 'scroll':
-                # 滾輪事件
-                delta = event.get('delta', 0)
-                actions.append({
-                    "command": "scroll",
-                    "params": f"{delta}",
-                    "delay": str(delay_ms) if delay_ms > 50 else "0"
-                })
-            
-            last_time = current_time
+            except Exception as e:
+                self.log_output(f"[錯誤] 轉換事件 #{idx} 時發生錯誤: {e}")
+                continue
         
+        self.log_output(f"[成功] 已轉換 {len(actions)} 個動作")
         return actions
     
     def show_syntax_help(self):
@@ -1080,21 +1060,7 @@ class RecorderApp(tb.Window):
         self.btn_play = tb.Button(frm_top, text=f"回放 ({self.hotkey_map['play']})", command=self.play_record, bootstyle=SUCCESS, width=10, style="My.TButton")
         self.btn_play.grid(row=0, column=3, padx=4)
 
-        # ====== skin下拉選單 ======
-        #themes = ["darkly", "cyborg", "superhero", "journal","minty", "united", "morph", "lumen"]
-        #self.theme_var = tk.StringVar(value=self.style.theme_use())
-        # 顯示目前 theme，但取消下拉選單的變更功能（保留顯示）
-        #theme_combo = tb.Combobox(
-        #    frm_top,
-        #    textvariable=self.theme_var,
-        #    values=themes,
-        #    state="disabled",   # 停用選單，僅顯示當前樣式
-        #    width=6,
-        #    style="My.TCombobox"
-        #)
-        #theme_combo.grid(row=0, column=8, padx=(4, 8), sticky="e")
-
-        # MiniMode 按鈕（skin下拉選單左側）
+        # ====== MiniMode 按鈕 ======
         self.mini_mode_btn = tb.Button(
             frm_top, text="MiniMode", style="My.TButton",
             command=self.toggle_mini_mode, width=10
@@ -1108,61 +1074,57 @@ class RecorderApp(tb.Window):
         self.lbl_speed.grid(row=0, column=0, padx=(0, 6))
         self.speed_tooltip = Tooltip(self.lbl_speed, "正常速度1倍=100,範圍1~1000")
         self.update_speed_tooltip()
-        self.speed_var = tk.StringVar(value=self.user_config.get("speed", "100"))  # 預設100
+        self.speed_var = tk.StringVar(value=self.user_config.get("speed", "100"))
         tb.Entry(frm_bottom, textvariable=self.speed_var, width=6, style="My.TEntry").grid(row=0, column=1, padx=6)
-        # 合併：在同一列顯示「回放速度」與「重複次數 / 重複時間 / 重複間隔 / 隨機 / 儲存按鈕」
         saved_lang = self.user_config.get("language", "繁體中文")
         self.language_var = tk.StringVar(self, value=saved_lang)
 
-        # ----------------- 以下為合併後的重複參數（原本單獨在 frm_repeat） -----------------
-        # 重複次數
+        # ====== 重複參數設定 ======
         self.repeat_label = tb.Label(frm_bottom, text="重複次數:", style="My.TLabel")
         self.repeat_label.grid(row=0, column=2, padx=(8, 2))
         self.repeat_var = tk.StringVar(value=self.user_config.get("repeat", "1"))
         entry_repeat = tb.Entry(frm_bottom, textvariable=self.repeat_var, width=6, style="My.TEntry")
         entry_repeat.grid(row=0, column=3, padx=2)
 
-        # 重複時間
         self.repeat_time_var = tk.StringVar(value="00:00:00")
         entry_repeat_time = tb.Entry(frm_bottom, textvariable=self.repeat_time_var, width=10, style="My.TEntry", justify="center")
-        # 調整欄位位置：如果覺得擁擠，可調整 column index (目前放在 col=5)
         entry_repeat_time.grid(row=0, column=5, padx=(10, 2))
         self.repeat_time_label = tb.Label(frm_bottom, text="重複時間", style="My.TLabel")
         self.repeat_time_label.grid(row=0, column=6, padx=(0, 2))
-        
-        # 添加重複時間的 Tooltip
         self.repeat_time_tooltip = Tooltip(self.repeat_time_label, "設定總運作時間，格式HH:MM:SS\n例如: 01:30:00 表示持續1.5小時\n留空或00:00:00則依重複次數執行")
 
-        # 重複間隔
         self.repeat_interval_var = tk.StringVar(value="00:00:00")
         repeat_interval_entry = tb.Entry(frm_bottom, textvariable=self.repeat_interval_var, width=10, style="My.TEntry", justify="center")
         repeat_interval_entry.grid(row=0, column=7, padx=(10, 2))
         self.repeat_interval_label = tb.Label(frm_bottom, text="重複間隔", style="My.TLabel")
         self.repeat_interval_label.grid(row=0, column=8, padx=(0, 2))
-        
-        # 添加重複間隔的 Tooltip
         self.repeat_interval_tooltip = Tooltip(self.repeat_interval_label, "每次重複之間的等待時間\n格式HH:MM:SS，例如: 00:00:30\n表示每次執行完等待30秒再開始下一次")
 
-        # 隨機勾選
         self.random_interval_var = tk.BooleanVar(value=False)
         self.random_interval_check = tb.Checkbutton(
             frm_bottom, text="隨機", variable=self.random_interval_var, style="My.TCheckbutton"
         )
         self.random_interval_check.grid(row=0, column=9, padx=(8, 2))
-        
-        # 添加隨機的 Tooltip
         self.random_interval_tooltip = Tooltip(self.random_interval_check, "勾選後，重複間隔將在0到設定值之間隨機\n可避免被偵測為機器人行為")
 
-        # 儲存按鈕（放到同一列）
+        # ====== 自動切換 MiniMode 勾選框 ======
+        self.auto_mini_var = tk.BooleanVar(value=self.user_config.get("auto_mini_mode", False))
+        lang_map = LANG_MAP.get(saved_lang, LANG_MAP["繁體中文"])
+        self.main_auto_mini_check = tb.Checkbutton(
+            frm_top, text=lang_map["自動切換"], variable=self.auto_mini_var, style="My.TCheckbutton"
+        )
+        self.main_auto_mini_check.grid(row=0, column=8, padx=4)
+        Tooltip(self.main_auto_mini_check, lang_map["勾選時，程式錄製/回放將自動轉換"])
+        
+        # ====== 儲存按鈕 ======
         self.save_script_btn_text = tk.StringVar(value=LANG_MAP.get(saved_lang, LANG_MAP["繁體中文"])["儲存"])
         self.save_script_btn = tb.Button(
             frm_bottom, textvariable=self.save_script_btn_text, width=8, bootstyle=SUCCESS, style="My.TButton",
             command=self.save_script_settings
         )
         self.save_script_btn.grid(row=0, column=10, padx=(8, 0))
-        # ----------------- 合併結束 -----------------
 
-        # 只允許輸入數字與冒號（驗證器共用）
+        # ====== 時間輸入驗證 ======
         def validate_time_input(P):
             import re
             return re.fullmatch(r"[\d:]*", P) is not None
@@ -1170,12 +1132,10 @@ class RecorderApp(tb.Window):
         entry_repeat_time.config(validate="key", validatecommand=vcmd)
         repeat_interval_entry.config(validate="key", validatecommand=vcmd)
 
-        # 右鍵清除快速設定（保持原行為）
         entry_repeat.bind("<Button-3>", lambda e: self.repeat_var.set("0"))
         entry_repeat_time.bind("<Button-3>", lambda e: self.repeat_time_var.set("00:00:00"))
         repeat_interval_entry.bind("<Button-3>", lambda e: self.repeat_interval_var.set("00:00:00"))
 
-        # 當重複時間變動時，更新總運作時間顯示
         def on_repeat_time_change(*args):
             t = self.repeat_time_var.get()
             seconds = self._parse_time_to_seconds(t)
@@ -1196,10 +1156,10 @@ class RecorderApp(tb.Window):
         self.rename_var = tk.StringVar()
         self.rename_entry = tb.Entry(frm_script, textvariable=self.rename_var, width=20, style="My.TEntry")
         self.rename_entry.grid(row=0, column=2, padx=4)
-        tb.Button(frm_script, text="Rename", command=self.rename_script, bootstyle=WARNING, width=12, style="My.TButton").grid(row=0, column=3, padx=4)
+        self.rename_btn = tb.Button(frm_script, text=lang_map["重新命名"], command=self.rename_script, bootstyle=WARNING, width=12, style="My.TButton")
+        self.rename_btn.grid(row=0, column=3, padx=4)
 
-        # 新增「選擇視窗」按鈕
-        self.select_target_btn = tb.Button(frm_script, text="選擇視窗", command=self.select_target_window, bootstyle=INFO, width=14, style="My.TButton")
+        self.select_target_btn = tb.Button(frm_script, text=lang_map["選擇視窗"], command=self.select_target_window, bootstyle=INFO, width=14, style="My.TButton")
         self.select_target_btn.grid(row=0, column=4, padx=4)
 
         self.script_combo.bind("<<ComboboxSelected>>", self.on_script_selected)
@@ -1254,10 +1214,11 @@ class RecorderApp(tb.Window):
         frm_page.grid_columnconfigure(1, weight=1)  # 右側內容區彈性擴展
 
         # 左側選單
+        lang_map = LANG_MAP.get(saved_lang, LANG_MAP["繁體中文"])
         self.page_menu = tk.Listbox(frm_page, width=18, font=("Microsoft JhengHei", 11), height=5)
-        self.page_menu.insert(0, "1.日誌顯示")
-        self.page_menu.insert(1, "2.腳本設定")
-        self.page_menu.insert(2, "3.整體設定")
+        self.page_menu.insert(0, lang_map["1.日誌顯示"])
+        self.page_menu.insert(1, lang_map["2.腳本設定"])
+        self.page_menu.insert(2, lang_map["3.整體設定"])
         self.page_menu.grid(row=0, column=0, sticky="ns", padx=(0, 8), pady=4)
         self.page_menu.bind("<<ListboxSelect>>", self.on_page_selected)
 
@@ -1317,8 +1278,8 @@ class RecorderApp(tb.Window):
 
         # 快捷鍵捕捉（可捕捉任意按鍵或組合鍵）
         self.hotkey_capture_var = tk.StringVar(value="")
-        hotkey_label = tb.Label(self.script_right_frame, text="捕捉快捷鍵：", style="My.TLabel")
-        hotkey_label.pack(anchor="w", pady=(2,2))
+        self.hotkey_capture_label = tb.Label(self.script_right_frame, text="捕捉快捷鍵：", style="My.TLabel")
+        self.hotkey_capture_label.pack(anchor="w", pady=(2,2))
         hotkey_entry = tb.Entry(self.script_right_frame, textvariable=self.hotkey_capture_var, font=font_tuple(10, monospace=True), width=16)
         hotkey_entry.pack(anchor="w", pady=(0,8))
         # 改用 KeyPress 事件以正確捕捉組合鍵
@@ -1327,39 +1288,34 @@ class RecorderApp(tb.Window):
         hotkey_entry.bind("<FocusOut>", lambda e: None)
 
         # a) 設定快捷鍵按鈕：將捕捉到的快捷鍵寫入選定腳本並註冊
-        set_hotkey_btn = tb.Button(self.script_right_frame, text="設定快捷鍵", width=16, bootstyle=SUCCESS, command=self.set_script_hotkey)
-        set_hotkey_btn.pack(anchor="w", pady=4)
+        self.set_hotkey_btn = tb.Button(self.script_right_frame, text="設定快捷鍵", width=16, bootstyle=SUCCESS, command=self.set_script_hotkey)
+        self.set_hotkey_btn.pack(anchor="w", pady=4)
 
         # b) 直接開啟腳本資料夾（輔助功能）
-        open_dir_btn = tb.Button(self.script_right_frame, text="開啟資料夾", width=16, bootstyle=SECONDARY, command=self.open_scripts_dir)
-        open_dir_btn.pack(anchor="w", pady=4)
+        self.open_dir_btn = tb.Button(self.script_right_frame, text="開啟資料夾", width=16, bootstyle=SECONDARY, command=self.open_scripts_dir)
+        self.open_dir_btn.pack(anchor="w", pady=4)
 
         # c) 刪除按鈕：直接刪除檔案並取消註冊其快捷鍵（若有）
-        del_btn = tb.Button(self.script_right_frame, text="刪除腳本", width=16, bootstyle=DANGER, command=self.delete_selected_script)
-        del_btn.pack(anchor="w", pady=4)
+        self.del_script_btn = tb.Button(self.script_right_frame, text="刪除腳本", width=16, bootstyle=DANGER, command=self.delete_selected_script)
+        self.del_script_btn.pack(anchor="w", pady=4)
         
         # d) 腳本編輯器按鈕：開啟腳本編輯器視窗
-        edit_script_btn = tb.Button(self.script_right_frame, text="腳本編輯器", width=16, bootstyle=INFO, command=self.open_script_editor)
-        edit_script_btn.pack(anchor="w", pady=4)
+        self.edit_script_btn = tb.Button(self.script_right_frame, text="腳本編輯器", width=16, bootstyle=INFO, command=self.open_script_editor)
+        self.edit_script_btn.pack(anchor="w", pady=4)
 
         # 初始化清單
         self.refresh_script_listbox()
 
-        # --- 建立「整體設定」頁面內容區 (global_setting_frame) ---
+        # ====== 整體設定頁面 ======
         self.global_setting_frame = tb.Frame(self.page_content_frame)
-        # 不使用 grid 權重，讓按鈕保持自然大小並靠左上對齊
         
-        # 將原本的「快捷鍵」「關於」「Language」移到這裡，靠左上至下對齊
         self.btn_hotkey = tb.Button(self.global_setting_frame, text="快捷鍵", command=self.open_hotkey_settings, bootstyle=SECONDARY, width=15, style="My.TButton")
         self.btn_hotkey.pack(anchor="w", pady=4, padx=8)
         
         self.about_btn = tb.Button(self.global_setting_frame, text="關於", width=15, style="My.TButton", command=self.show_about_dialog, bootstyle=SECONDARY)
         self.about_btn.pack(anchor="w", pady=4, padx=8)
         
-        # 語言下拉（放在整體設定頁）
-        # 實際儲存的語言變數
         self.actual_language = saved_lang
-        # 顯示用的變數（預設顯示 Language）
         self.language_display_var = tk.StringVar(self, value="Language")
         
         lang_combo_global = tb.Combobox(
@@ -1374,31 +1330,27 @@ class RecorderApp(tb.Window):
         lang_combo_global.bind("<<ComboboxSelected>>", self.change_language)
         self.language_combo = lang_combo_global
 
-        # 預設選擇第一項
+        # ====== 初始化設定 ======
         self.page_menu.selection_set(0)
         self.show_page(0)
 
-        # ====== 其餘初始化 ======
         self.refresh_script_list()
         if self.script_var.get():
             self.on_script_selected()
-        # 語言初始化（確保UI語言正確）
         self._init_language(saved_lang)
         self.after(1500, self._delayed_init)
 
     def _delayed_init(self):
         self.after(1600, self._register_hotkeys)
-        # 註冊腳本快捷鍵（若腳本已包含 script_hotkey）
         self.after(1650, self._register_script_hotkeys)
         self.after(1700, self.refresh_script_list)
         self.after(1800, self.load_last_script)
         self.after(1900, self.update_mouse_pos)
-        # 設定後台模式
         self.after(2000, self._init_background_mode)
 
     def _init_background_mode(self):
         """初始化後台模式設定（固定使用智能模式）"""
-        mode = "smart"  # 固定使用智能模式（自動適應）
+        mode = "smart"
         if hasattr(self.core_recorder, 'set_background_mode'):
             self.core_recorder.set_background_mode(mode)
         self.log(f"後台模式：智能模式（自動適應）")
@@ -1412,7 +1364,6 @@ class RecorderApp(tb.Window):
         }
         tip_text = tips.get(lang, tips["繁體中文"])
         if hasattr(self, "speed_tooltip") and self.speed_tooltip:
-            # 只更新 tooltip 文字，不去改 lbl_speed 的主標籤
             self.speed_tooltip.text = tip_text
 
     def _parse_time_to_seconds(self, t):
@@ -1459,6 +1410,46 @@ class RecorderApp(tb.Window):
         self.repeat_interval_label.config(text=lang_map["重複間隔"])
         self.script_menu_label.config(text=lang_map["Script:"])
         self.save_script_btn_text.set(lang_map["儲存"])
+        # 腳本管理按鈕
+        if hasattr(self, 'rename_btn'):
+            self.rename_btn.config(text=lang_map["重新命名"])
+        if hasattr(self, 'select_target_btn'):
+            self.select_target_btn.config(text=lang_map["選擇視窗"])
+        if hasattr(self, 'hotkey_capture_label'):
+            self.hotkey_capture_label.config(text=lang_map["捕捉快捷鍵："])
+        if hasattr(self, 'set_hotkey_btn'):
+            self.set_hotkey_btn.config(text=lang_map["設定快捷鍵"])
+        if hasattr(self, 'open_dir_btn'):
+            self.open_dir_btn.config(text=lang_map["開啟資料夾"])
+        if hasattr(self, 'del_script_btn'):
+            self.del_script_btn.config(text=lang_map["刪除腳本"])
+        if hasattr(self, 'edit_script_btn'):
+            self.edit_script_btn.config(text=lang_map["腳本編輯器"])
+        # Treeview 標題
+        if hasattr(self, 'script_treeview'):
+            self.script_treeview.heading("name", text=lang_map["腳本名稱"])
+            self.script_treeview.heading("hotkey", text=lang_map["快捷鍵"])
+        # 勾選框
+        if hasattr(self, 'random_interval_check'):
+            self.random_interval_check.config(text=lang_map["隨機"])
+        if hasattr(self, 'main_auto_mini_check'):
+            self.main_auto_mini_check.config(text=lang_map["自動切換"])
+            # 更新 tooltip
+            if hasattr(self, 'main_auto_mini_check'):
+                # 移除舊的 tooltip 並建立新的
+                try:
+                    Tooltip(self.main_auto_mini_check, lang_map["勾選時，程式錄製/回放將自動轉換"])
+                except:
+                    pass
+            self.random_interval_check.config(text=lang_map["隨機"])
+        
+        # 更新左側選單
+        if hasattr(self, 'page_menu'):
+            self.page_menu.delete(0, tk.END)
+            self.page_menu.insert(0, lang_map["1.日誌顯示"])
+            self.page_menu.insert(1, lang_map["2.腳本設定"])
+            self.page_menu.insert(2, lang_map["3.整體設定"])
+        
         self.update_idletasks()
 
     def change_language(self, event=None):
@@ -1490,6 +1481,36 @@ class RecorderApp(tb.Window):
         self.repeat_interval_label.config(text=lang_map["重複間隔"])
         self.script_menu_label.config(text=lang_map["Script:"])
         self.save_script_btn_text.set(lang_map["儲存"])
+        # 腳本設定區按鈕
+        if hasattr(self, 'rename_btn'):
+            self.rename_btn.config(text=lang_map["重新命名"])
+        if hasattr(self, 'select_target_btn'):
+            self.select_target_btn.config(text=lang_map["選擇視窗"])
+        if hasattr(self, 'hotkey_capture_label'):
+            self.hotkey_capture_label.config(text=lang_map["捕捉快捷鍵："])
+        if hasattr(self, 'set_hotkey_btn'):
+            self.set_hotkey_btn.config(text=lang_map["設定快捷鍵"])
+        if hasattr(self, 'open_dir_btn'):
+            self.open_dir_btn.config(text=lang_map["開啟資料夾"])
+        if hasattr(self, 'del_script_btn'):
+            self.del_script_btn.config(text=lang_map["刪除腳本"])
+        if hasattr(self, 'edit_script_btn'):
+            self.edit_script_btn.config(text=lang_map["腳本編輯器"])
+        # Treeview 標題
+        if hasattr(self, 'script_treeview'):
+            self.script_treeview.heading("name", text=lang_map["腳本名稱"])
+            self.script_treeview.heading("hotkey", text=lang_map["快捷鍵"])
+        # 勾選框
+        if hasattr(self, 'random_interval_check'):
+            self.random_interval_check.config(text=lang_map["隨機"])
+        if hasattr(self, 'main_auto_mini_check'):
+            self.main_auto_mini_check.config(text=lang_map["自動切換"])
+        # 更新左側選單
+        if hasattr(self, 'page_menu'):
+            self.page_menu.delete(0, tk.END)
+            self.page_menu.insert(0, lang_map["1.日誌顯示"])
+            self.page_menu.insert(1, lang_map["2.腳本設定"])
+            self.page_menu.insert(2, lang_map["3.整體設定"])
         self.user_config["language"] = lang
         self.save_config()
         self.update_idletasks()
@@ -1508,20 +1529,16 @@ class RecorderApp(tb.Window):
         if time_str == "00:00:00":
             self.time_label_time.config(text=time_str, foreground="#888888")
         else:
-            # 前導零灰色，非零部分有顏色
             colored = []
             for idx, part in enumerate(time_str.split(":")):
                 if part == "00" and idx < 2:
                     colored.append(("#888888", part))
                 else:
                     colored.append(("#15D3BD", part))
-            # 組合顯示
             self.time_label_time.config(
                 text=":".join([p[1] for p in colored]),
-                foreground=colored[-1][0]  # 只會有一種顏色，因為 Label 只能一色
+                foreground=colored[-1][0]
             )
-            # 但因為 Label 只能一色，建議只讓最後一段有顏色，其餘灰色
-            # 若要每段不同色，需用 Text 或 Canvas
 
     def update_total_time_label(self, seconds):
         h = int(seconds // 3600)
@@ -1531,7 +1548,6 @@ class RecorderApp(tb.Window):
         if time_str == "00:00:00":
             self.total_time_label_time.config(text=time_str, foreground="#888888")
         else:
-            # 只讓最後一段有顏色
             self.total_time_label_time.config(text=time_str, foreground="#FF95CA")
 
     def update_countdown_label(self, seconds):
@@ -1551,6 +1567,10 @@ class RecorderApp(tb.Window):
                 # 回放已結束，同步狀態
                 self.playing = False
                 self.log(f"[{format_time(time.time())}] 回放完成")
+                
+                # 釋放所有可能卡住的修飾鍵
+                self._release_all_modifiers()
+                
                 self.update_time_label(0)
                 self.update_countdown_label(0)
                 self.update_total_time_label(0)
@@ -1617,6 +1637,11 @@ class RecorderApp(tb.Window):
         """開始錄製"""
         if getattr(self.core_recorder, "recording", False):
             return
+        
+        # 自動切換到 MiniMode（如果勾選）
+        if self.auto_mini_var.get() and not self.mini_mode_on:
+            self.toggle_mini_mode()
+        
         # 每次按開始錄製時，重置「可儲存到腳本」的參數為預設值
         try:
             self.reset_to_defaults()
@@ -1739,6 +1764,10 @@ class RecorderApp(tb.Window):
         if not self.events:
             self.log("沒有可回放的事件，請先錄製或載入腳本。")
             return
+        
+        # 自動切換到 MiniMode（如果勾選）
+        if self.auto_mini_var.get() and not self.mini_mode_on:
+            self.toggle_mini_mode()
         
         # 初始化座標偏移量（用於相對座標回放）
         self.playback_offset_x = 0
@@ -1996,6 +2025,9 @@ class RecorderApp(tb.Window):
             self.core_recorder.stop_play()
             stopped = True
             self.log(f"[{format_time(time.time())}] 停止回放。")
+            
+            # 釋放所有可能卡住的修飾鍵
+            self._release_all_modifiers()
 
         if not stopped:
             self.log(f"[{format_time(time.time())}] 無進行中動作可停止。")
@@ -2005,6 +2037,21 @@ class RecorderApp(tb.Window):
         self.update_total_time_label(0)
         self._update_play_time()
         self._update_record_time()
+    
+    def _release_all_modifiers(self):
+        """釋放所有修飾鍵以防止卡住"""
+        try:
+            import keyboard
+            # 釋放常見的修飾鍵
+            modifiers = ['ctrl', 'shift', 'alt', 'win']
+            for mod in modifiers:
+                try:
+                    keyboard.release(mod)
+                except:
+                    pass
+            self.log("[系統] 已釋放所有修飾鍵")
+        except Exception as e:
+            self.log(f"[警告] 釋放修飾鍵時發生錯誤: {e}")
 
     def _wait_record_thread_finish(self):
         """等待錄製執行緒由 core_recorder 結束，結束後同步 events 並 auto_save"""
@@ -2091,6 +2138,7 @@ class RecorderApp(tb.Window):
         self.user_config["language"] = self.language_var.get()
         self.user_config["repeat_time"] = self.repeat_time_var.get()
         self.user_config["hotkey_map"] = self.hotkey_map
+        self.user_config["auto_mini_mode"] = self.auto_mini_var.get()  # 儲存自動切換設定
         save_user_config(self.user_config)
         self.log("【整體設定已更新】")  # 新增：日誌顯示
 
@@ -2536,10 +2584,11 @@ class RecorderApp(tb.Window):
                     data = json.load(f)
                 hotkey = data.get("script_hotkey", "")
                 if hotkey:
-                    # 為每個腳本註冊快捷鍵，觸發時載入並播放該腳本
+                    # 為每個腳本註冊快捷鍵，使用 functools.partial 確保正確捕獲參數
+                    from functools import partial
                     handler = keyboard.add_hotkey(
                         hotkey,
-                        lambda s=script: self._play_script_by_hotkey(s),
+                        partial(self._play_script_by_hotkey, script),
                         suppress=False,
                         trigger_on_release=False
                     )
@@ -2550,7 +2599,7 @@ class RecorderApp(tb.Window):
                     }
                     self.log(f"已註冊腳本快捷鍵: {hotkey} → {script}")
             except Exception as ex:
-                pass
+                self.log(f"註冊腳本快捷鍵失敗 ({script}): {ex}")
 
     def _play_script_by_hotkey(self, script):
         """透過快捷鍵觸發腳本回放（使用腳本儲存的參數）"""
@@ -2610,7 +2659,7 @@ class RecorderApp(tb.Window):
             if self.mini_window is None or not self.mini_window.winfo_exists():
                 self.mini_window = tb.Toplevel(self)
                 self.mini_window.title("ChroLens_Mimic MiniMode")
-                self.mini_window.geometry("620x40")
+                self.mini_window.geometry("720x40")  # 增加寬度以容納勾選框
                 self.mini_window.overrideredirect(True)
                 self.mini_window.resizable(False, False)
                 self.mini_window.attributes("-topmost", True)
@@ -2665,6 +2714,18 @@ class RecorderApp(tb.Window):
                     )
                     btn.grid(row=0, column=i+1, padx=2, pady=5)
                     self.mini_btns.append((btn, icon, key))
+                
+                # 添加自動切換勾選框
+                self.mini_auto_check = tb.Checkbutton(
+                    self.mini_window,
+                    text=lang_map["自動切換"],
+                    variable=self.auto_mini_var,
+                    style="My.TCheckbutton"
+                )
+                self.mini_auto_check.grid(row=0, column=len(btn_defs)+1, padx=5, pady=5)
+                
+                # 添加 Tooltip
+                Tooltip(self.mini_auto_check, lang_map["勾選時，程式錄製/回放將自動轉換"])
                 
                 self.mini_window.protocol("WM_DELETE_WINDOW", self._close_mini_mode)
                 self.withdraw()

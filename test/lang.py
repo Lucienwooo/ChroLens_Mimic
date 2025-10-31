@@ -70,7 +70,20 @@ LANG_MAP = {
         "選項說明": "選項說明",
         # 其他
         "ChroLens 腳本編輯器": "ChroLens 腳本編輯器",
-        "ChroLens 腳本語法說明": "ChroLens 腳本語法說明"
+        "ChroLens 腳本語法說明": "ChroLens 腳本語法說明",
+        # 選單和列表
+        "清除": "清除",
+        "加入至腳本": "加入至腳本",
+        "從腳本移除": "從腳本移除",
+        "重新命名腳本": "重新命名腳本",
+        "腳本列表": "腳本列表",
+        # 進階功能
+        "自動切換": "自動切換",
+        "勾選時，程式錄製/回放將自動轉換": "勾選時，程式錄製/回放將自動轉換",
+        # 選單標題
+        "1.日誌顯示": "1.日誌顯示",
+        "2.腳本設定": "2.腳本設定",
+        "3.整體設定": "3.整體設定"
     },
     "日本語": {
         "開始錄製": "録画開始",
@@ -142,7 +155,20 @@ LANG_MAP = {
         "選項說明": "オプション説明",
         # 其他
         "ChroLens 腳本編輯器": "ChroLens スクリプトエディタ",
-        "ChroLens 腳本語法說明": "ChroLens 構文説明"
+        "ChroLens 腳本語法說明": "ChroLens 構文説明",
+        # 選單和列表
+        "清除": "クリア",
+        "加入至腳本": "スクリプトに追加",
+        "從腳本移除": "スクリプトから削除",
+        "重新命名腳本": "名前を変更",
+        "腳本列表": "スクリプトリスト",
+        # 進階功能
+        "自動切換": "自動切替",
+        "勾選時，程式錄製/回放將自動轉換": "チェック時、録画/再生は自動的にミニモードに切り替わります",
+        # 選單標題
+        "1.日誌顯示": "1.ログ表示",
+        "2.腳本設定": "2.スクリプト設定",
+        "3.整體設定": "3.全体設定"
     },
     "English": {
         "開始錄製": "Start Recording",
@@ -214,7 +240,20 @@ LANG_MAP = {
         "選項說明": "Option Description",
         # Others
         "ChroLens 腳本編輯器": "ChroLens Script Editor",
-        "ChroLens 腳本語法說明": "ChroLens Syntax Help"
+        "ChroLens 腳本語法說明": "ChroLens Syntax Help",
+        # Menu and List
+        "清除": "Clear",
+        "加入至腳本": "Add to Script",
+        "從腳本移除": "Remove from Script",
+        "重新命名腳本": "Rename Script",
+        "腳本列表": "Script List",
+        # Advanced Features
+        "自動切換": "Auto Switch",
+        "勾選時，程式錄製/回放將自動轉換": "When checked, recording/playback will auto-switch to Mini Mode",
+        # Menu Titles
+        "1.日誌顯示": "1.Log Display",
+        "2.腳本設定": "2.Script Settings",
+        "3.整體設定": "3.Global Settings"
     }
 }
 
