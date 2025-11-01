@@ -38,7 +38,7 @@ class MiniMode:
             return
         self.win = tb.Toplevel(self.parent)
         self.win.title("MiniMode")
-        self.win.geometry("300x100")
+        self.win.geometry("380x100")  # 增加寬度以容納按鈕
         self.win.resizable(False, False)
         self.win.grab_set()
         self.win.attributes("-alpha", 0.9)

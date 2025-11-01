@@ -1,10 +1,13 @@
 #ChroLens Studio - Lucienwooo
-#python "c:\Users\Lucien\Documents\GitHub\ChroLens_Mimic\test\test2.6.py"
-#pyinstaller --noconsole --onedir --icon=umi_奶茶色.ico --add-data "umi_奶茶色.ico;." ChroLens_Mimic2.6.py
+#python "C:\Users\Lucien\Documents\GitHub\ChroLens_Mimic\main\ChroLens_Mimic.py"
+#pyinstaller --noconsole --onedir --icon=..\umi_奶茶色.ico --add-data "..\umi_奶茶色.ico;." --add-data "TTF;TTF" --add-data "recorder.py;." --add-data "lang.py;." --add-data "script_io.py;." --add-data "about.py;." --add-data "mini.py;." --add-data "window_selector.py;." --add-data "script_parser.py;." --add-data "config_manager.py;." --add-data "hotkey_manager.py;." --add-data "script_editor_methods.py;." --add-data "script_manager.py;." --add-data "ui_components.py;." --add-data "visual_script_editor.py;." ChroLens_Mimic.py
+
+VERSION = "2.6.0"
 
 import ttkbootstrap as tb
 from ttkbootstrap.constants import *
 import tkinter as tk
+from tkinter import messagebox
 import threading, time, json, os, datetime
 import keyboard, mouse
 import ctypes
@@ -14,12 +17,25 @@ import win32con
 import pywintypes
 import random  # 新增
 import tkinter.font as tkfont
+import sys
+
+# 檢查是否以管理員身份執行
+def is_admin():
+    try:
+        return ctypes.windll.shell32.IsUserAnAdmin()
+    except:
+        return False
 
 # 新增：匯入 Recorder / 語言 / script IO 函式（使用健壯的 fallback）
 try:
     from recorder import CoreRecorder
 except Exception as e:
     print(f"無法匯入 CoreRecorder: {e}")
+
+try:
+    from visual_script_editor import VisualScriptEditor
+except Exception as e:
+    print(f"無法匯入 VisualScriptEditor: {e}")
 try:
     from lang import LANG_MAP
 except Exception as e:
@@ -136,6 +152,35 @@ def font_tuple(size, weight=None, monospace=False):
         return (fam, size, weight)
     return (fam, size)
 
+def get_icon_path():
+    """取得圖示檔案路徑（打包後和開發環境通用）"""
+    try:
+        import sys
+        if getattr(sys, 'frozen', False):
+            # 打包後的環境
+            return os.path.join(sys._MEIPASS, "umi_奶茶色.ico")
+        else:
+            # 開發環境
+            # 檢查是否在 main 資料夾中
+            if os.path.exists("umi_奶茶色.ico"):
+                return "umi_奶茶色.ico"
+            # 檢查上層目錄
+            elif os.path.exists("../umi_奶茶色.ico"):
+                return "../umi_奶茶色.ico"
+            else:
+                return "umi_奶茶色.ico"
+    except:
+        return "umi_奶茶色.ico"
+
+def set_window_icon(window):
+    """為視窗設定圖示"""
+    try:
+        icon_path = get_icon_path()
+        if os.path.exists(icon_path):
+            window.iconbitmap(icon_path)
+    except Exception as e:
+        print(f"設定視窗圖示失敗: {e}")
+
 def show_error_window(window_name):
     ctypes.windll.user32.MessageBoxW(
         0,
@@ -243,737 +288,13 @@ def client_to_screen(hwnd, x, y):
     left, top, right, bottom = win32gui.GetWindowRect(hwnd)
     return left + x, top + y
 
-
-class ScriptEditorWindow(tk.Toplevel):
-    """腳本編輯器視窗 - 使用動作列表方式編輯（參考 ChroLens_Sothoth）"""
-    
-    def __init__(self, parent):
-        super().__init__(parent)
-        self.parent = parent
-        
-        # 取得當前語言設定
-        lang = parent.language_var.get() if hasattr(parent, 'language_var') else "繁體中文"
-        self.lang_map = LANG_MAP.get(lang, LANG_MAP["繁體中文"])
-        
-        self.title(self.lang_map["ChroLens 腳本編輯器"])
-        self.geometry("950x680")
-        self.resizable(True, True)
-        
-        # 保持視窗在最上層（至少在主程式之上）
-        self.transient(parent)
-        self.attributes("-topmost", False)  # 不要永遠置頂，但保持在父視窗之上
-        self.lift()  # 提升到最前面
-        self.focus_force()  # 強制取得焦點
-        
-        # 動作列表
-        self.actions = []
-        
-        # 匯入腳本解析器
-        try:
-            from script_parser import ScriptParser, ScriptExecutor
-            self.parser = ScriptParser()
-            self.executor = ScriptExecutor(logger=self.log_output)
-        except ImportError as e:
-            tk.messagebox.showerror("錯誤", f"無法載入 script_parser 模組：{e}")
-            self.destroy()
-            return
-        
-        self._create_ui()
-        
-    def _create_ui(self):
-        """建立 UI 介面"""
-        # 上方工具列
-        toolbar = tb.Frame(self, padding=8)
-        toolbar.pack(fill="x", side="top")
-        
-        tb.Button(toolbar, text="新增動作", bootstyle=PRIMARY, command=self.add_action, width=12).pack(side="left", padx=4)
-        tb.Button(toolbar, text="▶ 執行", bootstyle=SUCCESS, command=self.run_script, width=10).pack(side="left", padx=4)
-        tb.Button(toolbar, text="⏹ 停止", bootstyle=DANGER, command=self.stop_script, width=10).pack(side="left", padx=4)
-        tb.Button(toolbar, text="� 儲存", bootstyle=INFO, command=self.save_script, width=10).pack(side="left", padx=4)
-        tb.Button(toolbar, text="📂 載入", bootstyle=SECONDARY, command=self.load_script, width=10).pack(side="left", padx=4)
-        tb.Button(toolbar, text="� 同步", bootstyle=WARNING, command=self.apply_to_parent, width=10).pack(side="left", padx=4)
-        tb.Button(toolbar, text="�📖 語法說明", bootstyle=INFO, command=self.show_syntax_help, width=12).pack(side="left", padx=4)
-        
-        # 主要內容區（左右分割）
-        main_frame = tb.Frame(self)
-        main_frame.pack(fill="both", expand=True, padx=8, pady=8)
-        
-        # 左側：動作列表區
-        left_frame = tb.Frame(main_frame)
-        left_frame.pack(side="left", fill="both", expand=True)
-        
-        tb.Label(left_frame, text="動作列表：", font=("Microsoft JhengHei", 10, "bold")).pack(anchor="w", pady=(0,4))
-        
-        # 動作 Treeview
-        tree_frame = tb.Frame(left_frame)
-        tree_frame.pack(fill="both", expand=True)
-        
-        from tkinter import ttk
-        columns = ("#", "command", "params", "delay")
-        self.tree = ttk.Treeview(tree_frame, columns=columns, show="headings", height=20, selectmode="extended")
-        self.tree.heading("#", text="序")
-        self.tree.heading("command", text="指令")
-        self.tree.heading("params", text="參數")
-        self.tree.heading("delay", text="延遲(ms)")
-        self.tree.column("#", width=40, anchor="center")
-        self.tree.column("command", width=150, anchor="w")
-        self.tree.column("params", width=250, anchor="w")
-        self.tree.column("delay", width=80, anchor="center")
-        self.tree.pack(side="left", fill="both", expand=True)
-        
-        tree_scroll = tb.Scrollbar(tree_frame, command=self.tree.yview)
-        tree_scroll.pack(side="right", fill="y")
-        self.tree.config(yscrollcommand=tree_scroll.set)
-        
-        # 綁定事件
-        self.tree.bind("<Double-1>", self.on_tree_edit)
-        self.tree.bind("<Delete>", self.on_tree_delete)
-        
-        # 右側：輸出區
-        right_frame = tb.Frame(main_frame, width=300)
-        right_frame.pack(side="right", fill="both", padx=(8,0))
-        right_frame.pack_propagate(False)
-        
-        tb.Label(right_frame, text="執行輸出：", font=("Microsoft JhengHei", 10, "bold")).pack(anchor="w", pady=(0,4))
-        
-        # 輸出文字框
-        output_frame = tb.Frame(right_frame)
-        output_frame.pack(fill="both", expand=True)
-        
-        self.output_text = tk.Text(output_frame, font=("Microsoft JhengHei", 9), wrap="word", state="disabled")
-        self.output_text.pack(side="left", fill="both", expand=True)
-        
-        output_scroll = tb.Scrollbar(output_frame, command=self.output_text.yview)
-        output_scroll.pack(side="right", fill="y")
-        self.output_text.config(yscrollcommand=output_scroll.set)
-    
-    def add_action(self):
-        """新增空白動作到列表末端"""
-        # 直接新增一個純空白動作
-        self.actions.append({
-            "command": "",
-            "params": "",
-            "delay": "0"
-        })
-        self.update_tree()
-        
-        # 自動選擇最後一個項目
-        children = self.tree.get_children()
-        if children:
-            last_item = children[-1]
-            self.tree.selection_set(last_item)
-            self.tree.see(last_item)
-    
-    def update_tree(self):
-        """更新 Treeview"""
-        self.tree.delete(*self.tree.get_children())
-        for idx, act in enumerate(self.actions, 1):
-            self.tree.insert("", "end", values=(
-                idx,
-                act.get("command", ""),
-                act.get("params", ""),
-                act.get("delay", "0")
-            ))
-    
-    def on_tree_edit(self, event):
-        """雙擊編輯動作 - 開啟完整編輯視窗"""
-        item = self.tree.identify_row(event.y)
-        if not item:
-            return
-        
-        values = self.tree.item(item, "values")
-        idx = int(values[0]) - 1
-        act = self.actions[idx]
-        
-        # 開啟完整編輯視窗
-        win = tk.Toplevel(self)
-        win.title("編輯動作")
-        win.geometry("550x550")  # 增大尺寸
-        win.resizable(True, True)  # 允許調整大小
-        win.grab_set()
-        
-        # 主框架（支持響應式布局）
-        main_frame = tb.Frame(win)
-        main_frame.pack(fill="both", expand=True, padx=20, pady=20)
-        
-        # 指令選擇區域
-        tb.Label(main_frame, text="選擇指令：", font=("Microsoft JhengHei", 11, "bold")).pack(anchor="w", pady=(0, 10))
-        
-        command_var = tk.StringVar(value=act.get("command", ""))
-        commands = [
-            ("", "空白（無動作）"),
-            ("move_to", "移動滑鼠"),
-            ("click", "點擊"),
-            ("double_click", "雙擊"),
-            ("right_click", "右鍵"),
-            ("type_text", "輸入文字"),
-            ("press_key", "按鍵"),
-            ("delay", "延遲"),
-            ("log", "日誌")
-        ]
-        
-        # 使用 Scrollable Frame 以防選項過多
-        cmd_frame = tb.Frame(main_frame)
-        cmd_frame.pack(fill="both", expand=True, pady=(0, 15))
-        
-        for cmd, desc in commands:
-            rb = tb.Radiobutton(cmd_frame, text=f"{cmd if cmd else '(空白)'} - {desc}", variable=command_var, value=cmd)
-            rb.pack(anchor="w", padx=10, pady=2)
-        
-        # 分隔線
-        separator1 = tb.Separator(main_frame, orient="horizontal")
-        separator1.pack(fill="x", pady=10)
-        
-        # 參數輸入區域
-        param_frame = tb.Frame(main_frame)
-        param_frame.pack(fill="x", pady=5)
-        
-        tb.Label(param_frame, text="參數：", font=("Microsoft JhengHei", 11, "bold")).pack(anchor="w")
-        params_var = tk.StringVar(value=act.get("params", ""))
-        params_entry = tb.Entry(param_frame, textvariable=params_var, font=("Microsoft JhengHei", 10))
-        params_entry.pack(fill="x", pady=5)
-        
-        tb.Label(param_frame, text="範例: move_to → 100, 200 | type_text → Hello", 
-                font=("Microsoft JhengHei", 8), foreground="#888").pack(anchor="w")
-        
-        # 延遲輸入區域
-        delay_frame = tb.Frame(main_frame)
-        delay_frame.pack(fill="x", pady=10)
-        
-        tb.Label(delay_frame, text="延遲(1000=1秒)後執行：", font=("Microsoft JhengHei", 11, "bold")).pack(anchor="w")
-        delay_var = tk.StringVar(value=act.get("delay", "0"))
-        tb.Entry(delay_frame, textvariable=delay_var, width=20, font=("Microsoft JhengHei", 10)).pack(anchor="w", pady=5)
-        
-        # 分隔線
-        separator2 = tb.Separator(main_frame, orient="horizontal")
-        separator2.pack(fill="x", pady=10)
-        
-        def confirm():
-            act["command"] = command_var.get()
-            act["params"] = params_var.get().strip()
-            act["delay"] = delay_var.get().strip()
-            self.update_tree()
-            win.destroy()
-        
-        # 按鈕框架
-        btn_frame = tb.Frame(main_frame)
-        btn_frame.pack(fill="x", pady=10)
-        
-        tb.Button(btn_frame, text="確定", bootstyle=SUCCESS, width=15, command=confirm).pack(side="left", padx=5)
-        tb.Button(btn_frame, text="取消", bootstyle=SECONDARY, width=15, command=win.destroy).pack(side="left", padx=5)
-    
-    def on_tree_delete(self, event):
-        """刪除選中的動作"""
-        selected = self.tree.selection()
-        if not selected:
-            return
-        
-        # 從後往前刪除以保持索引正確
-        indices = [int(self.tree.item(item, "values")[0]) - 1 for item in selected]
-        for idx in sorted(indices, reverse=True):
-            self.actions.pop(idx)
-        
-        self.update_tree()
-    
-    def _get_example_script(self):
-        """取得範例腳本"""
-        return """# ChroLens 腳本範例
-# 支援中文、日文、英文指令
-# 支援的指令：
-#   move_to(x, y) / 移動(x, y)     - 移動滑鼠到座標
-#   click() / 點擊()               - 左鍵點擊
-#   double_click() / 雙擊()        - 雙擊
-#   right_click() / 右鍵()         - 右鍵點擊
-#   type_text("文字") / 輸入("文字") - 輸入文字
-#   press_key("按鍵") / 按鍵("按鍵") - 按鍵
-#   delay(毫秒) / 延遲(毫秒)        - 延遲
-#   log("訊息") / 日誌("訊息")     - 輸出日誌
-
-# === 範例 1：使用中文指令 ===
-日誌("開始執行腳本")
-延遲(1000)
-
-# 移動滑鼠到開始按鈕並點擊
-移動(50, 1050)  # 這個是開始按鈕的位置
-點擊()
-延遲(500)
-
-# 輸入 notepad 並按 Enter
-輸入("notepad")
-延遲(500)
-按鍵("enter")
-延遲(2000)
-
-# 在記事本中輸入文字
-輸入("Hello from ChroLens!")
-延遲(500)
-
-日誌("腳本執行完成")
-
-# === 範例 2：混合使用中英文 ===
-# log("可以混合使用不同語言的指令")
-# move_to(500, 300)
-# 點擊()
-# delay(1000)
-"""
-    
-    def run_script(self):
-        """執行腳本（從動作列表轉換為腳本程式碼並執行）"""
-        if not self.actions:
-            self.log_output("[提示] 動作列表為空，請先新增動作")
-            return
-        
-        self.output_text.config(state="normal")
-        self.output_text.delete("1.0", "end")
-        self.output_text.config(state="disabled")
-        
-        self.log_output("[資訊] 開始執行腳本...")
-        
-        # 將動作列表轉換為腳本程式碼
-        script_code = self._actions_to_script()
-        
-        # 在新執行緒中執行
-        import threading
-        thread = threading.Thread(target=lambda: self.executor.execute(script_code))
-        thread.daemon = True
-        thread.start()
-    
-    def _actions_to_script(self):
-        """將動作列表轉換為腳本程式碼"""
-        lines = []
-        for act in self.actions:
-            command = act.get("command", "")
-            params = act.get("params", "")
-            delay = act.get("delay", "0")
-            
-            # 產生指令行
-            if command in ["move_to", "click", "double_click", "right_click", "type_text", "press_key", "log"]:
-                if params:
-                    lines.append(f"{command}({params})")
-                else:
-                    lines.append(f"{command}()")
-            elif command == "delay":
-                delay_val = params if params else delay
-                lines.append(f"delay({delay_val})")
-            
-            # 添加額外延遲（如果有的話且 > 0）
-            if delay and delay != "0" and command != "delay":
-                lines.append(f"delay({delay})")
-        
-        return "\n".join(lines)
-    
-    def stop_script(self):
-        """停止腳本執行"""
-        if hasattr(self, 'executor'):
-            self.executor.stop()
-            self.log_output("[資訊] 已停止腳本")
-    
-    def save_script(self):
-        """儲存腳本到檔案（JSON格式），並同步回主程式"""
-        from tkinter import filedialog
-        filepath = filedialog.asksaveasfilename(
-            defaultextension=".json",
-            filetypes=[("ChroLens Script", "*.json"), ("All Files", "*.*")],
-            initialdir=self.parent.script_dir
-        )
-        if filepath:
-            try:
-                # 將動作列表儲存為 JSON
-                script_data = {
-                    "events": [],  # 預留給錄製的事件
-                    "settings": {
-                        "script_actions": self.actions,  # 儲存動作列表
-                        "script_code": self._actions_to_script(),  # 也儲存轉換後的腳本程式碼以供相容
-                        "speed": 100,
-                        "repeat": 1
-                    }
-                }
-                with open(filepath, "w", encoding="utf-8") as f:
-                    json.dump(script_data, f, ensure_ascii=False, indent=2)
-                self.log_output(f"[成功] 已儲存至：{filepath}")
-                
-                # 同步回主程式
-                self.apply_to_parent()
-                
-                # 刷新主程式的腳本列表
-                self.parent.refresh_script_list()
-                self.parent.refresh_script_listbox()
-            except Exception as e:
-                self.log_output(f"[錯誤] 儲存失敗：{e}")
-    
-    def load_script(self):
-        """從檔案載入腳本（支援JSON格式）"""
-        from tkinter import filedialog
-        filepath = filedialog.askopenfilename(
-            filetypes=[("ChroLens Script", "*.json"), ("All Files", "*.*")],
-            initialdir=self.parent.script_dir
-        )
-        
-        # 重新聚焦到編輯器視窗
-        self.lift()
-        self.focus_force()
-        
-        if filepath:
-            try:
-                with open(filepath, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                
-                self.log_output(f"[資訊] 檔案已載入，開始解析...")
-                self.log_output(f"[資訊] 檔案包含的鍵: {list(data.keys())}")
-                
-                # 優先檢查是否包含動作列表
-                if "settings" in data and "script_actions" in data["settings"]:
-                    self.actions = data["settings"]["script_actions"]
-                    self.log_output(f"[資訊] 檢測到動作列表格式，共 {len(self.actions)} 個動作")
-                    self.update_tree()
-                    self.log_output(f"[成功] 已載入動作列表：{filepath}")
-                # 檢查是否包含 script_code（舊格式相容）
-                elif "settings" in data and "script_code" in data["settings"]:
-                    # 將腳本程式碼轉換為動作列表
-                    code = data["settings"]["script_code"]
-                    self.log_output(f"[資訊] 檢測到腳本程式碼格式")
-                    self.actions = self._script_to_actions(code)
-                    self.update_tree()
-                    self.log_output(f"[成功] 已載入腳本（已轉換為動作列表）：{filepath}")
-                elif "events" in data:
-                    # 如果是錄製的 JSON，轉換為動作列表
-                    self.log_output(f"[資訊] 檢測到錄製事件格式，共 {len(data['events'])} 個事件")
-                    self.actions = self._events_to_actions(data["events"])
-                    self.log_output(f"[資訊] 轉換後得到 {len(self.actions)} 個動作")
-                    self.update_tree()
-                    self.log_output(f"[成功] 已從錄製事件轉換為動作列表：{filepath}")
-                else:
-                    self.log_output("[錯誤] 無法識別的檔案格式")
-                    self.log_output(f"[錯誤] 預期包含 'script_actions'、'script_code' 或 'events' 鍵")
-                    return
-            except Exception as e:
-                self.log_output(f"[錯誤] 載入失敗：{e}")
-                import traceback
-                self.log_output(f"[錯誤] 詳細錯誤: {traceback.format_exc()}")
-    
-    def _script_to_actions(self, code):
-        """將腳本程式碼轉換為動作列表（簡單解析）"""
-        actions = []
-        for line in code.split('\n'):
-            line = line.strip()
-            if not line or line.startswith('#'):
-                continue
-            
-            # 簡單解析
-            if '(' in line and ')' in line:
-                command = line[:line.index('(')].strip()
-                params = line[line.index('(')+1:line.rindex(')')].strip()
-                actions.append({
-                    "command": command,
-                    "params": params,
-                    "delay": "0"
-                })
-        return actions
-    
-    def _events_to_actions(self, events):
-        """將錄製的事件轉換為動作列表"""
-        if not events:
-            self.log_output("[警告] 事件列表為空")
-            return []
-        
-        actions = []
-        last_time = events[0].get('time', 0)
-        
-        self.log_output(f"[資訊] 開始轉換 {len(events)} 個事件...")
-        
-        # 添加詳細調試：檢查前3個事件的結構
-        for i in range(min(3, len(events))):
-            self.log_output(f"[調試] 事件 #{i}: {events[i]}")
-        
-        # 統計事件類型
-        event_types = {}
-        for event in events:
-            event_type = event.get('type', 'unknown')
-            event_types[event_type] = event_types.get(event_type, 0) + 1
-        self.log_output(f"[資訊] 事件類型統計: {event_types}")
-        
-        for idx, event in enumerate(events):
-            try:
-                event_type = event.get('type', '')
-                x, y = event.get('x', 0), event.get('y', 0)
-                current_time = event.get('time', 0)
-                
-                # 計算延遲
-                delay_ms = int((current_time - last_time) * 1000) if current_time > last_time else 0
-                last_time = current_time
-                
-                # 轉換事件為動作
-                if event_type == 'mouse_move':
-                    actions.append({
-                        "command": "move_to",
-                        "params": f"{x}, {y}",
-                        "delay": str(max(0, delay_ms))
-                    })
-                elif event_type == 'mouse_click':
-                    button = event.get('button', 'left')
-                    pressed = event.get('pressed', True)
-                    # 只處理按下事件，避免重複
-                    if pressed:
-                        if button == 'left':
-                            actions.append({
-                                "command": "click",
-                                "params": f"{x}, {y}",
-                                "delay": str(max(0, delay_ms))
-                            })
-                        elif button == 'right':
-                            actions.append({
-                                "command": "right_click",
-                                "params": f"{x}, {y}",
-                                "delay": str(max(0, delay_ms))
-                            })
-                elif event_type == 'mouse_double_click':
-                    actions.append({
-                        "command": "double_click",
-                        "params": f"{x}, {y}",
-                        "delay": str(max(0, delay_ms))
-                    })
-                elif event_type == 'key_press':
-                    key = event.get('key', '')
-                    if key:
-                        # 特殊按鍵
-                        actions.append({
-                            "command": "press_key",
-                            "params": key,
-                            "delay": str(max(0, delay_ms))
-                        })
-                elif event_type == 'scroll':
-                    # 滾輪事件
-                    delta = event.get('delta', 0)
-                    actions.append({
-                        "command": "scroll",
-                        "params": str(delta),
-                        "delay": str(max(0, delay_ms))
-                    })
-            except Exception as e:
-                self.log_output(f"[錯誤] 轉換事件 #{idx} 時發生錯誤: {e}")
-                continue
-        
-        self.log_output(f"[成功] 已轉換 {len(actions)} 個動作")
-        return actions
-    
-    def show_syntax_help(self):
-        """顯示語法說明（可複製的列表視窗）"""
-        help_text = """ChroLens 腳本語法說明
-====================
-
-基本指令（支援中英日文）：
-------------------------
-move_to(x, y) / 移動(x, y) / 移動する(x, y)
-    移動滑鼠到螢幕座標 (x, y)
-
-click() / 點擊() / クリック()
-    滑鼠左鍵點擊
-
-double_click() / 雙擊() / ダブルクリック()
-    滑鼠左鍵雙擊
-
-right_click() / 右鍵() / 右クリック()
-    滑鼠右鍵點擊
-
-type_text("文字") / 輸入("文字") / 入力("文字")
-    輸入文字（支援中英日文）
-
-press_key("按鍵") / 按鍵("按鍵") / キー押下("按鍵")
-    按下指定按鍵
-    範例: "enter", "tab", "esc", "f1"
-
-delay(毫秒) / 延遲(毫秒) / 待機(毫秒)
-    延遲指定時間（1000 = 1秒）
-
-log("訊息") / 日誌("訊息") / ログ("訊息")
-    在輸出區顯示訊息
-
-註解：
------
-# 這是單行註解
-# 可以用來說明腳本內容，不影響執行
-
-範例腳本：
----------
-# 開啟小畫家並畫圖（中文指令）
-移動(50, 1050)
-點擊()
-延遲(500)
-輸入("mspaint")
-按鍵("enter")
-延遲(2000)
-日誌("小畫家已開啟")
-
-# 混合使用也可以
-move_to(100, 200)  # 這個是遊戲選單的X
-點擊()             # 點擊開始
-delay(1000)        # 等待載入
-"""
-        
-        # 建立語法說明視窗
-        help_window = tk.Toplevel(self)
-        help_window.title("ChroLens 腳本語法說明")
-        help_window.geometry("750x650")  # 增大尺寸
-        help_window.resizable(True, True)  # 允許調整大小
-        help_window.minsize(600, 400)  # 設置最小尺寸
-        
-        # 建立文字框（可選取和複製）
-        text_frame = tb.Frame(help_window)
-        text_frame.pack(fill="both", expand=True, padx=15, pady=15)
-        
-        help_text_widget = tk.Text(text_frame, font=("Consolas", 10), wrap="word")
-        help_text_widget.pack(side="left", fill="both", expand=True)
-        
-        scrollbar = tb.Scrollbar(text_frame, command=help_text_widget.yview)
-        scrollbar.pack(side="right", fill="y")
-        help_text_widget.config(yscrollcommand=scrollbar.set)
-        
-        # 插入語法說明文字
-        help_text_widget.insert("1.0", help_text)
-        help_text_widget.config(state="disabled")  # 設為唯讀但仍可選取
-        
-        # 關閉按鈕
-        tb.Button(help_window, text="關閉", bootstyle=SECONDARY, command=help_window.destroy, width=15).pack(pady=(0, 10))
-    
-    def log_output(self, message):
-        """輸出日誌到輸出區"""
-        self.output_text.config(state="normal")
-        self.output_text.insert("end", message + "\n")
-        self.output_text.see("end")
-        self.output_text.config(state="disabled")
-    
-    def load_from_events(self, events):
-        """從主程式載入事件並轉換為動作列表"""
-        self.actions = self._events_to_actions(events)
-        self.update_tree()
-    
-    def apply_to_parent(self):
-        """將編輯後的動作列表應用回主程式"""
-        if not hasattr(self, 'parent') or not self.parent:
-            self.log_output("[錯誤] 無法連結到主程式")
-            return
-        
-        # 檢查主程式是否有目標視窗（用於判斷是否使用相對座標）
-        has_target_window = hasattr(self.parent, 'target_hwnd') and self.parent.target_hwnd
-        
-        # 將動作列表轉換為事件格式
-        events = []
-        current_time = time.time()
-        
-        for act in self.actions:
-            command = act.get("command", "")
-            params = act.get("params", "")
-            delay = int(act.get("delay", "0"))
-            
-            # 跳過空白指令
-            if not command:
-                continue
-            
-            # 根據指令類型建立事件
-            if command == "move_to" and params:
-                try:
-                    coords = [int(x.strip()) for x in params.split(',')]
-                    if len(coords) >= 2:
-                        event = {
-                            "type": "mouse_move",
-                            "x": coords[0],
-                            "y": coords[1],
-                            "time": current_time
-                        }
-                        # 如果有目標視窗，標記為相對座標
-                        if has_target_window:
-                            event["relative_to_window"] = True
-                        events.append(event)
-                        current_time += delay / 1000.0
-                except:
-                    pass
-            elif command == "click":
-                # 檢查是否有座標參數
-                x, y = 0, 0
-                if params:
-                    try:
-                        coords = [int(c.strip()) for c in params.split(',')]
-                        if len(coords) >= 2:
-                            x, y = coords[0], coords[1]
-                    except:
-                        pass
-                
-                event = {
-                    "type": "mouse_click",
-                    "button": "left",
-                    "pressed": True,
-                    "x": x,
-                    "y": y,
-                    "time": current_time
-                }
-                if has_target_window and (x != 0 or y != 0):
-                    event["relative_to_window"] = True
-                events.append(event)
-                current_time += delay / 1000.0
-            elif command == "double_click":
-                # 檢查座標
-                x, y = 0, 0
-                if params:
-                    try:
-                        coords = [int(c.strip()) for c in params.split(',')]
-                        if len(coords) >= 2:
-                            x, y = coords[0], coords[1]
-                    except:
-                        pass
-                
-                event = {
-                    "type": "mouse_double_click",
-                    "button": "left",
-                    "x": x,
-                    "y": y,
-                    "time": current_time
-                }
-                if has_target_window and (x != 0 or y != 0):
-                    event["relative_to_window"] = True
-                events.append(event)
-                current_time += delay / 1000.0
-            elif command == "right_click":
-                # 檢查座標
-                x, y = 0, 0
-                if params:
-                    try:
-                        coords = [int(c.strip()) for c in params.split(',')]
-                        if len(coords) >= 2:
-                            x, y = coords[0], coords[1]
-                    except:
-                        pass
-                
-                event = {
-                    "type": "mouse_click",
-                    "button": "right",
-                    "pressed": True,
-                    "x": x,
-                    "y": y,
-                    "time": current_time
-                }
-                if has_target_window and (x != 0 or y != 0):
-                    event["relative_to_window"] = True
-                events.append(event)
-                current_time += delay / 1000.0
-            elif command in ["type_text", "press_key"] and params:
-                # 移除引號
-                text = params.strip('"').strip("'")
-                events.append({
-                    "type": "key_press" if command == "press_key" else "text_input",
-                    "key" if command == "press_key" else "text": text,
-                    "time": current_time
-                })
-                current_time += delay / 1000.0
-        
-        # 更新主程式的事件
-        self.parent.events = events
-        self.parent.log(f"[腳本編輯器] 已同步 {len(events)} 個事件到主程式")
-        self.log_output(f"[成功] 已同步 {len(events)} 個事件到主程式")
-
-
-
 class RecorderApp(tb.Window):
     def __init__(self):
+        # 檢查管理員權限
+        if not is_admin():
+            # 顯示警告但仍繼續執行
+            print("⚠️ 警告：程式未以管理員身份執行，錄製功能可能無法正常工作！")
+        
         # 先初始化 core_recorder，確保它能正確記錄事件
         self.core_recorder = CoreRecorder(logger=self.log)
         self.recording = False
@@ -986,6 +307,11 @@ class RecorderApp(tb.Window):
         # 讀取最後一次語言設定，預設繁體中文
         lang = self.user_config.get("language", "繁體中文")
         super().__init__(themename=skin)
+        
+        # 如果不是管理員，顯示警告對話框
+        if not is_admin():
+            self.after(1000, self._show_admin_warning)
+        
         self.language_var = tk.StringVar(self, value=lang)
         self._hotkey_handlers = {}
         # 用來儲存腳本快捷鍵的 handler id
@@ -1013,15 +339,8 @@ class RecorderApp(tb.Window):
         self.style.configure("miniBold.TButton", font=font_tuple(9, "bold"))
 
         self.title("ChroLens_Mimic_2.6")
-        try:
-            import sys, os
-            if getattr(sys, 'frozen', False):
-                icon_path = os.path.join(sys._MEIPASS, "umi_奶茶色.ico")
-            else:
-                icon_path = "umi_奶茶色.ico"
-            self.iconbitmap(icon_path)
-        except Exception as e:
-            print(f"無法設定 icon: {e}")
+        # 設定視窗圖示
+        set_window_icon(self)
 
         # 在左上角建立一個小label作為icon區域的懸浮觸發點
         self.icon_tip_label = tk.Label(self, width=2, height=1, bg=self.cget("background"))
@@ -1029,8 +348,8 @@ class RecorderApp(tb.Window):
         Tooltip(self.icon_tip_label, f"{self.title()}_By_Lucien")
 
         # 設定最小視窗尺寸並允許彈性調整
-        self.minsize(900, 550)  # 最小尺寸限制，確保功能不被遮擋
-        self.geometry("900x550")  # 初始尺寸
+        self.minsize(1000, 550)  # 增加最小寬度以容納新功能
+        self.geometry("1050x550")  # 增加初始寬度
         self.resizable(True, True)  # 允許調整大小
         
         self.recording = False
@@ -1162,7 +481,17 @@ class RecorderApp(tb.Window):
         self.select_target_btn = tb.Button(frm_script, text=lang_map["選擇視窗"], command=self.select_target_window, bootstyle=INFO, width=14, style="My.TButton")
         self.select_target_btn.grid(row=0, column=4, padx=4)
 
+        # ====== 滑鼠模式勾選框 ======
+        self.mouse_mode_var = tk.BooleanVar(value=self.user_config.get("mouse_mode", False))
+        self.mouse_mode_check = tb.Checkbutton(
+            frm_script, text=lang_map["滑鼠模式"], variable=self.mouse_mode_var, style="My.TCheckbutton"
+        )
+        self.mouse_mode_check.grid(row=0, column=5, padx=4)
+        Tooltip(self.mouse_mode_check, lang_map["勾選時以控制真實滑鼠的模式回放"])
+
         self.script_combo.bind("<<ComboboxSelected>>", self.on_script_selected)
+        # 綁定點擊事件，在展開下拉選單前自動刷新列表
+        self.script_combo.bind("<Button-1>", self._on_script_combo_click)
 
 
         # ====== 日誌顯示區 ======
@@ -1299,9 +628,9 @@ class RecorderApp(tb.Window):
         self.del_script_btn = tb.Button(self.script_right_frame, text="刪除腳本", width=16, bootstyle=DANGER, command=self.delete_selected_script)
         self.del_script_btn.pack(anchor="w", pady=4)
         
-        # d) 腳本編輯器按鈕：開啟腳本編輯器視窗
-        self.edit_script_btn = tb.Button(self.script_right_frame, text="腳本編輯器", width=16, bootstyle=INFO, command=self.open_script_editor)
-        self.edit_script_btn.pack(anchor="w", pady=4)
+        # d) 視覺化編輯器按鈕：開啟拖放式編輯器（主要編輯器）
+        self.visual_editor_btn = tb.Button(self.script_right_frame, text="腳本編輯器", width=16, bootstyle=SUCCESS, command=self.open_visual_editor)
+        self.visual_editor_btn.pack(anchor="w", pady=4)
 
         # 初始化清單
         self.refresh_script_listbox()
@@ -1314,6 +643,9 @@ class RecorderApp(tb.Window):
         
         self.about_btn = tb.Button(self.global_setting_frame, text="關於", width=15, style="My.TButton", command=self.show_about_dialog, bootstyle=SECONDARY)
         self.about_btn.pack(anchor="w", pady=4, padx=8)
+        
+        self.update_btn = tb.Button(self.global_setting_frame, text="檢查更新", width=15, style="My.TButton", command=self.check_for_updates, bootstyle=INFO)
+        self.update_btn.pack(anchor="w", pady=4, padx=8)
         
         self.actual_language = saved_lang
         self.language_display_var = tk.StringVar(self, value="Language")
@@ -1339,6 +671,55 @@ class RecorderApp(tb.Window):
             self.on_script_selected()
         self._init_language(saved_lang)
         self.after(1500, self._delayed_init)
+
+    def _show_admin_warning(self):
+        """顯示管理員權限警告"""
+        try:
+            import tkinter.messagebox as messagebox
+            result = messagebox.askquestion(
+                "管理員權限警告",
+                "⚠️ 檢測到程式未以管理員身份執行！\n\n"
+                "錄製功能需要管理員權限才能正常工作。\n"
+                "鍵盤和滑鼠監聽可能會失敗。\n\n"
+                "是否要以管理員身份重新啟動程式？\n"
+                "（選擇「否」將繼續執行，但錄製功能可能無法使用）",
+                icon='warning'
+            )
+            
+            if result == 'yes':
+                # 重新以管理員身份啟動
+                self._restart_as_admin()
+        except Exception as e:
+            self.log(f"顯示管理員警告時發生錯誤: {e}")
+    
+    def _restart_as_admin(self):
+        """以管理員身份重新啟動程式"""
+        try:
+            import sys
+            if getattr(sys, 'frozen', False):
+                # 打包後的 exe
+                script = sys.executable
+            else:
+                # 開發環境
+                script = os.path.abspath(sys.argv[0])
+            
+            params = ' '.join([script] + sys.argv[1:])
+            
+            # 使用 ShellExecute 以管理員身份執行
+            ctypes.windll.shell32.ShellExecuteW(
+                None, 
+                "runas",  # 以管理員身份執行
+                sys.executable if getattr(sys, 'frozen', False) else sys.executable,
+                f'"{script}"' if not getattr(sys, 'frozen', False) else None,
+                None, 
+                1
+            )
+            
+            # 關閉當前程式
+            self.quit()
+            sys.exit(0)
+        except Exception as e:
+            self.log(f"重新啟動為管理員時發生錯誤: {e}")
 
     def _delayed_init(self):
         self.after(1600, self._register_hotkeys)
@@ -1383,13 +764,297 @@ class RecorderApp(tb.Window):
         except Exception:
             return 0
         return 0
+    
+    def _actions_to_events(self, actions):
+        """將視覺化編輯器的動作列表轉換為事件列表"""
+        events = []
+        current_time = 0.0
+        
+        try:
+            for action in actions:
+                command = action.get("command", "")
+                params_str = action.get("params", "")
+                delay = float(action.get("delay", 0)) / 1000.0  # 毫秒轉秒
+                
+                # 先加上延遲
+                current_time += delay
+                
+                # 根據指令類型創建事件
+                if command == "move_to" or command == "move_to_path":
+                    # 解析座標
+                    try:
+                        if command == "move_to_path":
+                            # move_to_path: params 是 JSON 字串格式的軌跡列表
+                            # 嘗試使用 json.loads 解析
+                            try:
+                                trajectory = json.loads(params_str)
+                            except:
+                                # 如果 json.loads 失敗,嘗試 ast.literal_eval
+                                import ast
+                                trajectory = ast.literal_eval(params_str)
+                            
+                            if trajectory and isinstance(trajectory, list) and len(trajectory) > 0:
+                                # 取最後一個點作為終點
+                                last_point = trajectory[-1]
+                                x = int(last_point.get("x", 0))
+                                y = int(last_point.get("y", 0))
+                                
+                                events.append({
+                                    "type": "mouse",
+                                    "event": "move",
+                                    "x": x,
+                                    "y": y,
+                                    "time": current_time,
+                                    "trajectory": trajectory
+                                })
+                            else:
+                                self.log(f"move_to_path 軌跡數據格式錯誤或為空")
+                        else:
+                            # move_to: params 是 "x, y" 或 "x, y, trajectory"
+                            parts = [p.strip() for p in params_str.split(",", 2)]  # 最多分割為3部分
+                            x = int(parts[0]) if len(parts) > 0 else 0
+                            y = int(parts[1]) if len(parts) > 1 else 0
+                            
+                            # 檢查是否有軌跡數據
+                            if len(parts) > 2 and parts[2]:
+                                # 有軌跡數據,嘗試解析
+                                try:
+                                    trajectory = json.loads(parts[2])
+                                except:
+                                    import ast
+                                    trajectory = ast.literal_eval(parts[2])
+                                
+                                events.append({
+                                    "type": "mouse",
+                                    "event": "move",
+                                    "x": x,
+                                    "y": y,
+                                    "time": current_time,
+                                    "trajectory": trajectory
+                                })
+                            else:
+                                # 普通移動
+                                events.append({
+                                    "type": "mouse",
+                                    "event": "move",
+                                    "x": x,
+                                    "y": y,
+                                    "time": current_time
+                                })
+                    except Exception as e:
+                        self.log(f"解析 {command} 參數失敗: {e}")
+                        import traceback
+                        self.log(f"錯誤詳情: {traceback.format_exc()}")
+                
+                elif command == "click":
+                    events.append({
+                        "type": "mouse",
+                        "event": "down",
+                        "button": "left",
+                        "time": current_time
+                    })
+                    current_time += 0.05
+                    events.append({
+                        "type": "mouse",
+                        "event": "up",
+                        "button": "left",
+                        "time": current_time
+                    })
+                
+                elif command == "double_click":
+                    for _ in range(2):
+                        events.append({
+                            "type": "mouse",
+                            "event": "down",
+                            "button": "left",
+                            "time": current_time
+                        })
+                        current_time += 0.05
+                        events.append({
+                            "type": "mouse",
+                            "event": "up",
+                            "button": "left",
+                            "time": current_time
+                        })
+                        current_time += 0.05
+                
+                elif command == "right_click":
+                    events.append({
+                        "type": "mouse",
+                        "event": "down",
+                        "button": "right",
+                        "time": current_time
+                    })
+                    current_time += 0.05
+                    events.append({
+                        "type": "mouse",
+                        "event": "up",
+                        "button": "right",
+                        "time": current_time
+                    })
+                
+                elif command == "press_down":
+                    button = params_str.strip() if params_str else "left"
+                    events.append({
+                        "type": "mouse",
+                        "event": "down",
+                        "button": button,
+                        "time": current_time
+                    })
+                
+                elif command == "release":
+                    button = params_str.strip() if params_str else "left"
+                    events.append({
+                        "type": "mouse",
+                        "event": "up",
+                        "button": button,
+                        "time": current_time
+                    })
+                
+                elif command == "scroll":
+                    try:
+                        delta = int(params_str) if params_str else 1
+                        events.append({
+                            "type": "mouse",
+                            "event": "wheel",
+                            "delta": delta,
+                            "time": current_time
+                        })
+                    except:
+                        pass
+                
+                elif command == "type_text":
+                    text = params_str.strip()
+                    for char in text:
+                        events.append({
+                            "type": "keyboard",
+                            "event": "down",
+                            "key": char,
+                            "time": current_time
+                        })
+                        current_time += 0.05
+                        events.append({
+                            "type": "keyboard",
+                            "event": "up",
+                            "key": char,
+                            "time": current_time
+                        })
+                        current_time += 0.05
+                
+                elif command == "press_key":
+                    key = params_str.strip()
+                    if key:
+                        events.append({
+                            "type": "keyboard",
+                            "event": "down",
+                            "key": key,
+                            "time": current_time
+                        })
+                        current_time += 0.05
+                        events.append({
+                            "type": "keyboard",
+                            "event": "up",
+                            "key": key,
+                            "time": current_time
+                        })
+                
+                elif command == "hotkey":
+                    keys = [k.strip() for k in params_str.split("+")]
+                    # 按下所有按鍵
+                    for key in keys:
+                        events.append({
+                            "type": "keyboard",
+                            "event": "down",
+                            "key": key,
+                            "time": current_time
+                        })
+                        current_time += 0.02
+                    # 釋放所有按鍵（反向）
+                    for key in reversed(keys):
+                        events.append({
+                            "type": "keyboard",
+                            "event": "up",
+                            "key": key,
+                            "time": current_time
+                        })
+                        current_time += 0.02
+                
+                elif command == "delay":
+                    try:
+                        extra_delay = float(params_str) / 1000.0 if params_str else 0
+                        current_time += extra_delay
+                    except:
+                        pass
+        
+        except Exception as e:
+            self.log(f"轉換動作為事件時發生錯誤: {e}")
+            import traceback
+            self.log(traceback.format_exc())
+        
+        return events
 
     def show_about_dialog(self):
-        # 使用外部抽出的 about 模組顯示視窗
         try:
             about.show_about(self)
         except Exception as e:
             print(f"顯示 about 視窗失敗: {e}")
+    
+    def check_for_updates(self):
+        """檢查 GitHub 上的新版本"""
+        def check_update_thread():
+            try:
+                import urllib.request
+                import json
+                
+                # GitHub API URL
+                api_url = "https://api.github.com/repos/Lucienwooo/ChroLens_Clear/releases/latest"
+                
+                # 發送請求
+                req = urllib.request.Request(api_url)
+                req.add_header('User-Agent', 'ChroLens-Mimic-UpdateChecker')
+                
+                with urllib.request.urlopen(req, timeout=10) as response:
+                    data = json.loads(response.read().decode())
+                    latest_version = data.get('tag_name', '').lstrip('v')
+                    release_notes = data.get('body', '無發行說明')
+                    download_url = data.get('html_url', '')
+                    
+                    # 比較版本
+                    current = VERSION.split('.')
+                    latest = latest_version.split('.')
+                    
+                    is_newer = False
+                    for i in range(min(len(current), len(latest))):
+                        if int(latest[i]) > int(current[i]):
+                            is_newer = True
+                            break
+                        elif int(latest[i]) < int(current[i]):
+                            break
+                    
+                    self.after(0, lambda: self._show_update_result(is_newer, VERSION, latest_version, release_notes, download_url))
+                    
+            except Exception as e:
+                self.after(0, lambda: messagebox.showerror("錯誤", f"檢查更新失敗：{str(e)}\n\n請確認網路連線正常"))
+        
+        # 顯示檢查中提示
+        messagebox.showinfo("檢查更新", "正在檢查更新，請稍候...")
+        threading.Thread(target=check_update_thread, daemon=True).start()
+    
+    def _show_update_result(self, is_newer, current_ver, latest_ver, notes, url):
+        """顯示更新檢查結果"""
+        if is_newer:
+            message = f"發現新版本！\n\n"
+            message += f"目前版本：{current_ver}\n"
+            message += f"最新版本：{latest_ver}\n\n"
+            message += f"更新內容：\n{notes[:200]}...\n\n"
+            message += f"是否前往下載頁面？"
+            
+            result = messagebox.askyesno("發現新版本", message)
+            if result:
+                import webbrowser
+                webbrowser.open(url)
+        else:
+            messagebox.showinfo("已是最新版本", f"您使用的是最新版本 {current_ver}")
 
     def _init_language(self, lang):
         # 初始化 UI 語言
@@ -1415,6 +1080,8 @@ class RecorderApp(tb.Window):
             self.rename_btn.config(text=lang_map["重新命名"])
         if hasattr(self, 'select_target_btn'):
             self.select_target_btn.config(text=lang_map["選擇視窗"])
+        if hasattr(self, 'mouse_mode_check'):
+            self.mouse_mode_check.config(text=lang_map["滑鼠模式"])
         if hasattr(self, 'hotkey_capture_label'):
             self.hotkey_capture_label.config(text=lang_map["捕捉快捷鍵："])
         if hasattr(self, 'set_hotkey_btn'):
@@ -1486,6 +1153,8 @@ class RecorderApp(tb.Window):
             self.rename_btn.config(text=lang_map["重新命名"])
         if hasattr(self, 'select_target_btn'):
             self.select_target_btn.config(text=lang_map["選擇視窗"])
+        if hasattr(self, 'mouse_mode_check'):
+            self.mouse_mode_check.config(text=lang_map["滑鼠模式"])
         if hasattr(self, 'hotkey_capture_label'):
             self.hotkey_capture_label.config(text=lang_map["捕捉快捷鍵："])
         if hasattr(self, 'set_hotkey_btn'):
@@ -1807,6 +1476,8 @@ class RecorderApp(tb.Window):
                     dialog.resizable(True, True)  # 允許調整大小
                     dialog.grab_set()
                     dialog.transient(self)
+                    # 設定視窗圖示
+                    set_window_icon(dialog)
                     
                     # 居中顯示
                     dialog.update_idletasks()
@@ -1950,6 +1621,15 @@ class RecorderApp(tb.Window):
         
         # 設定 core_recorder 的事件
         self.core_recorder.events = adjusted_events
+        
+        # 設定滑鼠模式
+        if hasattr(self.core_recorder, 'set_mouse_mode'):
+            mouse_mode = self.mouse_mode_var.get()
+            self.core_recorder.set_mouse_mode(mouse_mode)
+            if mouse_mode:
+                self.log("回放模式：滑鼠模式（將控制真實滑鼠游標）")
+            else:
+                self.log("回放模式：後台模式（智能自動適應）")
         
         if self.target_hwnd and any(e.get('relative_to_window', False) for e in self.events):
             self.log(f"已將 {len(adjusted_events)} 個視窗相對座標轉換為當前螢幕座標")
@@ -2139,6 +1819,7 @@ class RecorderApp(tb.Window):
         self.user_config["repeat_time"] = self.repeat_time_var.get()
         self.user_config["hotkey_map"] = self.hotkey_map
         self.user_config["auto_mini_mode"] = self.auto_mini_var.get()  # 儲存自動切換設定
+        self.user_config["mouse_mode"] = self.mouse_mode_var.get()  # 儲存滑鼠模式設定
         save_user_config(self.user_config)
         self.log("【整體設定已更新】")  # 新增：日誌顯示
 
@@ -2208,6 +1889,13 @@ class RecorderApp(tb.Window):
                 data = sio_load_script(path)
                 self.events = data.get("events", [])
                 settings = data.get("settings", {})
+                
+                # 檢查是否為視覺化編輯器創建的腳本（有 script_actions 但 events 為空）
+                if not self.events and "script_actions" in settings and settings["script_actions"]:
+                    self.log("偵測到視覺化編輯器腳本，正在轉換為事件格式...")
+                    self.events = self._actions_to_events(settings["script_actions"])
+                    self.log(f"轉換完成：{len(self.events)} 筆事件")
+                
                 # 恢復參數
                 self.speed_var.set(settings.get("speed", "100"))
                 self.repeat_var.set(settings.get("repeat", "1"))
@@ -2387,16 +2075,8 @@ class RecorderApp(tb.Window):
         win.geometry("350x380")  # 增大尺寸
         win.resizable(True, True)  # 允許調整大小
         win.minsize(300, 320)  # 設置最小尺寸
-        # 讓快捷鍵視窗icon跟主程式一致
-        try:
-            import sys, os
-            if getattr(sys, 'frozen', False):
-                icon_path = os.path.join(sys._MEIPASS, "umi_奶茶色.ico")
-            else:
-                icon_path = "umi_奶茶色.ico"
-            win.iconbitmap(icon_path)
-        except Exception as e:
-            print(f"無法設定快捷鍵視窗 icon: {e}")
+        # 設定視窗圖示
+        set_window_icon(win)
 
         # 建立主框架
         main_frame = tb.Frame(win)
@@ -2582,7 +2262,14 @@ class RecorderApp(tb.Window):
             try:
                 with open(path, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                hotkey = data.get("script_hotkey", "")
+                
+                # 嘗試從 settings 讀取，如果沒有則從根讀取（兼容舊格式）
+                hotkey = ""
+                if "settings" in data and "script_hotkey" in data["settings"]:
+                    hotkey = data["settings"]["script_hotkey"]
+                elif "script_hotkey" in data:
+                    hotkey = data["script_hotkey"]
+                
                 if hotkey:
                     # 為每個腳本註冊快捷鍵，使用 functools.partial 確保正確捕獲參數
                     from functools import partial
@@ -2659,19 +2346,12 @@ class RecorderApp(tb.Window):
             if self.mini_window is None or not self.mini_window.winfo_exists():
                 self.mini_window = tb.Toplevel(self)
                 self.mini_window.title("ChroLens_Mimic MiniMode")
-                self.mini_window.geometry("720x40")  # 增加寬度以容納勾選框
+                self.mini_window.geometry("810x40")
                 self.mini_window.overrideredirect(True)
                 self.mini_window.resizable(False, False)
                 self.mini_window.attributes("-topmost", True)
-                try:
-                    import sys
-                    if getattr(sys, 'frozen', False):
-                        icon_path = os.path.join(sys._MEIPASS, "umi_奶茶色.ico")
-                    else:
-                        icon_path = "umi_奶茶色.ico"
-                    self.mini_window.iconbitmap(icon_path)
-                except Exception as e:
-                    print(f"無法設定 MiniMode icon: {e}")
+                # 設定視窗圖示
+                set_window_icon(self.mini_window)
                 
                 self.mini_btns = []
                 
@@ -2761,6 +2441,10 @@ class RecorderApp(tb.Window):
 
         # 開啟資料夾
         os.startfile(self.script_dir)
+    
+    def _on_script_combo_click(self, event=None):
+        """當點擊腳本下拉選單時，即時刷新列表"""
+        self.refresh_script_list()
 
     def refresh_script_list(self):
         """刷新腳本下拉選單內容（去除副檔名顯示）"""
@@ -2968,32 +2652,50 @@ class RecorderApp(tb.Window):
 
     def set_script_hotkey(self):
         """為選中的腳本設定快捷鍵並註冊"""
-        script = self.script_var.get()
+        script_name = self.script_var.get()
         hotkey = self.hotkey_capture_var.get().strip().lower()
-        if not script or not hotkey or hotkey == "輸入按鍵":
+        
+        if not script_name or not hotkey or hotkey == "輸入按鍵":
             self.log("請先選擇腳本並輸入有效的快捷鍵。")
             return
-        path = os.path.join(self.script_dir, script)
+        
+        # 確保有 .json 副檔名
+        if not script_name.endswith('.json'):
+            script_name = script_name + '.json'
+        
+        path = os.path.join(self.script_dir, script_name)
+        
+        if not os.path.exists(path):
+            self.log(f"找不到腳本檔案：{script_name}")
+            return
+        
         try:
             # 讀取現有資料
-            try:
-                with open(path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-            except Exception:
-                data = {}
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
             
-            # 儲存快捷鍵到腳本
-            data["script_hotkey"] = hotkey
+            # 確保有 settings 區塊
+            if "settings" not in data:
+                data["settings"] = {}
+            
+            # 儲存快捷鍵到腳本的 settings
+            data["settings"]["script_hotkey"] = hotkey
+            
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
             
             # 重新註冊所有腳本的快捷鍵
             self._register_script_hotkeys()
             
-            self.log(f"已設定腳本 {script} 的快捷鍵：{hotkey}")
-            self.log("提示：該快捷鍵將使用腳本內儲存的參數直接回放")
+            # 更新列表顯示
+            self.refresh_script_listbox()
+            
+            self.log(f"已設定腳本 {script_name} 的快捷鍵：{hotkey}")
+            self.log("提示：按下快捷鍵將使用腳本內儲存的參數直接回放")
         except Exception as ex:
             self.log(f"設定腳本快捷鍵失敗: {ex}")
+            import traceback
+            self.log(f"錯誤詳情: {traceback.format_exc()}")
 
     def delete_selected_script(self):
         """刪除選中的腳本"""
@@ -3001,16 +2703,42 @@ class RecorderApp(tb.Window):
             self.log("請先選擇要刪除的腳本。")
             return
         
-        script = self.script_var.get()
-        path = os.path.join(self.script_dir, script)
+        script_name = self.script_var.get()
+        # 確保有 .json 副檔名
+        if not script_name.endswith('.json'):
+            script_name = script_name + '.json'
+        
+        path = os.path.join(self.script_dir, script_name)
+        
+        if not os.path.exists(path):
+            self.log(f"找不到腳本檔案：{script_name}")
+            return
+        
+        # 確認刪除
+        import tkinter.messagebox as messagebox
+        result = messagebox.askyesno(
+            "確認刪除",
+            f"確定要刪除腳本「{script_name}」嗎？\n此操作無法復原！",
+            icon='warning'
+        )
+        
+        if not result:
+            return
         
         try:
             os.remove(path)
-            self.log(f"已刪除腳本：{script}")
+            self.log(f"已刪除腳本：{script_name}")
             
-            # 重新註冊腳本快捷鍵（會自動排除已刪除的腳本）
-            self._register_script_hotkeys()
+            # 取消註冊此腳本的快捷鍵（如果有的話）
+            if script_name in self._script_hotkey_handlers:
+                handler_id = self._script_hotkey_handlers[script_name]
+                try:
+                    keyboard.remove_hotkey(handler_id)
+                except:
+                    pass
+                del self._script_hotkey_handlers[script_name]
             
+            # 重新整理列表
             self.refresh_script_listbox()
             self.refresh_script_list()
             
@@ -3020,29 +2748,26 @@ class RecorderApp(tb.Window):
             self.selected_script_line = None
         except Exception as ex:
             self.log(f"刪除腳本失敗: {ex}")
+            import traceback
+            self.log(f"錯誤詳情: {traceback.format_exc()}")
 
-    def open_script_editor(self):
-        """開啟腳本編輯器視窗（單例模式），並載入當前腳本"""
-        # 檢查是否已經有腳本編輯器視窗開啟
-        if hasattr(self, 'script_editor_window') and self.script_editor_window and self.script_editor_window.winfo_exists():
+
+    def open_visual_editor(self):
+        """開啟視覺化拖放式編輯器"""
+        # 檢查是否已經有視覺化編輯器視窗開啟
+        if hasattr(self, 'visual_editor_window') and self.visual_editor_window and self.visual_editor_window.winfo_exists():
             # 如果已存在，將焦點切到該視窗
-            self.script_editor_window.focus_force()
-            self.script_editor_window.lift()
+            self.visual_editor_window.focus_force()
+            self.visual_editor_window.lift()
         else:
-            # 建立新視窗並儲存引用
-            self.script_editor_window = ScriptEditorWindow(self)
-            
-            # 如果當前有載入的腳本或事件，自動載入到編輯器
-            if self.events:
-                self.script_editor_window.load_from_events(self.events)
-                self.script_editor_window.log_output(f"[資訊] 已載入當前腳本，共 {len(self.events)} 個事件")
-    
-    def sync_from_editor(self, actions):
-        """從腳本編輯器同步動作回主程式"""
-        # 將編輯器的動作列表轉換為事件並更新主程式
-        self.script_editor_window.log_output("[資訊] 正在同步到主程式...")
-        # 這裡可以實現從動作列表重建 events 的邏輯
-        # 暫時保留原有事件結構
+            try:
+                # 建立新視窗並儲存引用
+                self.visual_editor_window = VisualScriptEditor(self)
+                self.log("[資訊] 已開啟視覺化腳本編輯器")
+            except Exception as e:
+                self.log(f"[錯誤] 無法開啟視覺化編輯器：{e}")
+                import traceback
+                self.log(f"錯誤詳情: {traceback.format_exc()}")
         pass
 
     def select_target_window(self):
@@ -3113,6 +2838,8 @@ class RecorderApp(tb.Window):
             # 半透明背景，內側以 frame 畫出 border
             win.attributes("-alpha", 0.5)
             win.geometry(f"{w}x{h}+{l}+{t}")
+            # 設定視窗圖示
+            set_window_icon(win)
             
             # 設定視窗為 click-through（滑鼠事件穿透）
             hwnd_win = win.winfo_id()

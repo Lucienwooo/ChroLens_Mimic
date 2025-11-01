@@ -1,4 +1,4 @@
-![ChroLens_Mimic](./pic/clm2.4.png)
+![ChroLens_Mimic](./pic/clm2.6.png)
 
 ## 功能介紹：</br>
 1.巨集錄製工具：可以錄製鍵盤和滑鼠的所有操作，並將其儲存為巨集。</br>
@@ -12,11 +12,6 @@
 
 ---
 # [ChroLens Project](https://home.gamer.com.tw/artwork.php?sn=6150515)</br>
-## [ChroLens_Portal](https://github.com/Lucienwooo/ChroLens_Portal)_批次開關分組的檔案、快捷鍵切換複數視窗置頂顯示。</br>
-## [ChroLens_Mimic](https://github.com/Lucienwooo/ChroLens_Mimic)_巨集錄製工具、鍵鼠模擬、按鍵精靈。</br>
-## [ChroLens_Clear](https://github.com/Lucienwooo/ChroLens_Clear)_自動關閉複數視窗/程式</br>
-## [ChroLens_Orbit](https://github.com/Lucienwooo/ChroLens_Orbit)_簡易版工作排程器，支援開啟捷徑.lnk檔案</br>
-# [ChroLens_Sothoth](https://github.com/Lucienwooo/ChroLens_Sothoth)_建立在mimic之上，擁有模組化動作編輯以及圖片偵測的自動化工具</br>
 
 ---
 

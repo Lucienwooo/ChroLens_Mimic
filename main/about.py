@@ -2,6 +2,35 @@ import ttkbootstrap as tb
 from ttkbootstrap.constants import *  # <-- 確保 SECONDARY 等常數可用
 import tkinter as tk
 import os
+import sys
+
+def get_icon_path():
+    """取得圖示檔案路徑（打包後和開發環境通用）"""
+    try:
+        if getattr(sys, 'frozen', False):
+            # 打包後的環境
+            return os.path.join(sys._MEIPASS, "umi_奶茶色.ico")
+        else:
+            # 開發環境
+            # 檢查是否在 main 資料夾中
+            if os.path.exists("umi_奶茶色.ico"):
+                return "umi_奶茶色.ico"
+            # 檢查上層目錄
+            elif os.path.exists("../umi_奶茶色.ico"):
+                return "../umi_奶茶色.ico"
+            else:
+                return "umi_奶茶色.ico"
+    except:
+        return "umi_奶茶色.ico"
+
+def set_window_icon(window):
+    """為視窗設定圖示"""
+    try:
+        icon_path = get_icon_path()
+        if os.path.exists(icon_path):
+            window.iconbitmap(icon_path)
+    except Exception as e:
+        print(f"設定視窗圖示失敗: {e}")
 
 def show_about(parent):
     about_win = tb.Toplevel(parent)
@@ -13,15 +42,8 @@ def show_about(parent):
     x = parent.winfo_x() + (parent.winfo_width() // 2) - 175
     y = parent.winfo_y() + 80
     about_win.geometry(f"+{x}+{y}")
-    try:
-        import sys
-        if getattr(sys, 'frozen', False):
-            icon_path = os.path.join(sys._MEIPASS, "umi_奶茶色.ico")
-        else:
-            icon_path = "umi_奶茶色.ico"
-        about_win.iconbitmap(icon_path)
-    except Exception:
-        pass
+    # 設定視窗圖示
+    set_window_icon(about_win)
 
     frm = tb.Frame(about_win, padding=20)
     frm.pack(fill="both", expand=True)

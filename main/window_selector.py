@@ -1,8 +1,37 @@
-# ...existing code...
 import tkinter as tk
 import ttkbootstrap as tb
 from ttkbootstrap.constants import *
 import win32gui
+import sys
+import os
+
+def get_icon_path():
+    """取得圖示檔案路徑（打包後和開發環境通用）"""
+    try:
+        if getattr(sys, 'frozen', False):
+            # 打包後的環境
+            return os.path.join(sys._MEIPASS, "umi_奶茶色.ico")
+        else:
+            # 開發環境
+            # 檢查是否在 main 資料夾中
+            if os.path.exists("umi_奶茶色.ico"):
+                return "umi_奶茶色.ico"
+            # 檢查上層目錄
+            elif os.path.exists("../umi_奶茶色.ico"):
+                return "../umi_奶茶色.ico"
+            else:
+                return "umi_奶茶色.ico"
+    except:
+        return "umi_奶茶色.ico"
+
+def set_window_icon(window):
+    """為視窗設定圖示"""
+    try:
+        icon_path = get_icon_path()
+        if os.path.exists(icon_path):
+            window.iconbitmap(icon_path)
+    except Exception as e:
+        print(f"設定視窗圖示失敗: {e}")
 
 def _enum_taskbar_titles():
     exclude_keywords = [
@@ -37,6 +66,8 @@ class WindowSelectorDialog(tb.Toplevel):
         self.on_select = on_select
         self.geometry("700x450")  # 增大初始尺寸
         self.minsize(600, 350)  # 設置最小尺寸
+        # 設定視窗圖示
+        set_window_icon(self)
 
         frm = tb.Frame(self, padding=10)
         frm.pack(fill="both", expand=True)
@@ -44,7 +75,7 @@ class WindowSelectorDialog(tb.Toplevel):
         lb_frame = tb.Frame(frm)
         lb_frame.pack(fill="both", expand=True, side="left")
 
-        self.listbox = tk.Listbox(lb_frame, width=65, height=20, activestyle="dotbox", exportselection=False)
+        self.listbox = tk.Listbox(lb_frame, width=43, height=20, activestyle="dotbox", exportselection=False)  # 從 65 縮減為 43 (約 1/3)
         self.listbox.pack(side="left", fill="both", expand=True)
         self.scroll = tb.Scrollbar(lb_frame, command=self.listbox.yview)
         self.scroll.pack(side="right", fill="y")

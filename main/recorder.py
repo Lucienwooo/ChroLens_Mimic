@@ -28,6 +28,7 @@ class CoreRecorder:
         self._current_play_index = 0
         self._target_hwnd = None  # 新增：目標視窗 handle
         self._background_mode = "smart"  # 後台模式：smart, fast_switch, postmessage, foreground
+        self._mouse_mode = False  # 新增：滑鼠模式（是否控制真實滑鼠）
 
     def set_target_window(self, hwnd):
         """設定目標視窗，只錄製/回放該視窗內的操作"""
@@ -53,6 +54,18 @@ class CoreRecorder:
             self.logger(f"已設定後台模式：{mode}")
         else:
             self.logger(f"無效的模式：{mode}，保持目前設定")
+    
+    def set_mouse_mode(self, enabled):
+        """設定滑鼠模式
+        
+        Args:
+            enabled: True = 控制真實滑鼠游標, False = 使用後台模式
+        """
+        self._mouse_mode = enabled
+        if enabled:
+            self.logger(f"滑鼠模式：已啟用（將控制真實滑鼠游標）")
+        else:
+            self.logger(f"滑鼠模式：已停用（使用後台模式）")
 
     def _screen_to_client(self, hwnd, screen_x, screen_y):
         """將螢幕座標轉換為視窗內座標"""
@@ -119,8 +132,33 @@ class CoreRecorder:
         self.logger(f"[{time.ctime()}] 停止錄製")
 
     def toggle_pause(self):
-        """切換暫停狀態"""
+        """切換暫停狀態（改善版）"""
         self.paused = not self.paused
+        
+        # 錄製時的暫停處理
+        if self.recording and hasattr(self, '_keyboard_recording'):
+            if self.paused:
+                # 暫停時停止 keyboard 錄製，暫存事件
+                if self._keyboard_recording:
+                    try:
+                        k_events = keyboard.stop_recording()
+                        if not hasattr(self, "_paused_k_events"):
+                            self._paused_k_events = []
+                        self._paused_k_events.extend(k_events)
+                        self._keyboard_recording = False
+                        self.logger("[暫停] 鍵盤錄製已暫停")
+                    except Exception as e:
+                        self.logger(f"[警告] 暫停鍵盤錄製時發生錯誤: {e}")
+            else:
+                # 繼續時重新開始 keyboard 錄製
+                try:
+                    keyboard.start_recording()
+                    self._keyboard_recording = True
+                    self.logger("[繼續] 鍵盤錄製已繼續")
+                except Exception as e:
+                    self.logger(f"[警告] 繼續鍵盤錄製時發生錯誤: {e}")
+                    self._keyboard_recording = False
+        
         return self.paused
 
     def _is_point_in_target_window(self, x, y):
@@ -153,8 +191,14 @@ class CoreRecorder:
             self._record_start_time = time.time()
             self._paused_k_events = []
 
-            keyboard.start_recording()
-            self._keyboard_recording = True
+            # 嘗試啟動 keyboard 錄製（可能在打包後失敗）
+            try:
+                keyboard.start_recording()
+                self._keyboard_recording = True
+                self.logger("[錄製] keyboard 模組已啟動")
+            except Exception as e:
+                self._keyboard_recording = False
+                self.logger(f"[警告] keyboard 模組啟動失敗（可能需要管理員權限）: {e}")
 
             mouse_ctrl = Controller()
             last_pos = mouse_ctrl.position
@@ -189,12 +233,18 @@ class CoreRecorder:
                     }
                     self._mouse_events.append(event)
 
-            # 使用 pynput.mouse.Listener
-            mouse_listener = pynput.mouse.Listener(
-                on_click=on_click,
-                on_scroll=on_scroll
-            )
-            mouse_listener.start()
+            # 使用 pynput.mouse.Listener（添加錯誤處理）
+            mouse_listener = None
+            try:
+                mouse_listener = pynput.mouse.Listener(
+                    on_click=on_click,
+                    on_scroll=on_scroll
+                )
+                mouse_listener.start()
+                self.logger("[錄製] pynput.mouse.Listener 已啟動")
+            except Exception as e:
+                self.logger(f"[警告] pynput.mouse.Listener 啟動失敗（可能需要管理員權限）: {e}")
+                # 如果 listener 失敗，仍然可以記錄移動
 
             # 記錄初始位置
             now = time.time()
@@ -231,11 +281,21 @@ class CoreRecorder:
 
             # 停止錄製
             self._recording_mouse = False
-            mouse_listener.stop()
+            if mouse_listener:
+                try:
+                    mouse_listener.stop()
+                    self.logger("[錄製] pynput.mouse.Listener 已停止")
+                except Exception as e:
+                    self.logger(f"[警告] 停止 mouse listener 時發生錯誤: {e}")
 
-            # 處理鍵盤事件
+            # 處理鍵盤事件（添加錯誤處理）
             if self._keyboard_recording:
-                k_events = keyboard.stop_recording()
+                try:
+                    k_events = keyboard.stop_recording()
+                    self.logger("[錄製] keyboard 錄製已停止")
+                except Exception as e:
+                    self.logger(f"[警告] 停止 keyboard 錄製時發生錯誤: {e}")
+                    k_events = []
             else:
                 k_events = []
 
@@ -268,9 +328,20 @@ class CoreRecorder:
                 self.logger(f"  鍵盤事件：{len(filtered_k_events)} 筆")
             else:
                 self.logger(f"錄製完成，共 {len(self.events)} 筆事件。")
+            
+            # 如果完全沒有事件，顯示警告
+            if len(self.events) == 0:
+                self.logger("⚠️ 警告：沒有錄製到任何事件！")
+                self.logger("可能原因：")
+                self.logger("  1. 程式需要以管理員身份執行")
+                self.logger("  2. 防毒軟體阻擋了鍵盤/滑鼠監聽")
+                self.logger("  3. 系統安全設定阻止了 hook 功能")
+                self.logger("建議：請以管理員身份執行此程式")
 
         except Exception as ex:
             self.logger(f"錄製執行緒發生錯誤: {ex}")
+            import traceback
+            self.logger(f"詳細錯誤: {traceback.format_exc()}")
 
     def play(self, speed=1.0, repeat=1, on_event=None):
         """開始回放錄製的事件"""
@@ -292,7 +363,7 @@ class CoreRecorder:
         self.paused = False
 
     def _play_loop(self, speed, repeat, on_event):
-        """回放主循環"""
+        """回放主循環（修復暫停問題）"""
         try:
             for r in range(max(1, repeat)):
                 if not self.playing:
@@ -301,35 +372,64 @@ class CoreRecorder:
                 self._current_play_index = 0
                 base_time = self.events[0]['time']
                 play_start = time.time()
+                pause_start_time = None  # 暫停開始時間
+                total_pause_time = 0  # 累計暫停時間
+                last_pause_state = False  # 上一次的暫停狀態
 
                 while self._current_play_index < len(self.events):
                     if not self.playing:
                         break
 
-                    while self.paused:
-                        if not self.playing:
-                            break
+                    # 暫停處理：記錄暫停開始時間
+                    if self.paused:
+                        if not last_pause_state:
+                            # 剛進入暫停狀態
+                            pause_start_time = time.time()
+                            last_pause_state = True
+                            self.logger("[暫停] 回放已暫停")
                         time.sleep(0.05)
-                        play_start += 0.05
+                        continue
+                    else:
+                        # 從暫停恢復：累計暫停時長
+                        if last_pause_state:
+                            # 剛從暫停恢復
+                            if pause_start_time is not None:
+                                pause_duration = time.time() - pause_start_time
+                                total_pause_time += pause_duration
+                                self.logger(f"[繼續] 回放繼續（暫停了 {pause_duration:.2f} 秒）")
+                                pause_start_time = None
+                            last_pause_state = False
 
                     event = self.events[self._current_play_index]
                     event_offset = (event['time'] - base_time) / speed
-                    target_time = play_start + event_offset
+                    # 考慮暫停時間的目標時間
+                    target_time = play_start + event_offset + total_pause_time
 
+                    # 等待到目標時間（改善等待邏輯）
                     while time.time() < target_time:
                         if not self.playing:
                             break
                         if self.paused:
-                            play_start += 0.05
-                            target_time += 0.05
-                        time.sleep(0.001)
+                            # 進入暫停狀態
+                            if not last_pause_state:
+                                pause_start_time = time.time()
+                                last_pause_state = True
+                                self.logger("[暫停] 回放已暫停")
+                            break
+                        # 使用更短的睡眠時間以提高響應性
+                        sleep_time = min(0.001, target_time - time.time())
+                        if sleep_time > 0:
+                            time.sleep(sleep_time)
+
+                    # 如果進入暫停，跳過事件執行
+                    if self.paused:
+                        continue
 
                     if not self.playing:
                         break
 
                     try:
                         # 檢查事件是否應該被執行
-                        # 如果有目標視窗限定，且事件標記為視窗外，則跳過執行但保持時間軸
                         should_execute = True
                         if self._target_hwnd and event.get('type') == 'mouse':
                             # 如果事件標記為不在目標視窗內，跳過執行
@@ -349,50 +449,146 @@ class CoreRecorder:
 
                 if not self.playing:
                     break
+                
+                # 重複之間的間隔（如果需要）
+                if r < repeat - 1:
+                    time.sleep(0.1)
 
             self.logger(f"[{time.ctime()}] 回放完成")
 
         except Exception as ex:
             self.logger(f"回放執行緒發生錯誤: {ex}")
+            import traceback
+            self.logger(f"詳細錯誤: {traceback.format_exc()}")
         finally:
             self.playing = False
             self.paused = False
 
     def _execute_event_with_mode(self, event):
-        """根據後台模式執行事件"""
+        """根據後台模式和滑鼠模式執行事件（強化版）"""
+        # 如果啟用滑鼠模式，直接使用前景模式（控制真實滑鼠）
+        if self._mouse_mode:
+            self._execute_event(event)
+            return
+        
+        # 否則根據後台模式選擇執行方法
         mode = self._background_mode
         
-        # 智能模式：自動選擇最佳方法
+        # 智能模式：自動選擇最佳方法（多層容錯）
         if mode == "smart":
-            # 如果有目標視窗，優先嘗試 PostMessage
             if self._target_hwnd:
+                # 檢查視窗是否仍然存在
+                try:
+                    if not win32gui.IsWindow(self._target_hwnd):
+                        self.logger("目標視窗已關閉，切換到前景模式")
+                        self._execute_event(event)
+                        return
+                except:
+                    pass
+                
+                # 嘗試多種方式，確保執行成功
+                # 1. 優先嘗試 SendMessage（比 PostMessage 更可靠）
+                success = self._try_sendmessage(event)
+                if success:
+                    return
+                
+                # 2. 嘗試 PostMessage
                 success = self._try_postmessage(event)
-                if not success:
-                    # PostMessage 失敗，改用快速切換
+                if success:
+                    return
+                
+                # 3. 嘗試快速切換
+                try:
                     self._execute_fast_switch(event)
+                    return
+                except Exception as e:
+                    self.logger(f"快速切換失敗: {e}")
+                
+                # 4. 最後回退到前景模式
+                self._execute_event(event)
             else:
                 # 沒有目標視窗，使用前景模式
                 self._execute_event(event)
         
-        # 快速切換模式
+        # 快速切換模式（增強穩定性）
         elif mode == "fast_switch":
             if self._target_hwnd:
-                self._execute_fast_switch(event)
+                try:
+                    self._execute_fast_switch(event)
+                except Exception as e:
+                    self.logger(f"快速切換失敗，回退到前景模式: {e}")
+                    self._execute_event(event)
             else:
                 self._execute_event(event)
         
-        # 純後台模式（PostMessage）
+        # 純後台模式（SendMessage 優先）
         elif mode == "postmessage":
             if self._target_hwnd:
-                success = self._try_postmessage(event)
+                # 優先嘗試 SendMessage（同步，更可靠）
+                success = self._try_sendmessage(event)
                 if not success:
-                    self.logger("PostMessage 失敗，跳過此事件")
+                    # 回退到 PostMessage（異步）
+                    success = self._try_postmessage(event)
+                    if not success:
+                        self.logger("後台模式執行失敗，跳過此事件")
             else:
                 self._execute_event(event)
         
         # 前景模式（預設）
         else:
             self._execute_event(event)
+
+    def _try_sendmessage(self, event):
+        """嘗試使用 SendMessage 執行事件（同步，更可靠）"""
+        if not self._target_hwnd:
+            return False
+        
+        try:
+            if event['type'] == 'mouse':
+                # 轉換為視窗內座標
+                x, y = self._screen_to_client(self._target_hwnd, event['x'], event['y'])
+                lParam = win32api.MAKELONG(x, y)
+                
+                if event['event'] == 'move':
+                    win32api.SendMessage(self._target_hwnd, win32con.WM_MOUSEMOVE, 0, lParam)
+                elif event['event'] == 'down':
+                    button = event.get('button', 'left')
+                    if button == 'left':
+                        win32api.SendMessage(self._target_hwnd, win32con.WM_LBUTTONDOWN, 
+                                           win32con.MK_LBUTTON, lParam)
+                    elif button == 'right':
+                        win32api.SendMessage(self._target_hwnd, win32con.WM_RBUTTONDOWN, 
+                                           win32con.MK_RBUTTON, lParam)
+                    elif button == 'middle':
+                        win32api.SendMessage(self._target_hwnd, win32con.WM_MBUTTONDOWN, 
+                                           win32con.MK_MBUTTON, lParam)
+                elif event['event'] == 'up':
+                    button = event.get('button', 'left')
+                    if button == 'left':
+                        win32api.SendMessage(self._target_hwnd, win32con.WM_LBUTTONUP, 0, lParam)
+                    elif button == 'right':
+                        win32api.SendMessage(self._target_hwnd, win32con.WM_RBUTTONUP, 0, lParam)
+                    elif button == 'middle':
+                        win32api.SendMessage(self._target_hwnd, win32con.WM_MBUTTONUP, 0, lParam)
+                elif event['event'] == 'wheel':
+                    delta = event.get('delta', 0)
+                    wParam = win32api.MAKELONG(0, int(delta * 120))
+                    win32api.SendMessage(self._target_hwnd, win32con.WM_MOUSEWHEEL, wParam, lParam)
+                return True
+            
+            elif event['type'] == 'keyboard':
+                vk_code = self._name_to_vk(event['name'])
+                if vk_code:
+                    if event['event'] == 'down':
+                        win32api.SendMessage(self._target_hwnd, win32con.WM_KEYDOWN, vk_code, 0)
+                    elif event['event'] == 'up':
+                        win32api.SendMessage(self._target_hwnd, win32con.WM_KEYUP, vk_code, 0)
+                    return True
+            
+            return False
+        except Exception as ex:
+            self.logger(f"SendMessage 失敗: {ex}")
+            return False
 
     def _try_postmessage(self, event):
         """嘗試使用 PostMessage 執行事件（純後台）"""
@@ -447,37 +643,68 @@ class CoreRecorder:
             return False
 
     def _execute_fast_switch(self, event):
-        """快速切換到目標視窗執行事件"""
+        """快速切換到目標視窗執行事件（增強版）"""
         if not self._target_hwnd:
             self._execute_event(event)
             return
         
         try:
-            # 記住當前視窗
-            current_hwnd = win32gui.GetForegroundWindow()
-            
-            # 檢查目標視窗是否還存在
+            # 檢查目標視窗是否還存在且可見
             if not win32gui.IsWindow(self._target_hwnd):
                 self.logger("目標視窗已關閉")
                 return
             
-            # 切換到目標視窗
+            if not win32gui.IsWindowVisible(self._target_hwnd):
+                self.logger("目標視窗不可見，嘗試顯示")
+                win32gui.ShowWindow(self._target_hwnd, win32con.SW_SHOW)
+                time.sleep(0.05)
+            
+            # 記住當前視窗
+            current_hwnd = win32gui.GetForegroundWindow()
+            
+            # 切換到目標視窗（增強切換邏輯）
             try:
+                # 方法1: 標準切換
                 win32gui.SetForegroundWindow(self._target_hwnd)
                 time.sleep(0.01)  # 10ms 等待切換完成
-            except Exception:
-                # 某些視窗可能無法切換，直接執行
-                pass
+                
+                # 驗證是否成功切換
+                if win32gui.GetForegroundWindow() != self._target_hwnd:
+                    # 方法2: 強制切換（使用 SwitchToThisWindow）
+                    try:
+                        ctypes.windll.user32.SwitchToThisWindow(self._target_hwnd, True)
+                        time.sleep(0.02)
+                    except:
+                        pass
+                    
+                    # 方法3: 使用 BringWindowToTop
+                    try:
+                        win32gui.BringWindowToTop(self._target_hwnd)
+                        win32gui.SetForegroundWindow(self._target_hwnd)
+                        time.sleep(0.02)
+                    except:
+                        pass
+            except Exception as e:
+                self.logger(f"切換視窗失敗: {e}")
             
             # 執行事件
             self._execute_event(event)
             
-            # 切回原視窗
-            try:
-                if current_hwnd and win32gui.IsWindow(current_hwnd):
+            # 延遲確保事件執行完成
+            if event.get('type') == 'mouse':
+                if event.get('event') in ('down', 'up', 'wheel'):
+                    time.sleep(0.005)  # 5ms
+            
+            # 切回原視窗（增強切換回邏輯）
+            if current_hwnd and win32gui.IsWindow(current_hwnd):
+                try:
                     win32gui.SetForegroundWindow(current_hwnd)
-            except Exception:
-                pass
+                except Exception:
+                    # 如果切換失敗，嘗試其他方法
+                    try:
+                        ctypes.windll.user32.SwitchToThisWindow(current_hwnd, True)
+                    except:
+                        pass
         
         except Exception as ex:
             self.logger(f"快速切換執行失敗: {ex}")
