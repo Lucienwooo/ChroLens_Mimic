@@ -123,13 +123,22 @@ class CoreRecorder:
         return self._record_start_time
 
     def stop_record(self):
-        """停止錄製"""
+        """停止錄製（強化版 - 確保資源正確釋放）"""
         if not self.recording:
             return
         self.recording = False
         self.paused = False
         self._keyboard_recording = False
-        self.logger(f"[{time.ctime()}] 停止錄製")
+        
+        # 確保 keyboard hook 被正確釋放
+        try:
+            if self._keyboard_recording:
+                keyboard.stop_recording()
+                self._keyboard_recording = False
+        except Exception as e:
+            self.logger(f"[警告] 停止鍵盤錄製時發生錯誤: {e}")
+        
+        self.logger(f"[{time.ctime()}] 停止錄製（等待事件處理完成...）")
 
     def toggle_pause(self):
         """切換暫停狀態（改善版）"""
@@ -358,12 +367,28 @@ class CoreRecorder:
         return True
 
     def stop_play(self):
-        """停止回放"""
+        """停止回放（強化版 - 確保狀態正確重置）"""
+        was_playing = self.playing
         self.playing = False
         self.paused = False
+        
+        if was_playing:
+            self.logger(f"[{time.ctime()}] 已停止回放")
+            
+            # 釋放可能卡住的修飾鍵
+            try:
+                import keyboard
+                modifiers = ['ctrl', 'shift', 'alt', 'win']
+                for mod in modifiers:
+                    try:
+                        keyboard.release(mod)
+                    except:
+                        pass
+            except:
+                pass
 
     def _play_loop(self, speed, repeat, on_event):
-        """回放主循環（修復暫停問題）"""
+        """回放主循環（強化版 - 修復點擊其他視窗導致停止的問題）"""
         try:
             for r in range(max(1, repeat)):
                 if not self.playing:
@@ -377,6 +402,7 @@ class CoreRecorder:
                 last_pause_state = False  # 上一次的暫停狀態
 
                 while self._current_play_index < len(self.events):
+                    # 檢查 playing 狀態（不受外部事件影響）
                     if not self.playing:
                         break
 
@@ -405,7 +431,7 @@ class CoreRecorder:
                     # 考慮暫停時間的目標時間
                     target_time = play_start + event_offset + total_pause_time
 
-                    # 等待到目標時間（改善等待邏輯）
+                    # 等待到目標時間（強化版 - 確保時間計算不受干擾）
                     while time.time() < target_time:
                         if not self.playing:
                             break
@@ -416,10 +442,12 @@ class CoreRecorder:
                                 last_pause_state = True
                                 self.logger("[暫停] 回放已暫停")
                             break
-                        # 使用更短的睡眠時間以提高響應性
+                        # 使用極短的睡眠時間以保持時間計算精確
                         sleep_time = min(0.001, target_time - time.time())
                         if sleep_time > 0:
                             time.sleep(sleep_time)
+                        else:
+                            break  # 避免 busy-wait
 
                     # 如果進入暫停，跳過事件執行
                     if self.paused:
@@ -428,6 +456,7 @@ class CoreRecorder:
                     if not self.playing:
                         break
 
+                    # 執行事件（使用 try-except 確保單一事件錯誤不影響整體回放）
                     try:
                         # 檢查事件是否應該被執行
                         should_execute = True
@@ -440,11 +469,17 @@ class CoreRecorder:
                             # 根據後台模式選擇執行方法
                             self._execute_event_with_mode(event)
                         
+                        # 通知事件已執行（即使有錯誤也要通知，保持進度）
                         if on_event:
-                            on_event(event)
+                            try:
+                                on_event(event)
+                            except:
+                                pass  # 忽略回調錯誤
                     except Exception as ex:
                         self.logger(f"執行事件時發生錯誤: {ex}")
+                        # 繼續執行下一個事件，不中斷回放
 
+                    # 更新索引（確保一定會執行）
                     self._current_play_index += 1
 
                 if not self.playing:
@@ -474,7 +509,7 @@ class CoreRecorder:
         # 否則根據後台模式選擇執行方法
         mode = self._background_mode
         
-        # 智能模式：自動選擇最佳方法（多層容錯）
+        # 智能模式：自動選擇最佳方法（多層容錯 - 強化版）
         if mode == "smart":
             if self._target_hwnd:
                 # 檢查視窗是否仍然存在
@@ -488,23 +523,28 @@ class CoreRecorder:
                 
                 # 嘗試多種方式，確保執行成功
                 # 1. 優先嘗試 SendMessage（比 PostMessage 更可靠）
-                success = self._try_sendmessage(event)
+                success = self._try_sendmessage_enhanced(event)
                 if success:
                     return
                 
-                # 2. 嘗試 PostMessage
-                success = self._try_postmessage(event)
-                if success:
-                    return
-                
-                # 3. 嘗試快速切換
+                # 2. 嘗試 SetForegroundWindow + 直接執行（高相容性）
                 try:
-                    self._execute_fast_switch(event)
+                    # 快速切換到前景執行（速度更快，相容性好）
+                    current_hwnd = win32gui.GetForegroundWindow()
+                    try:
+                        win32gui.SetForegroundWindow(self._target_hwnd)
+                        time.sleep(0.001)  # 極短延遲確保切換完成
+                        self._execute_event(event)
+                        # 立即切回
+                        if current_hwnd and win32gui.IsWindow(current_hwnd):
+                            win32gui.SetForegroundWindow(current_hwnd)
+                    except:
+                        self._execute_event(event)
                     return
                 except Exception as e:
-                    self.logger(f"快速切換失敗: {e}")
+                    self.logger(f"智能模式執行失敗: {e}")
                 
-                # 4. 最後回退到前景模式
+                # 3. 最後回退到前景模式
                 self._execute_event(event)
             else:
                 # 沒有目標視窗，使用前景模式
@@ -514,28 +554,194 @@ class CoreRecorder:
         elif mode == "fast_switch":
             if self._target_hwnd:
                 try:
-                    self._execute_fast_switch(event)
+                    self._execute_fast_switch_enhanced(event)
                 except Exception as e:
                     self.logger(f"快速切換失敗，回退到前景模式: {e}")
                     self._execute_event(event)
             else:
                 self._execute_event(event)
         
-        # 純後台模式（SendMessage 優先）
+        # 純後台模式（SendMessage 優先，增強版）
         elif mode == "postmessage":
             if self._target_hwnd:
                 # 優先嘗試 SendMessage（同步，更可靠）
-                success = self._try_sendmessage(event)
+                success = self._try_sendmessage_enhanced(event)
                 if not success:
                     # 回退到 PostMessage（異步）
                     success = self._try_postmessage(event)
                     if not success:
-                        self.logger("後台模式執行失敗，跳過此事件")
+                        self.logger("後台模式執行失敗，嘗試前景模式")
+                        self._execute_event(event)
             else:
                 self._execute_event(event)
         
         # 前景模式（預設）
         else:
+            self._execute_event(event)
+
+    def _try_sendmessage_enhanced(self, event):
+        """增強版 SendMessage（更可靠的同步執行）"""
+        if not self._target_hwnd:
+            return False
+        
+        try:
+            # 確保視窗存在且可見
+            if not win32gui.IsWindow(self._target_hwnd):
+                return False
+            
+            # 如果視窗最小化，嘗試恢復（但不切換焦點）
+            if win32gui.IsIconic(self._target_hwnd):
+                try:
+                    win32gui.ShowWindow(self._target_hwnd, win32con.SW_RESTORE)
+                    time.sleep(0.01)
+                except:
+                    pass
+            
+            if event['type'] == 'mouse':
+                # 轉換為視窗內座標
+                x, y = self._screen_to_client(self._target_hwnd, event['x'], event['y'])
+                lParam = win32api.MAKELONG(x, y)
+                
+                if event['event'] == 'move':
+                    # 移動事件使用 SendMessage（同步）
+                    win32api.SendMessage(self._target_hwnd, win32con.WM_MOUSEMOVE, 0, lParam)
+                    # 額外發送 WM_SETCURSOR 確保游標更新
+                    try:
+                        win32api.SendMessage(self._target_hwnd, win32con.WM_SETCURSOR, self._target_hwnd, 
+                                           win32api.MAKELONG(win32con.HTCLIENT, win32con.WM_MOUSEMOVE))
+                    except:
+                        pass
+                    
+                elif event['event'] == 'down':
+                    button = event.get('button', 'left')
+                    if button == 'left':
+                        # 先發送 MOUSEMOVE 確保位置正確
+                        win32api.SendMessage(self._target_hwnd, win32con.WM_MOUSEMOVE, 0, lParam)
+                        time.sleep(0.001)
+                        win32api.SendMessage(self._target_hwnd, win32con.WM_LBUTTONDOWN, 
+                                           win32con.MK_LBUTTON, lParam)
+                    elif button == 'right':
+                        win32api.SendMessage(self._target_hwnd, win32con.WM_MOUSEMOVE, 0, lParam)
+                        time.sleep(0.001)
+                        win32api.SendMessage(self._target_hwnd, win32con.WM_RBUTTONDOWN, 
+                                           win32con.MK_RBUTTON, lParam)
+                    elif button == 'middle':
+                        win32api.SendMessage(self._target_hwnd, win32con.WM_MOUSEMOVE, 0, lParam)
+                        time.sleep(0.001)
+                        win32api.SendMessage(self._target_hwnd, win32con.WM_MBUTTONDOWN, 
+                                           win32con.MK_MBUTTON, lParam)
+                        
+                elif event['event'] == 'up':
+                    button = event.get('button', 'left')
+                    if button == 'left':
+                        win32api.SendMessage(self._target_hwnd, win32con.WM_LBUTTONUP, 0, lParam)
+                    elif button == 'right':
+                        win32api.SendMessage(self._target_hwnd, win32con.WM_RBUTTONUP, 0, lParam)
+                    elif button == 'middle':
+                        win32api.SendMessage(self._target_hwnd, win32con.WM_MBUTTONUP, 0, lParam)
+                        
+                elif event['event'] == 'wheel':
+                    delta = event.get('delta', 0)
+                    wParam = win32api.MAKELONG(0, int(delta * 120))
+                    win32api.SendMessage(self._target_hwnd, win32con.WM_MOUSEWHEEL, wParam, lParam)
+                    
+                return True
+            
+            elif event['type'] == 'keyboard':
+                vk_code = self._name_to_vk(event['name'])
+                if vk_code:
+                    if event['event'] == 'down':
+                        # 使用 WM_KEYDOWN 發送按鍵
+                        win32api.SendMessage(self._target_hwnd, win32con.WM_KEYDOWN, vk_code, 0)
+                        # 對於字元鍵，額外發送 WM_CHAR
+                        if 32 <= vk_code <= 126:  # 可顯示字元
+                            try:
+                                win32api.SendMessage(self._target_hwnd, win32con.WM_CHAR, vk_code, 0)
+                            except:
+                                pass
+                    elif event['event'] == 'up':
+                        win32api.SendMessage(self._target_hwnd, win32con.WM_KEYUP, vk_code, 0)
+                    return True
+            
+            return False
+            
+        except Exception as ex:
+            self.logger(f"SendMessage Enhanced 失敗: {ex}")
+            return False
+
+    def _execute_fast_switch_enhanced(self, event):
+        """增強版快速切換（更穩定的前景切換）"""
+        if not self._target_hwnd:
+            self._execute_event(event)
+            return
+        
+        try:
+            # 檢查目標視窗是否還存在且可見
+            if not win32gui.IsWindow(self._target_hwnd):
+                self.logger("目標視窗已關閉")
+                return
+            
+            # 如果視窗最小化，先恢復
+            if win32gui.IsIconic(self._target_hwnd):
+                try:
+                    win32gui.ShowWindow(self._target_hwnd, win32con.SW_RESTORE)
+                    time.sleep(0.02)
+                except:
+                    pass
+            
+            # 記住當前視窗
+            current_hwnd = win32gui.GetForegroundWindow()
+            
+            # 切換到目標視窗（多種方法確保成功）
+            switched = False
+            try:
+                # 方法1: 標準切換
+                win32gui.SetForegroundWindow(self._target_hwnd)
+                time.sleep(0.002)  # 2ms 極短延遲
+                
+                # 驗證是否成功切換
+                if win32gui.GetForegroundWindow() == self._target_hwnd:
+                    switched = True
+                else:
+                    # 方法2: 使用 BringWindowToTop
+                    try:
+                        win32gui.BringWindowToTop(self._target_hwnd)
+                        win32gui.SetForegroundWindow(self._target_hwnd)
+                        time.sleep(0.002)
+                        switched = (win32gui.GetForegroundWindow() == self._target_hwnd)
+                    except:
+                        pass
+                    
+                    if not switched:
+                        # 方法3: 使用 SwitchToThisWindow
+                        try:
+                            ctypes.windll.user32.SwitchToThisWindow(self._target_hwnd, True)
+                            time.sleep(0.003)
+                            switched = (win32gui.GetForegroundWindow() == self._target_hwnd)
+                        except:
+                            pass
+                            
+            except Exception as e:
+                self.logger(f"切換視窗失敗: {e}")
+            
+            # 執行事件
+            self._execute_event(event)
+            
+            # 極短延遲確保事件執行完成
+            if event.get('type') == 'mouse':
+                if event.get('event') in ('down', 'up', 'wheel'):
+                    time.sleep(0.002)  # 2ms
+            
+            # 切回原視窗（如果需要且可能）
+            if current_hwnd and win32gui.IsWindow(current_hwnd):
+                try:
+                    win32gui.SetForegroundWindow(current_hwnd)
+                except Exception:
+                    pass  # 切換失敗不影響執行
+        
+        except Exception as ex:
+            self.logger(f"快速切換執行失敗: {ex}")
+            # 失敗時直接執行
             self._execute_event(event)
 
     def _try_sendmessage(self, event):
@@ -712,12 +918,17 @@ class CoreRecorder:
             self._execute_event(event)
 
     def _execute_event(self, event):
-        """執行單一事件"""
+        """執行單一事件（滑鼠模式 - 強化版）"""
         if event['type'] == 'keyboard':
-            if event['event'] == 'down':
-                keyboard.press(event['name'])
-            elif event['event'] == 'up':
-                keyboard.release(event['name'])
+            # 鍵盤事件執行
+            try:
+                if event['event'] == 'down':
+                    keyboard.press(event['name'])
+                elif event['event'] == 'up':
+                    keyboard.release(event['name'])
+            except Exception as e:
+                self.logger(f"鍵盤事件執行失敗: {e}")
+                
         elif event['type'] == 'mouse':
             x, y = event.get('x', 0), event.get('y', 0)
             
@@ -732,70 +943,81 @@ class CoreRecorder:
                 except:
                     pass  # 視窗可能已關閉，使用原始座標
             
-            if event['event'] == 'move':
-                ctypes.windll.user32.SetCursorPos(int(x), int(y))
-            elif event['event'] in ('down', 'up'):
-                # 先移動到正確位置再執行點擊
-                ctypes.windll.user32.SetCursorPos(int(x), int(y))
-                time.sleep(0.001)  # 短暫延遲確保座標更新
-                button = event.get('button', 'left')
-                self._mouse_event(event['event'], button=button)
-            elif event['event'] == 'wheel':
-                # 先移動到正確位置再執行滾輪
-                ctypes.windll.user32.SetCursorPos(int(x), int(y))
-                time.sleep(0.001)
-                self._mouse_event('wheel', delta=event.get('delta', 0))
+            try:
+                if event['event'] == 'move':
+                    # 滑鼠移動（使用硬體級別的 SetCursorPos 確保精確）
+                    ctypes.windll.user32.SetCursorPos(int(x), int(y))
+                    
+                elif event['event'] in ('down', 'up'):
+                    # 點擊事件：先移動到正確位置
+                    ctypes.windll.user32.SetCursorPos(int(x), int(y))
+                    time.sleep(0.001)  # 1ms 短暫延遲確保座標更新
+                    
+                    button = event.get('button', 'left')
+                    self._mouse_event_enhanced(event['event'], button=button)
+                    
+                elif event['event'] == 'wheel':
+                    # 滾輪事件：先移動到正確位置
+                    ctypes.windll.user32.SetCursorPos(int(x), int(y))
+                    time.sleep(0.001)
+                    
+                    delta = event.get('delta', 0)
+                    self._mouse_event_enhanced('wheel', delta=delta)
+                    
+            except Exception as e:
+                self.logger(f"滑鼠事件執行失敗: {e}")
 
-    def _mouse_event(self, event, button='left', delta=0):
-        """執行滑鼠事件"""
+    def _mouse_event_enhanced(self, event, button='left', delta=0):
+        """增強版滑鼠事件執行（更精確穩定）"""
         user32 = ctypes.windll.user32
-        if event == 'down' or event == 'up':
-            flags = {
-                'left': (0x0002, 0x0004),
-                'right': (0x0008, 0x0010),
-                'middle': (0x0020, 0x0040)
-            }
-            flag = flags.get(button, (0x0002, 0x0004))[0 if event == 'down' else 1]
+        
+        # 定義 MOUSEINPUT 和 INPUT 結構
+        class MOUSEINPUT(ctypes.Structure):
+            _fields_ = [
+                ("dx", ctypes.c_long),
+                ("dy", ctypes.c_long),
+                ("mouseData", ctypes.c_ulong),
+                ("dwFlags", ctypes.c_ulong),
+                ("time", ctypes.c_ulong),
+                ("dwExtraInfo", ctypes.POINTER(ctypes.c_ulong))
+            ]
             
-            class MOUSEINPUT(ctypes.Structure):
-                _fields_ = [
-                    ("dx", ctypes.c_long),
-                    ("dy", ctypes.c_long),
-                    ("mouseData", ctypes.c_ulong),
-                    ("dwFlags", ctypes.c_ulong),
-                    ("time", ctypes.c_ulong),
-                    ("dwExtraInfo", ctypes.POINTER(ctypes.c_ulong))
-                ]
+        class INPUT(ctypes.Structure):
+            _fields_ = [
+                ("type", ctypes.c_ulong),
+                ("mi", MOUSEINPUT)
+            ]
+        
+        try:
+            if event == 'down' or event == 'up':
+                # 按鈕事件標誌
+                flags = {
+                    'left': (0x0002, 0x0004),    # MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP
+                    'right': (0x0008, 0x0010),   # MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP
+                    'middle': (0x0020, 0x0040)   # MOUSEEVENTF_MIDDLEDOWN, MOUSEEVENTF_MIDDLEUP
+                }
+                flag = flags.get(button, (0x0002, 0x0004))[0 if event == 'down' else 1]
                 
-            class INPUT(ctypes.Structure):
-                _fields_ = [
-                    ("type", ctypes.c_ulong),
-                    ("mi", MOUSEINPUT)
-                ]
+                inp = INPUT()
+                inp.type = 0  # INPUT_MOUSE
+                inp.mi = MOUSEINPUT(0, 0, 0, flag, 0, None)
                 
-            inp = INPUT()
-            inp.type = 0
-            inp.mi = MOUSEINPUT(0, 0, 0, flag, 0, None)
-            user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(inp))
-            
-        elif event == 'wheel':
-            class MOUSEINPUT(ctypes.Structure):
-                _fields_ = [
-                    ("dx", ctypes.c_long),
-                    ("dy", ctypes.c_long),
-                    ("mouseData", ctypes.c_ulong),
-                    ("dwFlags", ctypes.c_ulong),
-                    ("time", ctypes.c_ulong),
-                    ("dwExtraInfo", ctypes.POINTER(ctypes.c_ulong))
-                ]
+                # 使用 SendInput 發送輸入（硬體級別）
+                result = user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(inp))
                 
-            class INPUT(ctypes.Structure):
-                _fields_ = [
-                    ("type", ctypes.c_ulong),
-                    ("mi", MOUSEINPUT)
-                ]
+                if result == 0:
+                    self.logger(f"SendInput 失敗: {ctypes.get_last_error()}")
                 
-            inp = INPUT()
-            inp.type = 0
-            inp.mi = MOUSEINPUT(0, 0, int(delta * 120), 0x0800, 0, None)
-            user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(inp))
+            elif event == 'wheel':
+                # 滾輪事件
+                inp = INPUT()
+                inp.type = 0  # INPUT_MOUSE
+                inp.mi = MOUSEINPUT(0, 0, int(delta * 120), 0x0800, 0, None)  # MOUSEEVENTF_WHEEL
+                
+                result = user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(inp))
+                
+                if result == 0:
+                    self.logger(f"SendInput (wheel) 失敗: {ctypes.get_last_error()}")
+                    
+        except Exception as e:
+            self.logger(f"滑鼠事件發送失敗: {e}")

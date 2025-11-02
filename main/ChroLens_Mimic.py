@@ -2,7 +2,7 @@
 #python "C:\Users\Lucien\Documents\GitHub\ChroLens_Mimic\main\ChroLens_Mimic.py"
 #pyinstaller --noconsole --onedir --icon=..\umi_奶茶色.ico --add-data "..\umi_奶茶色.ico;." --add-data "TTF;TTF" --add-data "recorder.py;." --add-data "lang.py;." --add-data "script_io.py;." --add-data "about.py;." --add-data "mini.py;." --add-data "window_selector.py;." --add-data "script_parser.py;." --add-data "config_manager.py;." --add-data "hotkey_manager.py;." --add-data "script_editor_methods.py;." --add-data "script_manager.py;." --add-data "ui_components.py;." --add-data "visual_script_editor.py;." ChroLens_Mimic.py
 
-VERSION = "2.6.0"
+VERSION = "2.6.2"
 
 import ttkbootstrap as tb
 from ttkbootstrap.constants import *
@@ -279,6 +279,57 @@ class Tooltip:
             self.tipwindow.destroy()
             self.tipwindow = None
 
+def get_dpi_scale():
+    """獲取 Windows 系統的 DPI 縮放比例"""
+    try:
+        # 設定 DPI Awareness
+        ctypes.windll.shcore.SetProcessDpiAwareness(2)  # PROCESS_PER_MONITOR_DPI_AWARE
+    except:
+        pass
+    
+    try:
+        # 獲取系統 DPI
+        hdc = ctypes.windll.user32.GetDC(0)
+        dpi = ctypes.windll.gdi32.GetDeviceCaps(hdc, 88)  # LOGPIXELSX
+        ctypes.windll.user32.ReleaseDC(0, hdc)
+        scale = dpi / 96.0  # 96 DPI 是 100% 縮放
+        return scale
+    except:
+        return 1.0
+
+def get_screen_resolution():
+    """獲取螢幕解析度"""
+    try:
+        user32 = ctypes.windll.user32
+        width = user32.GetSystemMetrics(0)   # SM_CXSCREEN
+        height = user32.GetSystemMetrics(1)  # SM_CYSCREEN
+        return (width, height)
+    except:
+        return (1920, 1080)  # 預設值
+
+def get_window_info(hwnd):
+    """獲取視窗的完整資訊（包含 DPI、解析度等）"""
+    try:
+        # 獲取視窗矩形
+        rect = win32gui.GetWindowRect(hwnd)
+        width = rect[2] - rect[0]
+        height = rect[3] - rect[1]
+        pos = (rect[0], rect[1])
+        
+        # 獲取系統資訊
+        dpi_scale = get_dpi_scale()
+        screen_res = get_screen_resolution()
+        
+        return {
+            "size": (width, height),
+            "position": pos,
+            "dpi_scale": dpi_scale,
+            "screen_resolution": screen_res,
+            "client_size": (width, height)  # 實際可用區域
+        }
+    except Exception as e:
+        return None
+
 def screen_to_client(hwnd, x, y):
     # 螢幕座標轉視窗內座標
     left, top, right, bottom = win32gui.GetWindowRect(hwnd)
@@ -338,7 +389,7 @@ class RecorderApp(tb.Window):
         self.style.configure("My.TCheckbutton", font=font_tuple(9))
         self.style.configure("miniBold.TButton", font=font_tuple(9, "bold"))
 
-        self.title("ChroLens_Mimic_2.6")
+        self.title("ChroLens_Mimic_2.6.2")
         # 設定視窗圖示
         set_window_icon(self)
 
@@ -481,8 +532,8 @@ class RecorderApp(tb.Window):
         self.select_target_btn = tb.Button(frm_script, text=lang_map["選擇視窗"], command=self.select_target_window, bootstyle=INFO, width=14, style="My.TButton")
         self.select_target_btn.grid(row=0, column=4, padx=4)
 
-        # ====== 滑鼠模式勾選框 ======
-        self.mouse_mode_var = tk.BooleanVar(value=self.user_config.get("mouse_mode", False))
+        # ====== 滑鼠模式勾選框（預設打勾）======
+        self.mouse_mode_var = tk.BooleanVar(value=self.user_config.get("mouse_mode", True))  # 改為 True
         self.mouse_mode_check = tb.Checkbutton(
             frm_script, text=lang_map["滑鼠模式"], variable=self.mouse_mode_var, style="My.TCheckbutton"
         )
@@ -513,9 +564,12 @@ class RecorderApp(tb.Window):
             font=font_tuple(9),
             foreground="#FF9500",
             anchor="w",
-            width=25  # 限制最大寬度
+            width=25,  # 限制最大寬度
+            cursor="hand2"  # 滑鼠懸停時顯示手型游標
         )
         self.target_label.pack(side="left", padx=(0, 4))
+        # 綁定右鍵點擊事件來取消視窗選擇
+        self.target_label.bind("<Button-3>", self._clear_target_window)
 
         # 錄製時間
         self.time_label_time = tb.Label(log_title_frame, text="00:00:00", font=font_tuple(12, monospace=True), foreground="#888888")
@@ -1001,23 +1055,82 @@ class RecorderApp(tb.Window):
     
     def check_for_updates(self):
         """檢查 GitHub 上的新版本"""
+        # 創建進度視窗
+        progress_window = tk.Toplevel(self)
+        progress_window.title("檢查更新")
+        progress_window.geometry("400x150")
+        progress_window.resizable(False, False)
+        progress_window.transient(self)
+        progress_window.grab_set()
+        set_window_icon(progress_window)
+        
+        # 居中顯示
+        progress_window.update_idletasks()
+        x = (progress_window.winfo_screenwidth() // 2) - (progress_window.winfo_width() // 2)
+        y = (progress_window.winfo_screenheight() // 2) - (progress_window.winfo_height() // 2)
+        progress_window.geometry(f"+{x}+{y}")
+        
+        # 主框架
+        main_frame = tb.Frame(progress_window, padding=20)
+        main_frame.pack(fill="both", expand=True)
+        
+        # 狀態標籤
+        status_label = tb.Label(main_frame, text="正在連線到 GitHub...", font=("Microsoft JhengHei", 11))
+        status_label.pack(pady=(0, 15))
+        
+        # 進度條
+        progress_bar = tb.Progressbar(main_frame, length=350, mode='determinate')
+        progress_bar.pack(pady=10)
+        progress_bar['value'] = 0
+        
+        # 詳細資訊標籤
+        detail_label = tb.Label(main_frame, text="初始化...", font=("Microsoft JhengHei", 9), foreground="#888")
+        detail_label.pack(pady=(5, 0))
+        
         def check_update_thread():
             try:
                 import urllib.request
                 import json
                 
+                # 更新進度：10%
+                self.after(0, lambda: progress_bar.configure(value=10))
+                self.after(0, lambda: detail_label.config(text="正在取得最新版本資訊..."))
+                
                 # GitHub API URL
-                api_url = "https://api.github.com/repos/Lucienwooo/ChroLens_Clear/releases/latest"
+                api_url = "https://api.github.com/repos/Lucienwooo/ChroLens_Mimic/releases/latest"
                 
                 # 發送請求
                 req = urllib.request.Request(api_url)
                 req.add_header('User-Agent', 'ChroLens-Mimic-UpdateChecker')
                 
+                # 更新進度：30%
+                self.after(0, lambda: progress_bar.configure(value=30))
+                self.after(0, lambda: detail_label.config(text="正在連線到伺服器..."))
+                
                 with urllib.request.urlopen(req, timeout=10) as response:
+                    # 更新進度：60%
+                    self.after(0, lambda: progress_bar.configure(value=60))
+                    self.after(0, lambda: detail_label.config(text="正在解析版本資訊..."))
+                    
                     data = json.loads(response.read().decode())
                     latest_version = data.get('tag_name', '').lstrip('v')
                     release_notes = data.get('body', '無發行說明')
                     download_url = data.get('html_url', '')
+                    
+                    # 取得下載連結（尋找 .zip 檔案）
+                    assets = data.get('assets', [])
+                    asset_url = None
+                    asset_name = None
+                    for asset in assets:
+                        name = asset.get('name', '')
+                        if name.endswith('.zip'):
+                            asset_url = asset.get('browser_download_url', '')
+                            asset_name = name
+                            break
+                    
+                    # 更新進度：90%
+                    self.after(0, lambda: progress_bar.configure(value=90))
+                    self.after(0, lambda: detail_label.config(text="正在比較版本..."))
                     
                     # 比較版本
                     current = VERSION.split('.')
@@ -1031,30 +1144,334 @@ class RecorderApp(tb.Window):
                         elif int(latest[i]) < int(current[i]):
                             break
                     
-                    self.after(0, lambda: self._show_update_result(is_newer, VERSION, latest_version, release_notes, download_url))
+                    # 更新進度：100%
+                    self.after(0, lambda: progress_bar.configure(value=100))
+                    self.after(0, lambda: detail_label.config(text="檢查完成！"))
+                    
+                    # 延遲 500ms 後關閉進度視窗並顯示結果
+                    self.after(500, lambda: progress_window.destroy())
+                    self.after(600, lambda: self._show_update_result(
+                        is_newer, VERSION, latest_version, release_notes, 
+                        download_url, asset_url, asset_name
+                    ))
                     
             except Exception as e:
-                self.after(0, lambda: messagebox.showerror("錯誤", f"檢查更新失敗：{str(e)}\n\n請確認網路連線正常"))
+                self.after(0, lambda: progress_window.destroy())
+                self.after(50, lambda: messagebox.showerror("錯誤", f"檢查更新失敗：{str(e)}\n\n請確認網路連線正常"))
         
-        # 顯示檢查中提示
-        messagebox.showinfo("檢查更新", "正在檢查更新，請稍候...")
+        # 在背景執行緒中檢查
         threading.Thread(target=check_update_thread, daemon=True).start()
     
-    def _show_update_result(self, is_newer, current_ver, latest_ver, notes, url):
+    def _show_update_result(self, is_newer, current_ver, latest_ver, notes, page_url, asset_url, asset_name):
         """顯示更新檢查結果"""
         if is_newer:
             message = f"發現新版本！\n\n"
             message += f"目前版本：{current_ver}\n"
             message += f"最新版本：{latest_ver}\n\n"
-            message += f"更新內容：\n{notes[:200]}...\n\n"
-            message += f"是否前往下載頁面？"
+            message += f"更新內容：\n{notes[:200]}{'...' if len(notes) > 200 else ''}\n\n"
+            
+            if asset_url:
+                message += f"是否立即下載並安裝更新？\n"
+                message += f"檔案：{asset_name}"
+            else:
+                message += f"是否前往下載頁面手動更新？"
             
             result = messagebox.askyesno("發現新版本", message)
             if result:
-                import webbrowser
-                webbrowser.open(url)
+                if asset_url:
+                    # 自動更新
+                    self._start_auto_update(asset_url, asset_name, latest_ver)
+                else:
+                    # 手動更新（開啟網頁）
+                    import webbrowser
+                    webbrowser.open(page_url)
         else:
             messagebox.showinfo("已是最新版本", f"您使用的是最新版本 {current_ver}")
+    
+    def _start_auto_update(self, download_url, filename, new_version):
+        """開始自動更新流程（高級版本）"""
+        # 創建更新進度視窗
+        update_window = tk.Toplevel(self)
+        update_window.title("自動更新")
+        update_window.geometry("500x300")
+        update_window.resizable(False, False)
+        update_window.transient(self)
+        update_window.grab_set()
+        set_window_icon(update_window)
+        
+        # 居中顯示
+        update_window.update_idletasks()
+        x = (update_window.winfo_screenwidth() // 2) - (update_window.winfo_width() // 2)
+        y = (update_window.winfo_screenheight() // 2) - (update_window.winfo_height() // 2)
+        update_window.geometry(f"+{x}+{y}")
+        
+        # 主框架
+        main_frame = tb.Frame(update_window, padding=20)
+        main_frame.pack(fill="both", expand=True)
+        
+        # 標題
+        title_label = tb.Label(main_frame, text=f"正在更新到版本 {new_version}", 
+                              font=("Microsoft JhengHei", 12, "bold"))
+        title_label.pack(pady=(0, 20))
+        
+        # 進度標籤
+        status_label = tb.Label(main_frame, text="準備下載更新...", font=("Microsoft JhengHei", 11))
+        status_label.pack(pady=(0, 10))
+        
+        # 進度條
+        progress_bar = tb.Progressbar(main_frame, length=450, mode='determinate')
+        progress_bar.pack(pady=10)
+        
+        # 詳細資訊
+        detail_label = tb.Label(main_frame, text="", font=("Microsoft JhengHei", 9), foreground="#888")
+        detail_label.pack(pady=5)
+        
+        # 百分比顯示
+        percent_label = tb.Label(main_frame, text="0%", font=("Consolas", 14, "bold"), foreground="#00A0E9")
+        percent_label.pack(pady=5)
+        
+        # 取消按鈕
+        cancel_flag = {'cancelled': False}
+        
+        def cancel_update():
+            cancel_flag['cancelled'] = True
+            update_window.destroy()
+            messagebox.showinfo("已取消", "更新已取消")
+        
+        cancel_btn = tb.Button(main_frame, text="取消", command=cancel_update, bootstyle="danger")
+        cancel_btn.pack(pady=10)
+        
+        def download_and_update():
+            try:
+                import urllib.request
+                import os
+                import tempfile
+                import shutil
+                import zipfile
+                import sys
+                
+                if cancel_flag['cancelled']:
+                    return
+                
+                # 1. 下載檔案
+                self.after(0, lambda: status_label.config(text="正在下載更新檔案..."))
+                self.after(0, lambda: detail_label.config(text=f"來源：{filename}"))
+                
+                # 建立臨時目錄
+                temp_dir = tempfile.mkdtemp(prefix="ChroLens_Update_")
+                download_path = os.path.join(temp_dir, filename)
+                
+                def download_progress(block_num, block_size, total_size):
+                    if cancel_flag['cancelled']:
+                        raise Exception("使用者取消更新")
+                    downloaded = block_num * block_size
+                    if total_size > 0:
+                        percent = min(100, int(downloaded * 50 / total_size))  # 下載佔 50%
+                        self.after(0, lambda: progress_bar.config(value=percent))
+                        self.after(0, lambda: percent_label.config(text=f"{percent}%"))
+                        size_mb = downloaded / (1024 * 1024)
+                        total_mb = total_size / (1024 * 1024)
+                        self.after(0, lambda: detail_label.config(
+                            text=f"已下載：{size_mb:.1f} MB / {total_mb:.1f} MB"
+                        ))
+                
+                urllib.request.urlretrieve(download_url, download_path, download_progress)
+                
+                if cancel_flag['cancelled']:
+                    shutil.rmtree(temp_dir, ignore_errors=True)
+                    return
+                
+                # 2. 解壓檔案
+                if filename.endswith('.zip'):
+                    self.after(0, lambda: status_label.config(text="正在解壓縮檔案..."))
+                    self.after(0, lambda: progress_bar.config(value=55))
+                    self.after(0, lambda: percent_label.config(text="55%"))
+                    self.after(0, lambda: detail_label.config(text="正在解壓縮更新檔案..."))
+                    
+                    extract_dir = os.path.join(temp_dir, "extracted")
+                    os.makedirs(extract_dir, exist_ok=True)
+                    
+                    with zipfile.ZipFile(download_path, 'r') as zip_ref:
+                        members = zip_ref.namelist()
+                        total_files = len(members)
+                        for idx, member in enumerate(members):
+                            if cancel_flag['cancelled']:
+                                shutil.rmtree(temp_dir, ignore_errors=True)
+                                return
+                            zip_ref.extract(member, extract_dir)
+                            percent = 55 + int(idx * 15 / total_files)  # 解壓縮佔 15% (55-70%)
+                            self.after(0, lambda p=percent: progress_bar.config(value=p))
+                            self.after(0, lambda p=percent: percent_label.config(text=f"{p}%"))
+                    
+                    self.after(0, lambda: progress_bar.config(value=70))
+                    self.after(0, lambda: percent_label.config(text="70%"))
+                    
+                    # 尋找更新檔案（ChroLens_Mimic 資料夾）
+                    update_source_dir = None
+                    for root, dirs, files in os.walk(extract_dir):
+                        if 'ChroLens_Mimic' in dirs:
+                            update_source_dir = os.path.join(root, 'ChroLens_Mimic')
+                            break
+                        # 如果直接就是 ChroLens_Mimic 內容
+                        if any(f.endswith('.exe') and 'ChroLens' in f for f in files):
+                            update_source_dir = root
+                            break
+                    
+                    if not update_source_dir:
+                        raise Exception("無法在壓縮檔中找到更新檔案")
+                else:
+                    update_source_dir = os.path.dirname(download_path)
+                
+                if cancel_flag['cancelled']:
+                    shutil.rmtree(temp_dir, ignore_errors=True)
+                    return
+                
+                # 3. 備份當前程式
+                self.after(0, lambda: status_label.config(text="正在備份當前版本..."))
+                self.after(0, lambda: progress_bar.config(value=75))
+                self.after(0, lambda: percent_label.config(text="75%"))
+                self.after(0, lambda: detail_label.config(text="建立備份..."))
+                
+                if getattr(sys, 'frozen', False):
+                    # 打包後的執行檔
+                    current_exe_dir = os.path.dirname(sys.executable)
+                    backup_dir = os.path.join(current_exe_dir, f"backup_{VERSION}")
+                    
+                    if os.path.exists(backup_dir):
+                        shutil.rmtree(backup_dir, ignore_errors=True)
+                    
+                    # 備份整個目錄（除了 scripts 等使用者資料）
+                    os.makedirs(backup_dir, exist_ok=True)
+                    for item in os.listdir(current_exe_dir):
+                        if item not in ['scripts', 'backup_', 'user_config.json', 'last_script.txt']:
+                            src = os.path.join(current_exe_dir, item)
+                            dst = os.path.join(backup_dir, item)
+                            try:
+                                if os.path.isdir(src):
+                                    shutil.copytree(src, dst, ignore_dangling_symlinks=True)
+                                else:
+                                    shutil.copy2(src, dst)
+                            except Exception as e:
+                                print(f"備份 {item} 時發生錯誤: {e}")
+                
+                self.after(0, lambda: progress_bar.config(value=85))
+                self.after(0, lambda: percent_label.config(text="85%"))
+                
+                # 4. 複製新版本檔案
+                self.after(0, lambda: status_label.config(text="正在安裝新版本..."))
+                self.after(0, lambda: detail_label.config(text="複製更新檔案..."))
+                
+                if getattr(sys, 'frozen', False):
+                    # 複製所有檔案到當前目錄
+                    files_to_copy = [f for f in os.listdir(update_source_dir)]
+                    total_copy = len(files_to_copy)
+                    
+                    for idx, item in enumerate(files_to_copy):
+                        if cancel_flag['cancelled']:
+                            # 如果取消，還原備份
+                            self.after(0, lambda: status_label.config(text="正在還原備份..."))
+                            if os.path.exists(backup_dir):
+                                for backup_item in os.listdir(backup_dir):
+                                    src = os.path.join(backup_dir, backup_item)
+                                    dst = os.path.join(current_exe_dir, backup_item)
+                                    if os.path.isdir(src):
+                                        if os.path.exists(dst):
+                                            shutil.rmtree(dst, ignore_errors=True)
+                                        shutil.copytree(src, dst)
+                                    else:
+                                        shutil.copy2(src, dst)
+                            shutil.rmtree(temp_dir, ignore_errors=True)
+                            return
+                        
+                        src = os.path.join(update_source_dir, item)
+                        dst = os.path.join(current_exe_dir, item)
+                        
+                        # 跳過使用者資料
+                        if item in ['scripts', 'user_config.json', 'last_script.txt']:
+                            continue
+                        
+                        try:
+                            if os.path.isdir(src):
+                                if os.path.exists(dst):
+                                    shutil.rmtree(dst, ignore_errors=True)
+                                shutil.copytree(src, dst)
+                            else:
+                                # 特殊處理：如果是 exe 檔案，重新命名當前檔案
+                                if item.endswith('.exe'):
+                                    if os.path.exists(dst):
+                                        os.rename(dst, dst + '.old')
+                                shutil.copy2(src, dst)
+                        except Exception as e:
+                            print(f"複製 {item} 時發生錯誤: {e}")
+                        
+                        percent = 85 + int(idx * 10 / total_copy)  # 複製佔 10% (85-95%)
+                        self.after(0, lambda p=percent: progress_bar.config(value=p))
+                        self.after(0, lambda p=percent: percent_label.config(text=f"{p}%"))
+                
+                # 5. 清理臨時檔案
+                self.after(0, lambda: status_label.config(text="正在清理暫存檔案..."))
+                self.after(0, lambda: progress_bar.config(value=95))
+                self.after(0, lambda: percent_label.config(text="95%"))
+                self.after(0, lambda: detail_label.config(text="清理中..."))
+                
+                shutil.rmtree(temp_dir, ignore_errors=True)
+                
+                # 6. 完成
+                self.after(0, lambda: progress_bar.config(value=100))
+                self.after(0, lambda: percent_label.config(text="100%"))
+                self.after(0, lambda: status_label.config(text="更新完成！"))
+                self.after(0, lambda: detail_label.config(text="準備重新啟動..."))
+                self.after(0, lambda: cancel_btn.config(state='disabled'))
+                
+                # 延遲後詢問是否重啟
+                self.after(1000, lambda: self._ask_restart(update_window, current_exe_dir if getattr(sys, 'frozen', False) else None))
+                
+            except Exception as e:
+                if not cancel_flag['cancelled']:
+                    self.after(0, lambda: update_window.destroy())
+                    self.after(0, lambda: messagebox.showerror("更新失敗", f"自動更新失敗：{str(e)}\n\n請嘗試手動更新"))
+                # 清理臨時檔案
+                try:
+                    if 'temp_dir' in locals():
+                        shutil.rmtree(temp_dir, ignore_errors=True)
+                except:
+                    pass
+        
+        # 在背景執行緒中下載
+        threading.Thread(target=download_and_update, daemon=True).start()
+    
+    def _ask_restart(self, update_window, exe_dir):
+        """詢問是否重新啟動程式"""
+        update_window.destroy()
+        
+        result = messagebox.askyesno(
+            "更新完成",
+            "程式已成功更新！\n\n"
+            "是否立即重新啟動程式以套用更新？\n"
+            "（選擇「否」將在下次啟動時套用）"
+        )
+        
+        if result:
+            import sys
+            import subprocess
+            
+            if getattr(sys, 'frozen', False) and exe_dir:
+                # 打包後的環境：啟動新的 exe
+                exe_path = os.path.join(exe_dir, 'ChroLens_Mimic.exe')
+                if os.path.exists(exe_path):
+                    subprocess.Popen([exe_path], cwd=exe_dir)
+                else:
+                    messagebox.showerror("錯誤", "找不到更新後的執行檔")
+                    return
+            else:
+                # 開發環境：重新執行 Python 腳本
+                python = sys.executable
+                script = os.path.abspath(__file__)
+                subprocess.Popen([python, script])
+            
+            # 關閉當前程式
+            self.quit()
+            sys.exit(0)
 
     def _init_language(self, lang):
         # 初始化 UI 語言
@@ -1230,6 +1647,7 @@ class RecorderApp(tb.Window):
             self.countdown_label_time.config(text=time_str, foreground="#DB0E59")
 
     def _update_play_time(self):
+        """更新回放時間顯示（強化版 - 確保時間計算準確）"""
         if self.playing:
             # 檢查 core_recorder 是否仍在播放
             if not getattr(self.core_recorder, 'playing', False):
@@ -1254,41 +1672,65 @@ class RecorderApp(tb.Window):
                             pass
                 return
             
-            idx = getattr(self, "_current_play_index", 0)
+            # 獲取當前事件索引（從 core_recorder）
+            try:
+                idx = getattr(self.core_recorder, "_current_play_index", 0)
+            except:
+                idx = 0
+            
+            # 計算已播放時間
             if idx == 0 or not self.events:
                 elapsed = 0
             else:
                 # 防止 index 超出範圍
                 if idx > len(self.events):
                     idx = len(self.events)
-                elapsed = self.events[idx-1]['time'] - self.events[0]['time']
-            self.update_time_label(elapsed)
-            # 單次剩餘
-            total = self.events[-1]['time'] - self.events[0]['time'] if self.events else 0
-            remain = max(0, total - elapsed)
-            self.update_countdown_label(remain)
-            # 倒數顯示
-            if hasattr(self, "_play_start_time"):
-                if self._repeat_time_limit:
-                    total_remain = max(0, self._repeat_time_limit - (time.time() - self._play_start_time))
+                if idx > 0 and len(self.events) > 0:
+                    elapsed = self.events[min(idx-1, len(self.events)-1)]['time'] - self.events[0]['time']
                 else:
-                    total_remain = max(0, self._total_play_time - (time.time() - self._play_start_time))
+                    elapsed = 0
+                    
+            self.update_time_label(elapsed)
+            
+            # 計算單次剩餘時間
+            if self.events and len(self.events) > 0:
+                total = self.events[-1]['time'] - self.events[0]['time']
+                remain = max(0, total - elapsed)
+            else:
+                remain = 0
+            self.update_countdown_label(remain)
+            
+            # 計算總運作剩餘時間
+            if hasattr(self, "_play_start_time") and self._play_start_time:
+                elapsed_real = time.time() - self._play_start_time
+                
+                if self._repeat_time_limit:
+                    # 使用時間限制模式
+                    total_remain = max(0, self._repeat_time_limit - elapsed_real)
+                else:
+                    # 使用總播放時間模式
+                    total_remain = max(0, self._total_play_time - elapsed_real)
+                    
                 self.update_total_time_label(total_remain)
+                
                 # 更新 MiniMode 倒數
                 if hasattr(self, 'mini_window') and self.mini_window and self.mini_window.winfo_exists():
                     if hasattr(self, "mini_countdown_label"):
-                        lang = self.language_var.get()
-                        lang_map = LANG_MAP.get(lang, LANG_MAP["繁體中文"])
-                        h = int(total_remain // 3600)
-                        m = int((total_remain % 3600) // 60)
-                        s = int(total_remain % 60)
-                        time_str = f"{h:02d}:{m:02d}:{s:02d}"
                         try:
+                            lang = self.language_var.get()
+                            lang_map = LANG_MAP.get(lang, LANG_MAP["繁體中文"])
+                            h = int(total_remain // 3600)
+                            m = int((total_remain % 3600) // 60)
+                            s = int(total_remain % 60)
+                            time_str = f"{h:02d}:{m:02d}:{s:02d}"
                             self.mini_countdown_label.config(text=f"{lang_map['剩餘']}: {time_str}")
                         except Exception:
                             pass
+            
+            # 持續更新（100ms 刷新率）
             self.after(100, self._update_play_time)
         else:
+            # 回放停止時重置所有時間顯示
             self.update_time_label(0)
             self.update_countdown_label(0)
             self.update_total_time_label(0)
@@ -1320,18 +1762,18 @@ class RecorderApp(tb.Window):
         if hasattr(self.core_recorder, 'set_target_window'):
             self.core_recorder.set_target_window(self.target_hwnd)
         
-        # 記錄目標視窗的大小和位置
-        self.recorded_window_size = None
-        self.recorded_window_pos = None
+        # 記錄目標視窗的完整資訊（包含 DPI、解析度等）
+        self.recorded_window_info = None
         if self.target_hwnd:
             try:
-                import win32gui
-                rect = win32gui.GetWindowRect(self.target_hwnd)
-                width = rect[2] - rect[0]
-                height = rect[3] - rect[1]
-                self.recorded_window_size = (width, height)
-                self.recorded_window_pos = (rect[0], rect[1])
-                self.log(f"記錄視窗大小: {width} x {height}, 位置: ({rect[0]}, {rect[1]})")
+                window_info = get_window_info(self.target_hwnd)
+                if window_info:
+                    self.recorded_window_info = window_info
+                    self.log(f"記錄視窗資訊:")
+                    self.log(f"  大小: {window_info['size'][0]} x {window_info['size'][1]}")
+                    self.log(f"  位置: ({window_info['position'][0]}, {window_info['position'][1]})")
+                    self.log(f"  DPI 縮放: {window_info['dpi_scale']:.2f}x ({int(window_info['dpi_scale'] * 100)}%)")
+                    self.log(f"  螢幕解析度: {window_info['screen_resolution'][0]} x {window_info['screen_resolution'][1]}")
             except Exception as e:
                 self.log(f"無法記錄視窗資訊: {e}")
         
@@ -1442,159 +1884,171 @@ class RecorderApp(tb.Window):
         self.playback_offset_x = 0
         self.playback_offset_y = 0
         
-        # 檢查視窗大小和位置（如果有記錄的話）
+        # 檢查視窗狀態（大小、位置、DPI、解析度）
         if self.target_hwnd:
             try:
-                import win32gui
                 from tkinter import messagebox
-                rect = win32gui.GetWindowRect(self.target_hwnd)
-                current_width = rect[2] - rect[0]
-                current_height = rect[3] - rect[1]
-                current_x, current_y = rect[0], rect[1]
                 
-                size_mismatch = False
-                pos_mismatch = False
+                # 獲取當前視窗資訊
+                current_info = get_window_info(self.target_hwnd)
+                if not current_info:
+                    self.log("無法獲取視窗資訊")
+                    return
                 
-                # 檢查大小
-                if hasattr(self, 'recorded_window_size') and self.recorded_window_size:
-                    recorded_width, recorded_height = self.recorded_window_size
-                    if current_width != recorded_width or current_height != recorded_height:
-                        size_mismatch = True
+                # 獲取錄製時的視窗資訊
+                recorded_info = getattr(self, 'recorded_window_info', None)
                 
-                # 檢查位置
-                if hasattr(self, 'recorded_window_pos') and self.recorded_window_pos:
-                    recorded_x, recorded_y = self.recorded_window_pos
-                    if current_x != recorded_x or current_y != recorded_y:
-                        pos_mismatch = True
-                
-                # 如果大小或位置不同，詢問使用者
-                if size_mismatch or pos_mismatch:
-                    # 創建自定義對話框
-                    dialog = tk.Toplevel(self)
-                    dialog.title("視窗狀態不符")
-                    dialog.geometry("550x400")  # 增大高度以容納所有內容
-                    dialog.resizable(True, True)  # 允許調整大小
-                    dialog.grab_set()
-                    dialog.transient(self)
-                    # 設定視窗圖示
-                    set_window_icon(dialog)
+                if recorded_info:
+                    # 檢查各項差異
+                    size_mismatch = (current_info['size'] != recorded_info['size'])
+                    pos_mismatch = (current_info['position'] != recorded_info['position'])
+                    dpi_mismatch = abs(current_info['dpi_scale'] - recorded_info['dpi_scale']) > 0.01
+                    resolution_mismatch = (current_info['screen_resolution'] != recorded_info['screen_resolution'])
                     
-                    # 居中顯示
-                    dialog.update_idletasks()
-                    x = (dialog.winfo_screenwidth() // 2) - (dialog.winfo_width() // 2)
-                    y = (dialog.winfo_screenheight() // 2) - (dialog.winfo_height() // 2)
-                    dialog.geometry(f"+{x}+{y}")
-                    
-                    # 主框架（使用 pack 布局以支持響應式）
-                    main_frame = tb.Frame(dialog)
-                    main_frame.pack(fill="both", expand=True, padx=20, pady=20)
-                    
-                    # 標題
-                    title_label = tb.Label(main_frame, 
-                        text="⚠️ 偵測到視窗狀態不同！", 
-                        font=("Microsoft JhengHei", 12, "bold"))
-                    title_label.pack(pady=(0, 15))
-                    
-                    # 訊息內容框架
-                    msg_frame = tb.Frame(main_frame)
-                    msg_frame.pack(fill="both", expand=True)
-                    
-                    # 訊息內容
-                    msg = ""
-                    if size_mismatch:
-                        msg += f"大小 - 錄製時: {recorded_width} x {recorded_height}\n"
-                        msg += f"        目前: {current_width} x {current_height}\n\n"
-                    if pos_mismatch:
-                        msg += f"位置 - 錄製時: ({recorded_x}, {recorded_y})\n"
-                        msg += f"        目前: ({current_x}, {current_y})\n"
-                    
-                    msg_label = tb.Label(msg_frame, text=msg, font=("Microsoft JhengHei", 10), justify="left")
-                    msg_label.pack(anchor="w", padx=10, pady=10)
-                    
-                    # 分隔線
-                    separator = tb.Separator(main_frame, orient="horizontal")
-                    separator.pack(fill="x", pady=10)
-                    
-                    # 使用者選擇
-                    user_choice = {"action": None}
-                    
-                    def on_force_adjust():
-                        user_choice["action"] = "adjust"
-                        dialog.destroy()
-                    
-                    def on_relative():
-                        user_choice["action"] = "relative"
-                        dialog.destroy()
-                    
-                    def on_cancel():
-                        user_choice["action"] = "cancel"
-                        dialog.destroy()
-                    
-                    btn_frame = tb.Frame(main_frame)
-                    btn_frame.pack(fill="x", pady=10)
-                    
-                    tb.Button(btn_frame, text="強制歸位並回放", bootstyle=PRIMARY, 
-                             command=on_force_adjust, width=20).pack(pady=5, fill="x")
-                    tb.Button(btn_frame, text="保持當前位置回放", bootstyle=SUCCESS, 
-                             command=on_relative, width=20).pack(pady=5, fill="x")
-                    tb.Button(btn_frame, text="取消回放", bootstyle=DANGER, 
-                             command=on_cancel, width=20).pack(pady=5, fill="x")
-                    
-                    # 添加說明（放在最下方）
-                    info_label = tb.Label(main_frame, 
-                        text="💡 提示：選擇「保持當前位置回放」會使用視窗內相對座標", 
-                        font=("Microsoft JhengHei", 9), 
-                        foreground="#666",
-                        wraplength=500)  # 自動換行
-                    info_label.pack(pady=(10, 0))
-                    
-                    dialog.wait_window()
-                    
-                    # 處理使用者選擇
-                    if user_choice["action"] == "cancel":
-                        self.log("已取消回放")
-                        return
-                    elif user_choice["action"] == "adjust":
-                        # 強制歸位
-                        try:
-                            target_x = recorded_x if pos_mismatch else current_x
-                            target_y = recorded_y if pos_mismatch else current_y
-                            target_width = recorded_width if size_mismatch else current_width
-                            target_height = recorded_height if size_mismatch else current_height
-                            
-                            win32gui.SetWindowPos(
-                                self.target_hwnd,
-                                0,  # HWND_TOP
-                                target_x, target_y,
-                                target_width, target_height,
-                                0x0240  # SWP_SHOWWINDOW | SWP_ASYNCWINDOWPOS
-                            )
-                            
-                            adjust_msg = []
-                            if size_mismatch:
-                                adjust_msg.append(f"大小至 {target_width} x {target_height}")
-                            if pos_mismatch:
-                                adjust_msg.append(f"位置至 ({target_x}, {target_y})")
-                            
-                            self.log(f"已調整視窗{' 和 '.join(adjust_msg)}")
-                            self.log("將在 2 秒後開始回放...")
-                            
-                            # 延遲 2 秒後繼續
-                            self.after(2000, self._continue_play_record)
+                    if size_mismatch or pos_mismatch or dpi_mismatch or resolution_mismatch:
+                        # 創建詳細的對話框
+                        dialog = tk.Toplevel(self)
+                        dialog.title("視窗狀態檢測")
+                        dialog.geometry("600x500")
+                        dialog.resizable(True, True)
+                        dialog.grab_set()
+                        dialog.transient(self)
+                        set_window_icon(dialog)
+                        
+                        # 居中顯示
+                        dialog.update_idletasks()
+                        x = (dialog.winfo_screenwidth() // 2) - (dialog.winfo_width() // 2)
+                        y = (dialog.winfo_screenheight() // 2) - (dialog.winfo_height() // 2)
+                        dialog.geometry(f"+{x}+{y}")
+                        
+                        # 主框架
+                        main_frame = tb.Frame(dialog)
+                        main_frame.pack(fill="both", expand=True, padx=20, pady=20)
+                        
+                        # 標題
+                        title_label = tb.Label(main_frame, 
+                            text="⚠️ 偵測到視窗狀態不同！", 
+                            font=("Microsoft JhengHei", 12, "bold"))
+                        title_label.pack(pady=(0, 15))
+                        
+                        # 訊息內容
+                        msg_frame = tb.Frame(main_frame)
+                        msg_frame.pack(fill="both", expand=True)
+                        
+                        msg = "📊 錄製時 vs 目前狀態比較：\n\n"
+                        
+                        if size_mismatch:
+                            msg += f"🖼️ 視窗大小：\n"
+                            msg += f"   錄製時: {recorded_info['size'][0]} x {recorded_info['size'][1]}\n"
+                            msg += f"   目前: {current_info['size'][0]} x {current_info['size'][1]}\n\n"
+                        
+                        if pos_mismatch:
+                            msg += f"📍 視窗位置：\n"
+                            msg += f"   錄製時: ({recorded_info['position'][0]}, {recorded_info['position'][1]})\n"
+                            msg += f"   目前: ({current_info['position'][0]}, {current_info['position'][1]})\n\n"
+                        
+                        if dpi_mismatch:
+                            msg += f"🔍 DPI 縮放：\n"
+                            msg += f"   錄製時: {recorded_info['dpi_scale']:.2f}x ({int(recorded_info['dpi_scale'] * 100)}%)\n"
+                            msg += f"   目前: {current_info['dpi_scale']:.2f}x ({int(current_info['dpi_scale'] * 100)}%)\n\n"
+                        
+                        if resolution_mismatch:
+                            msg += f"🖥️ 螢幕解析度：\n"
+                            msg += f"   錄製時: {recorded_info['screen_resolution'][0]} x {recorded_info['screen_resolution'][1]}\n"
+                            msg += f"   目前: {current_info['screen_resolution'][0]} x {current_info['screen_resolution'][1]}\n\n"
+                        
+                        msg_label = tb.Label(msg_frame, text=msg, font=("Microsoft JhengHei", 10), justify="left")
+                        msg_label.pack(anchor="w", padx=10, pady=10)
+                        
+                        # 分隔線
+                        separator = tb.Separator(main_frame, orient="horizontal")
+                        separator.pack(fill="x", pady=10)
+                        
+                        # 使用者選擇
+                        user_choice = {"action": None}
+                        
+                        def on_force_adjust():
+                            user_choice["action"] = "adjust"
+                            dialog.destroy()
+                        
+                        def on_auto_scale():
+                            user_choice["action"] = "auto_scale"
+                            dialog.destroy()
+                        
+                        def on_cancel():
+                            user_choice["action"] = "cancel"
+                            dialog.destroy()
+                        
+                        btn_frame = tb.Frame(main_frame)
+                        btn_frame.pack(fill="x", pady=10)
+                        
+                        tb.Button(btn_frame, text="🔧 強制歸位（調整視窗）", bootstyle=PRIMARY, 
+                                 command=on_force_adjust, width=25).pack(pady=5, fill="x")
+                        
+                        tb.Button(btn_frame, text="✨ 智能適配（推薦）", bootstyle=SUCCESS, 
+                                 command=on_auto_scale, width=25).pack(pady=5, fill="x")
+                        
+                        tb.Button(btn_frame, text="❌ 取消回放", bootstyle=DANGER, 
+                                 command=on_cancel, width=25).pack(pady=5, fill="x")
+                        
+                        # 添加說明
+                        info_label = tb.Label(main_frame, 
+                            text="💡 提示：「智能適配」會自動調整座標以適應當前環境\n"
+                                 "適用於不同解析度、DPI 縮放和視窗大小", 
+                            font=("Microsoft JhengHei", 9), 
+                            foreground="#666",
+                            wraplength=550)
+                        info_label.pack(pady=(10, 0))
+                        
+                        dialog.wait_window()
+                        
+                        # 處理使用者選擇
+                        if user_choice["action"] == "cancel":
+                            self.log("已取消回放")
                             return
-                        except Exception as e:
-                            self.log(f"無法調整視窗: {e}")
-                    elif user_choice["action"] == "relative":
-                        # 使用視窗內相對座標回放（不需要額外處理，因為座標已經是相對的）
-                        self.log(f"將使用視窗內相對座標進行回放")
+                        elif user_choice["action"] == "adjust":
+                            # 強制歸位
+                            try:
+                                target_width, target_height = recorded_info['size']
+                                target_x, target_y = recorded_info['position']
+                                
+                                win32gui.SetWindowPos(
+                                    self.target_hwnd,
+                                    0,  # HWND_TOP
+                                    target_x, target_y,
+                                    target_width, target_height,
+                                    0x0240  # SWP_SHOWWINDOW | SWP_ASYNCWINDOWPOS
+                                )
+                                
+                                self.log(f"已調整視窗至錄製時狀態")
+                                self.log("將在 2 秒後開始回放...")
+                                
+                                # 延遲 2 秒後繼續
+                                self.after(2000, self._continue_play_record)
+                                return
+                            except Exception as e:
+                                self.log(f"無法調整視窗: {e}")
+                        elif user_choice["action"] == "auto_scale":
+                            # 智能適配模式
+                            self.log(f"使用智能適配模式進行回放")
+                            self.log(f"將自動調整座標以適應當前環境")
+                            # 設定縮放比例（用於後續座標轉換）
+                            self._scale_ratio = {
+                                'x': current_info['size'][0] / recorded_info['size'][0] if recorded_info['size'][0] > 0 else 1.0,
+                                'y': current_info['size'][1] / recorded_info['size'][1] if recorded_info['size'][1] > 0 else 1.0,
+                                'dpi': current_info['dpi_scale'] / recorded_info['dpi_scale'] if recorded_info['dpi_scale'] > 0 else 1.0
+                            }
+                            self.log(f"縮放比例 - X: {self._scale_ratio['x']:.3f}, Y: {self._scale_ratio['y']:.3f}, DPI: {self._scale_ratio['dpi']:.3f}")
             except Exception as e:
                 self.log(f"檢查視窗狀態時發生錯誤: {e}")
+                import traceback
+                self.log(f"錯誤詳情: {traceback.format_exc()}")
         
         # 直接開始回放
         self._continue_play_record()
     
     def _continue_play_record(self):
-        """實際執行回放的內部方法"""
+        """實際執行回放的內部方法（支援智能縮放）"""
         # 獲取當前視窗位置（如果有目標視窗）
         current_window_x = 0
         current_window_y = 0
@@ -1606,18 +2060,45 @@ class RecorderApp(tb.Window):
             except Exception as e:
                 self.log(f"無法獲取視窗位置: {e}")
         
+        # 檢查是否有縮放比例設定（智能適配模式）
+        has_scale_ratio = hasattr(self, '_scale_ratio') and self._scale_ratio
+        
         # 轉換事件座標
         adjusted_events = []
+        scaled_count = 0  # 記錄縮放事件數量
+        
         for event in self.events:
             event_copy = event.copy()
             
-            # 檢查是否為視窗相對座標
-            if event.get('relative_to_window', False) and 'x' in event and 'y' in event:
-                # 將視窗相對座標轉換為當前螢幕絕對座標
-                event_copy['x'] = event['x'] + current_window_x
-                event_copy['y'] = event['y'] + current_window_y
+            # 處理滑鼠事件的座標
+            if event.get('type') == 'mouse' and 'x' in event and 'y' in event:
+                # 檢查是否為視窗相對座標
+                if event.get('relative_to_window', False):
+                    # 取得相對座標
+                    rel_x = event['x']
+                    rel_y = event['y']
+                    
+                    # 如果有智能縮放，應用縮放比例
+                    if has_scale_ratio:
+                        # 應用視窗大小縮放
+                        rel_x = int(rel_x * self._scale_ratio['x'])
+                        rel_y = int(rel_y * self._scale_ratio['y'])
+                        scaled_count += 1
+                    
+                    # 轉換為當前螢幕絕對座標
+                    event_copy['x'] = rel_x + current_window_x
+                    event_copy['y'] = rel_y + current_window_y
+                else:
+                    # 螢幕絕對座標，不做轉換
+                    pass
             
             adjusted_events.append(event_copy)
+        
+        # 顯示縮放資訊（僅顯示一次）
+        if has_scale_ratio and scaled_count > 0:
+            self.log(f"[智能適配] 已縮放 {scaled_count} 個座標事件")
+            # 清除縮放比例（避免影響下次回放）
+            del self._scale_ratio
         
         # 設定 core_recorder 的事件
         self.core_recorder.events = adjusted_events
@@ -1632,7 +2113,8 @@ class RecorderApp(tb.Window):
                 self.log("回放模式：後台模式（智能自動適應）")
         
         if self.target_hwnd and any(e.get('relative_to_window', False) for e in self.events):
-            self.log(f"已將 {len(adjusted_events)} 個視窗相對座標轉換為當前螢幕座標")
+            relative_count = sum(1 for e in self.events if e.get('relative_to_window', False))
+            self.log(f"[座標轉換] {relative_count} 個視窗相對座標 → 當前螢幕座標")
 
         try:
             speed_val = int(self.speed_var.get())
@@ -1666,11 +2148,17 @@ class RecorderApp(tb.Window):
         self.playing = True
         self.paused = False
 
+        # 初始化事件索引（用於 UI 更新）
+        self._current_play_index = 0
+
         def on_event(event):
-            """回放事件的回調函數"""
-            self._current_play_index = getattr(self.core_recorder, "_current_play_index", 0)
-            if not self.playing:
-                return
+            """回放事件的回調函數（確保索引同步更新）"""
+            # 從 core_recorder 獲取最新索引
+            try:
+                idx = getattr(self.core_recorder, "_current_play_index", 0)
+                self._current_play_index = idx
+            except:
+                pass
 
         success = self.core_recorder.play(
             speed=self.speed,
@@ -1833,9 +2321,10 @@ class RecorderApp(tb.Window):
                 "repeat_interval": self.repeat_interval_var.get(),
                 "random_interval": self.random_interval_var.get()
             }
-            # 記錄視窗大小（如果有的話）
-            if hasattr(self, 'recorded_window_size') and self.recorded_window_size:
-                settings["window_size"] = self.recorded_window_size
+            # 儲存完整的視窗資訊（包含 DPI、解析度等）
+            if hasattr(self, 'recorded_window_info') and self.recorded_window_info:
+                settings["window_info"] = self.recorded_window_info
+                self.log(f"[儲存] 視窗資訊已包含在腳本中")
             
             filename = sio_auto_save_script(self.script_dir, self.events, settings)
             # 去除 .json 副檔名以顯示在 UI
@@ -1903,11 +2392,25 @@ class RecorderApp(tb.Window):
                 self.repeat_interval_var.set(settings.get("repeat_interval", "00:00:00"))
                 self.random_interval_var.set(settings.get("random_interval", False))
                 
-                # 讀取視窗大小
-                if "window_size" in settings:
-                    self.recorded_window_size = tuple(settings["window_size"])
+                # 讀取視窗資訊（新格式優先）
+                if "window_info" in settings:
+                    self.recorded_window_info = settings["window_info"]
+                    self.log(f"[載入] 視窗資訊:")
+                    self.log(f"  大小: {self.recorded_window_info['size'][0]} x {self.recorded_window_info['size'][1]}")
+                    self.log(f"  DPI: {self.recorded_window_info['dpi_scale']:.2f}x ({int(self.recorded_window_info['dpi_scale'] * 100)}%)")
+                    self.log(f"  解析度: {self.recorded_window_info['screen_resolution'][0]} x {self.recorded_window_info['screen_resolution'][1]}")
+                elif "window_size" in settings:
+                    # 兼容舊格式
+                    self.recorded_window_info = {
+                        "size": tuple(settings["window_size"]),
+                        "position": (0, 0),
+                        "dpi_scale": 1.0,
+                        "screen_resolution": (1920, 1080),
+                        "client_size": tuple(settings["window_size"])
+                    }
+                    self.log(f"[載入] 舊格式視窗資訊（已轉換）")
                 else:
-                    self.recorded_window_size = None
+                    self.recorded_window_info = None
                 
                 # 顯示檔名時去除副檔名
                 display_name = os.path.splitext(script_file)[0]
@@ -1997,11 +2500,20 @@ class RecorderApp(tb.Window):
                         self.repeat_interval_var.set(settings.get("repeat_interval", "00:00:00"))
                         self.random_interval_var.set(settings.get("random_interval", False))
                         
-                        # 讀取視窗大小
-                        if "window_size" in settings:
-                            self.recorded_window_size = tuple(settings["window_size"])
+                        # 讀取視窗資訊（新格式優先）
+                        if "window_info" in settings:
+                            self.recorded_window_info = settings["window_info"]
+                        elif "window_size" in settings:
+                            # 兼容舊格式
+                            self.recorded_window_info = {
+                                "size": tuple(settings["window_size"]),
+                                "position": (0, 0),
+                                "dpi_scale": 1.0,
+                                "screen_resolution": (1920, 1080),
+                                "client_size": tuple(settings["window_size"])
+                            }
                         else:
-                            self.recorded_window_size = None
+                            self.recorded_window_info = None
                         
                         # 顯示時去除副檔名
                         display_name = os.path.splitext(last_script)[0]
@@ -2784,13 +3296,7 @@ class RecorderApp(tb.Window):
                 pass
             if not hwnd:
                 # 清除選定
-                self.target_hwnd = None
-                self.target_title = None
-                self.target_label.config(text="")
-                # 告訴 core_recorder 取消視窗限定
-                if hasattr(self.core_recorder, 'set_target_window'):
-                    self.core_recorder.set_target_window(None)
-                self.log("已清除目標視窗設定。")
+                self._clear_target_window()
                 return
             # 驗證 hwnd 是否有效
             try:
@@ -2801,10 +3307,11 @@ class RecorderApp(tb.Window):
                 pass
             self.target_hwnd = hwnd
             self.target_title = title
-            # 更新 UI 顯示
+            # 更新 UI 顯示（只顯示文字，不顯示圖示）
             short = title if len(title) <= 30 else title[:27] + "..."
-            self.target_label.config(text=f"🎯 {short}")
+            self.target_label.config(text=f"[目標] {short}")
             self.log(f"已選定目標視窗：{title} (hwnd={hwnd})")
+            self.log("💡 提示：右鍵點擊視窗名稱可取消選擇")
             # 為使用者在畫面上畫出框框提示
             try:
                 self.show_window_highlight(hwnd)
@@ -2819,6 +3326,16 @@ class RecorderApp(tb.Window):
                 pass
 
         WindowSelectorDialog(self, on_selected)
+    
+    def _clear_target_window(self, event=None):
+        """清除目標視窗設定（可由右鍵點擊觸發）"""
+        self.target_hwnd = None
+        self.target_title = None
+        self.target_label.config(text="")
+        # 告訴 core_recorder 取消視窗限定
+        if hasattr(self.core_recorder, 'set_target_window'):
+            self.core_recorder.set_target_window(None)
+        self.log("已清除目標視窗設定")
 
     # 新增：在畫面上以 topmost 無邊框視窗顯示選定視窗的邊框提示
     def show_window_highlight(self, hwnd):
