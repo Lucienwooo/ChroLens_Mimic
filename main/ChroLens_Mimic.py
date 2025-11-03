@@ -1,8 +1,42 @@
 #ChroLens Studio - Lucienwooo
 #python "C:\Users\Lucien\Documents\GitHub\ChroLens_Mimic\main\ChroLens_Mimic.py"
+#
+# === 打包說明 ===
+# 1. 執行 build.bat 進行打包
+# 2. 打包後檔名統一為 "ChroLens_Mimic.exe" 和 "ChroLens_Mimic.zip"
+# 3. 版本號僅顯示於視窗標題和 version.txt
+# 4. 舊版本會自動備份至 backup/版本號/ 資料夾
+#
+# === 版本更新紀錄 ===
+# [2.6.4] - 2025/11/03
+#   - 重新設計打包架構，徹底簡化流程
+#   - 修正：版本資訊檔改為 version版本號.txt (例如: version2.6.4.txt)
+#   - 修正：備份資料夾改為 backup\版本號\ (例如: backup\2.6.3\)
+#   - 移除：所有多餘的 .md 說明文件和快速打包腳本
+#   - 改進：使用者資料 (scripts/user_config.json/last_script.txt) 自動保留
+#   - 改進：智能差異備份，僅備份變更的檔案
+#   - 移除：.exe.old 等錯誤產物
+# [2.6.3] - 2025/11/03
+#   - 修復：加強腳本寫入的錯誤處理和重試機制
+#   - 修復：視窗提示大小問題
+#   - 改進：統一檔名為 ChroLens_Mimic
+# [2.6.2] - 2025/11/02
+#   - 基礎版本功能
+#
+# === 未來功能規劃 ===
+# 🎯 高優先級功能 (待開發)
+#   ✅ OCR 識別      - 讓腳本會讀字 (pytesseract/easyocr)
+#   ✅ 圖像識別      - 讓腳本會看圖 (opencv-python)
+#   ✅ 變數系統      - 讓腳本有記憶 (SET/GET 變數操作)
+#   ✅ 條件分支      - 讓腳本會判斷 (IF/ELSE/ELIF 結構)
+#   ✅ 執行排程      - 定時自動執行 (schedule/APScheduler)
+#   ✅ 迴圈增強      - 更靈活的重複 (WHILE/FOR/BREAK/CONTINUE)
+#   ✅ 效能優化      - 更快更穩 (記憶體管理/多執行緒)
+#   ⚠️ 多螢幕支援   - 解析度/DPI縮放適配待加強
+#
 #pyinstaller --noconsole --onedir --icon=..\umi_奶茶色.ico --add-data "..\umi_奶茶色.ico;." --add-data "TTF;TTF" --add-data "recorder.py;." --add-data "lang.py;." --add-data "script_io.py;." --add-data "about.py;." --add-data "mini.py;." --add-data "window_selector.py;." --add-data "script_parser.py;." --add-data "config_manager.py;." --add-data "hotkey_manager.py;." --add-data "script_editor_methods.py;." --add-data "script_manager.py;." --add-data "ui_components.py;." --add-data "visual_script_editor.py;." ChroLens_Mimic.py
 
-VERSION = "2.6.2"
+VERSION = "2.6.4"
 
 import ttkbootstrap as tb
 from ttkbootstrap.constants import *
@@ -389,7 +423,7 @@ class RecorderApp(tb.Window):
         self.style.configure("My.TCheckbutton", font=font_tuple(9))
         self.style.configure("miniBold.TButton", font=font_tuple(9, "bold"))
 
-        self.title("ChroLens_Mimic_2.6.2")
+        self.title(f"ChroLens_Mimic_{VERSION}")
         # 設定視窗圖示
         set_window_icon(self)
 
@@ -3374,11 +3408,22 @@ class RecorderApp(tb.Window):
             frm = tk.Frame(win, bg="#00ff00", bd=4, relief="solid")
             frm.pack(fill="both", expand=True, padx=2, pady=2)
             
-            # 中央顯示提示文字
-            label = tk.Label(frm, text="✓ 已設定目標視窗", 
-                           font=("Microsoft JhengHei", 16, "bold"),
-                           fg="#00ff00", bg="#000000")
-            label.place(relx=0.5, rely=0.5, anchor="center")
+            # 中央顯示提示文字（使用 Canvas 以避免被視窗大小限制）
+            canvas = tk.Canvas(frm, bg="#000000", highlightthickness=0)
+            canvas.pack(fill="both", expand=True)
+            
+            # 計算適當的字體大小（根據視窗大小）
+            font_size = max(12, min(24, min(w, h) // 20))
+            
+            # 在 Canvas 上繪製文字（不受視窗大小限制）
+            text = "✓ 已設定目標視窗"
+            canvas.create_text(
+                w // 2, h // 2,
+                text=text,
+                font=("Microsoft JhengHei", font_size, "bold"),
+                fill="#00ff00",
+                anchor="center"
+            )
             
             self._highlight_win = win
             
