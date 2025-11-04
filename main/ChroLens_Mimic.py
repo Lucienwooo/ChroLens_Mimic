@@ -2,12 +2,21 @@
 #python "C:\Users\Lucien\Documents\GitHub\ChroLens_Mimic\main\ChroLens_Mimic.py"
 #
 # === 打包說明 ===
-# 1. 執行 build.bat 進行打包
-# 2. 打包後檔名統一為 "ChroLens_Mimic.exe" 和 "ChroLens_Mimic.zip"
-# 3. 版本號僅顯示於視窗標題和 version.txt
-# 4. 舊版本會自動備份至 backup/版本號/ 資料夾
+# 1. 執行 python build.py 進行打包 (取代舊的 build.bat)
+# 2. 打包後檔名統一為 "ChroLens_Mimic.exe"
+# 3. 版本號顯示於視窗標題和 version{版本號}.txt
+# 4. 舊版本會自動備份至 backup\版本號\ 資料夾
 #
 # === 版本更新紀錄 ===
+# [2.6.5] - 2025/11/04
+#   - 🚀 重新設計更新系統 (參考 PowerToys)
+#   - 新增：UpdateManager 模組處理版本管理
+#   - 新增：build.py Python 打包腳本 (取代 build.bat)
+#   - 新增：智能差異備份和版本回退功能
+#   - 改進：更新流程更加穩定和安全
+#   - 修正：版本資訊檔命名為 version{版本號}.txt
+#   - 修正：備份目錄結構為 backup\版本號\
+#   - 移除：錯誤的 .exe.old 檔案產生
 # [2.6.4] - 2025/11/03
 #   - 重新設計打包架構，徹底簡化流程
 #   - 修正：版本資訊檔改為 version版本號.txt (例如: version2.6.4.txt)
@@ -34,9 +43,9 @@
 #   ✅ 效能優化      - 更快更穩 (記憶體管理/多執行緒)
 #   ⚠️ 多螢幕支援   - 解析度/DPI縮放適配待加強
 #
-#pyinstaller --noconsole --onedir --icon=..\umi_奶茶色.ico --add-data "..\umi_奶茶色.ico;." --add-data "TTF;TTF" --add-data "recorder.py;." --add-data "lang.py;." --add-data "script_io.py;." --add-data "about.py;." --add-data "mini.py;." --add-data "window_selector.py;." --add-data "script_parser.py;." --add-data "config_manager.py;." --add-data "hotkey_manager.py;." --add-data "script_editor_methods.py;." --add-data "script_manager.py;." --add-data "ui_components.py;." --add-data "visual_script_editor.py;." ChroLens_Mimic.py
+#pyinstaller --noconsole --onedir --icon=..\umi_奶茶色.ico --add-data "..\umi_奶茶色.ico;." --add-data "TTF;TTF" --add-data "recorder.py;." --add-data "lang.py;." --add-data "script_io.py;." --add-data "about.py;." --add-data "mini.py;." --add-data "window_selector.py;." --add-data "script_parser.py;." --add-data "config_manager.py;." --add-data "hotkey_manager.py;." --add-data "script_editor_methods.py;." --add-data "script_manager.py;." --add-data "ui_components.py;." --add-data "visual_script_editor.py;." --add-data "update_manager.py;." ChroLens_Mimic.py
 
-VERSION = "2.6.4"
+VERSION = "2.6.5"
 
 import ttkbootstrap as tb
 from ttkbootstrap.constants import *
@@ -1088,7 +1097,13 @@ class RecorderApp(tb.Window):
             print(f"顯示 about 視窗失敗: {e}")
     
     def check_for_updates(self):
-        """檢查 GitHub 上的新版本"""
+        """檢查 GitHub 上的新版本 (使用 UpdateManager)"""
+        try:
+            from update_manager import UpdateManager
+        except Exception as e:
+            messagebox.showerror("錯誤", f"無法載入更新管理器: {e}")
+            return
+        
         # 創建進度視窗
         progress_window = tk.Toplevel(self)
         progress_window.title("檢查更新")
@@ -1123,71 +1138,29 @@ class RecorderApp(tb.Window):
         
         def check_update_thread():
             try:
-                import urllib.request
-                import json
-                
-                # 更新進度：10%
+                # 建立更新管理器
                 self.after(0, lambda: progress_bar.configure(value=10))
-                self.after(0, lambda: detail_label.config(text="正在取得最新版本資訊..."))
+                self.after(0, lambda: detail_label.config(text="初始化更新管理器..."))
                 
-                # GitHub API URL
-                api_url = "https://api.github.com/repos/Lucienwooo/ChroLens_Mimic/releases/latest"
+                update_mgr = UpdateManager(VERSION)
                 
-                # 發送請求
-                req = urllib.request.Request(api_url)
-                req.add_header('User-Agent', 'ChroLens-Mimic-UpdateChecker')
-                
-                # 更新進度：30%
+                # 檢查更新
                 self.after(0, lambda: progress_bar.configure(value=30))
                 self.after(0, lambda: detail_label.config(text="正在連線到伺服器..."))
                 
-                with urllib.request.urlopen(req, timeout=10) as response:
-                    # 更新進度：60%
-                    self.after(0, lambda: progress_bar.configure(value=60))
-                    self.after(0, lambda: detail_label.config(text="正在解析版本資訊..."))
-                    
-                    data = json.loads(response.read().decode())
-                    latest_version = data.get('tag_name', '').lstrip('v')
-                    release_notes = data.get('body', '無發行說明')
-                    download_url = data.get('html_url', '')
-                    
-                    # 取得下載連結（尋找 .zip 檔案）
-                    assets = data.get('assets', [])
-                    asset_url = None
-                    asset_name = None
-                    for asset in assets:
-                        name = asset.get('name', '')
-                        if name.endswith('.zip'):
-                            asset_url = asset.get('browser_download_url', '')
-                            asset_name = name
-                            break
-                    
-                    # 更新進度：90%
-                    self.after(0, lambda: progress_bar.configure(value=90))
-                    self.after(0, lambda: detail_label.config(text="正在比較版本..."))
-                    
-                    # 比較版本
-                    current = VERSION.split('.')
-                    latest = latest_version.split('.')
-                    
-                    is_newer = False
-                    for i in range(min(len(current), len(latest))):
-                        if int(latest[i]) > int(current[i]):
-                            is_newer = True
-                            break
-                        elif int(latest[i]) < int(current[i]):
-                            break
-                    
-                    # 更新進度：100%
-                    self.after(0, lambda: progress_bar.configure(value=100))
-                    self.after(0, lambda: detail_label.config(text="檢查完成！"))
-                    
-                    # 延遲 500ms 後關閉進度視窗並顯示結果
-                    self.after(500, lambda: progress_window.destroy())
-                    self.after(600, lambda: self._show_update_result(
-                        is_newer, VERSION, latest_version, release_notes, 
-                        download_url, asset_url, asset_name
-                    ))
+                update_info = update_mgr.check_for_updates()
+                
+                # 更新進度
+                self.after(0, lambda: progress_bar.configure(value=90))
+                self.after(0, lambda: detail_label.config(text="正在比較版本..."))
+                
+                # 完成
+                self.after(0, lambda: progress_bar.configure(value=100))
+                self.after(0, lambda: detail_label.config(text="檢查完成！"))
+                
+                # 延遲後顯示結果
+                self.after(500, lambda: progress_window.destroy())
+                self.after(600, lambda: self._show_update_result_v2(update_info, update_mgr))
                     
             except Exception as e:
                 self.after(0, lambda: progress_window.destroy())
@@ -1196,6 +1169,226 @@ class RecorderApp(tb.Window):
         # 在背景執行緒中檢查
         threading.Thread(target=check_update_thread, daemon=True).start()
     
+    def _show_update_result_v2(self, update_info: dict, update_mgr):
+        """顯示更新檢查結果 (新版本)"""
+        if update_info["has_update"]:
+            from update_manager import format_size
+            
+            current_ver = update_info["current_version"]
+            latest_ver = update_info["latest_version"]
+            notes = update_info["release_notes"]
+            download_url = update_info["download_url"]
+            asset_name = update_info["asset_name"]
+            file_size = update_info["size"]
+            
+            message = f"發現新版本！\n\n"
+            message += f"目前版本：{current_ver}\n"
+            message += f"最新版本：{latest_ver}\n\n"
+            message += f"更新內容：\n{notes[:200]}{'...' if len(notes) > 200 else ''}\n\n"
+            
+            if download_url and asset_name:
+                message += f"檔案：{asset_name}\n"
+                if file_size > 0:
+                    message += f"大小：{format_size(file_size)}\n\n"
+                message += f"是否立即下載並安裝更新？"
+            else:
+                message += f"未找到下載連結，請前往 GitHub 手動下載"
+            
+            result = messagebox.askyesno("發現新版本", message)
+            if result and download_url:
+                # 使用新的更新管理器
+                self._start_auto_update_v2(update_mgr, download_url, asset_name, latest_ver)
+        else:
+            messagebox.showinfo("已是最新版本", f"您使用的是最新版本 {update_info['current_version']}")
+    
+    def _start_auto_update_v2(self, update_mgr, download_url, filename, new_version):
+        """開始自動更新流程 (使用 UpdateManager)"""
+        # 創建更新進度視窗
+        update_window = tk.Toplevel(self)
+        update_window.title("自動更新")
+        update_window.geometry("500x300")
+        update_window.resizable(False, False)
+        update_window.transient(self)
+        update_window.grab_set()
+        set_window_icon(update_window)
+        
+        # 居中顯示
+        update_window.update_idletasks()
+        x = (update_window.winfo_screenwidth() // 2) - (update_window.winfo_width() // 2)
+        y = (update_window.winfo_screenheight() // 2) - (update_window.winfo_height() // 2)
+        update_window.geometry(f"+{x}+{y}")
+        
+        # 主框架
+        main_frame = tb.Frame(update_window, padding=20)
+        main_frame.pack(fill="both", expand=True)
+        
+        # 標題
+        title_label = tb.Label(main_frame, text=f"正在更新到版本 {new_version}", 
+                              font=("Microsoft JhengHei", 12, "bold"))
+        title_label.pack(pady=(0, 20))
+        
+        # 進度標籤
+        status_label = tb.Label(main_frame, text="準備下載更新...", font=("Microsoft JhengHei", 11))
+        status_label.pack(pady=(0, 10))
+        
+        # 進度條
+        progress_bar = tb.Progressbar(main_frame, length=450, mode='determinate')
+        progress_bar.pack(pady=10)
+        
+        # 詳細資訊
+        detail_label = tb.Label(main_frame, text="", font=("Microsoft JhengHei", 9), foreground="#888")
+        detail_label.pack(pady=5)
+        
+        # 百分比顯示
+        percent_label = tb.Label(main_frame, text="0%", font=("Consolas", 14, "bold"), foreground="#00A0E9")
+        percent_label.pack(pady=5)
+        
+        # 取消按鈕
+        cancel_flag = {'cancelled': False}
+        
+        def cancel_update():
+            cancel_flag['cancelled'] = True
+            update_window.destroy()
+            messagebox.showinfo("已取消", "更新已取消")
+        
+        cancel_btn = tb.Button(main_frame, text="取消", command=cancel_update, bootstyle="danger")
+        cancel_btn.pack(pady=10)
+        
+        def download_and_update():
+            try:
+                from update_manager import format_size
+                
+                if cancel_flag['cancelled']:
+                    return
+                
+                # 1. 下載檔案
+                self.after(0, lambda: status_label.config(text="正在下載更新檔案..."))
+                self.after(0, lambda: detail_label.config(text=f"來源：{filename}"))
+                
+                def download_progress(downloaded, total):
+                    if cancel_flag['cancelled']:
+                        raise Exception("使用者取消更新")
+                    if total > 0:
+                        percent = min(50, int(downloaded * 50 / total))  # 下載佔 50%
+                        self.after(0, lambda: progress_bar.config(value=percent))
+                        self.after(0, lambda: percent_label.config(text=f"{percent}%"))
+                        self.after(0, lambda: detail_label.config(
+                            text=f"已下載：{format_size(downloaded)} / {format_size(total)}"
+                        ))
+                
+                download_path = update_mgr.download_update(download_url, filename, download_progress)
+                
+                if cancel_flag['cancelled']:
+                    update_mgr.cleanup()
+                    return
+                
+                # 2. 解壓檔案
+                self.after(0, lambda: status_label.config(text="正在解壓縮檔案..."))
+                self.after(0, lambda: progress_bar.config(value=55))
+                self.after(0, lambda: percent_label.config(text="55%"))
+                self.after(0, lambda: detail_label.config(text="正在解壓縮更新檔案..."))
+                
+                def extract_progress(current, total):
+                    if cancel_flag['cancelled']:
+                        raise Exception("使用者取消更新")
+                    percent = 55 + int(current * 15 / total)  # 解壓縮佔 15% (55-70%)
+                    self.after(0, lambda: progress_bar.config(value=percent))
+                    self.after(0, lambda: percent_label.config(text=f"{percent}%"))
+                
+                update_dir = update_mgr.extract_update(download_path, extract_progress)
+                
+                if cancel_flag['cancelled']:
+                    update_mgr.cleanup()
+                    return
+                
+                # 3. 備份當前版本
+                self.after(0, lambda: status_label.config(text="正在備份當前版本..."))
+                self.after(0, lambda: progress_bar.config(value=75))
+                self.after(0, lambda: percent_label.config(text="75%"))
+                self.after(0, lambda: detail_label.config(text="建立備份..."))
+                
+                backup_path = update_mgr.backup_current_version()
+                self.after(0, lambda: detail_label.config(text=f"備份至: {backup_path.name}"))
+                
+                if cancel_flag['cancelled']:
+                    update_mgr.cleanup()
+                    return
+                
+                # 4. 安裝更新
+                self.after(0, lambda: status_label.config(text="正在安裝新版本..."))
+                self.after(0, lambda: detail_label.config(text="複製更新檔案..."))
+                
+                def install_progress(current, total):
+                    if cancel_flag['cancelled']:
+                        raise Exception("使用者取消更新")
+                    percent = 80 + int(current * 15 / total)  # 安裝佔 15% (80-95%)
+                    self.after(0, lambda: progress_bar.config(value=percent))
+                    self.after(0, lambda: percent_label.config(text=f"{percent}%"))
+                
+                update_mgr.install_update(update_dir, install_progress)
+                
+                # 5. 建立版本檔
+                update_mgr.create_version_file(new_version)
+                
+                # 6. 清理臨時檔案
+                self.after(0, lambda: status_label.config(text="正在清理暫存檔案..."))
+                self.after(0, lambda: progress_bar.config(value=95))
+                self.after(0, lambda: percent_label.config(text="95%"))
+                self.after(0, lambda: detail_label.config(text="清理中..."))
+                
+                update_mgr.cleanup()
+                
+                # 7. 完成
+                self.after(0, lambda: progress_bar.config(value=100))
+                self.after(0, lambda: percent_label.config(text="100%"))
+                self.after(0, lambda: status_label.config(text="更新完成！"))
+                self.after(0, lambda: detail_label.config(text="準備重新啟動..."))
+                self.after(0, lambda: cancel_btn.config(state='disabled'))
+                
+                # 延遲後詢問是否重啟
+                self.after(1000, lambda: self._ask_restart_v2(update_window))
+                
+            except Exception as e:
+                if not cancel_flag['cancelled']:
+                    self.after(0, lambda: update_window.destroy())
+                    self.after(0, lambda: messagebox.showerror("更新失敗", f"自動更新失敗：{str(e)}\n\n請嘗試手動更新"))
+                try:
+                    update_mgr.cleanup()
+                except:
+                    pass
+        
+        # 在背景執行緒中下載
+        threading.Thread(target=download_and_update, daemon=True).start()
+    
+    def _ask_restart_v2(self, update_window):
+        """詢問是否重新啟動程式 (新版本)"""
+        update_window.destroy()
+        
+        result = messagebox.askyesno(
+            "更新完成",
+            "程式已成功更新！\n\n"
+            "是否立即重新啟動程式以套用更新？\n"
+            "（選擇「否」將在下次啟動時套用）"
+        )
+        
+        if result:
+            import sys
+            import subprocess
+            
+            if getattr(sys, 'frozen', False):
+                # 打包後的環境：啟動新的 exe
+                exe_path = sys.executable
+                subprocess.Popen([exe_path], cwd=os.path.dirname(exe_path))
+            else:
+                # 開發環境：重新執行 Python 腳本
+                python = sys.executable
+                script = os.path.abspath(__file__)
+                subprocess.Popen([python, script])
+            
+            # 關閉當前程式
+            self.quit()
+            sys.exit(0)
+
     def _show_update_result(self, is_newer, current_ver, latest_ver, notes, page_url, asset_url, asset_name):
         """顯示更新檢查結果"""
         if is_newer:
