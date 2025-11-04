@@ -8,29 +8,19 @@
 # 4. 舊版本會自動備份至 backup\版本號\ 資料夾
 #
 # === 版本更新紀錄 ===
-# [2.6.5] - 2025/11/04
-#   - 🚀 重新設計更新系統 (參考 PowerToys)
+# [2.6.4] - 2025/11/04
+#   - 🚀 重新設計更新系統架構
+#   - 新增：用滑鼠左鍵點擊 target_label 時,會自動刷新並以相同視窗名稱重新指定
+#   - 新增：_refresh_target_window() 方法,搜尋並重新指定相同標題的視窗
+#   - 修改：target_label 綁定左鍵刷新、右鍵清除
 #   - 新增：UpdateManager 模組處理版本管理
 #   - 新增：build.py Python 打包腳本 (取代 build.bat)
 #   - 新增：智能差異備份和版本回退功能
+#   - 新增：外部更新器 updater.exe 機制,完全避免 WinError 5 問題
 #   - 改進：更新流程更加穩定和安全
-#   - 修正：版本資訊檔命名為 version{版本號}.txt
-#   - 修正：備份目錄結構為 backup\版本號\
+#   - 修正：版本資訊檔命名為 version{版本號}.txt (例如: version2.6.4.txt)
+#   - 修正：備份目錄結構為 backup\版本號\ (例如: backup\2.6.3\)
 #   - 移除：錯誤的 .exe.old 檔案產生
-# [2.6.4] - 2025/11/03
-#   - 重新設計打包架構，徹底簡化流程
-#   - 修正：版本資訊檔改為 version版本號.txt (例如: version2.6.4.txt)
-#   - 修正：備份資料夾改為 backup\版本號\ (例如: backup\2.6.3\)
-#   - 移除：所有多餘的 .md 說明文件和快速打包腳本
-#   - 改進：使用者資料 (scripts/user_config.json/last_script.txt) 自動保留
-#   - 改進：智能差異備份，僅備份變更的檔案
-#   - 移除：.exe.old 等錯誤產物
-# [2.6.3] - 2025/11/03
-#   - 修復：加強腳本寫入的錯誤處理和重試機制
-#   - 修復：視窗提示大小問題
-#   - 改進：統一檔名為 ChroLens_Mimic
-# [2.6.2] - 2025/11/02
-#   - 基礎版本功能
 #
 # === 未來功能規劃 ===
 # 🎯 高優先級功能 (待開發)
@@ -45,7 +35,7 @@
 #
 #pyinstaller --noconsole --onedir --icon=..\umi_奶茶色.ico --add-data "..\umi_奶茶色.ico;." --add-data "TTF;TTF" --add-data "recorder.py;." --add-data "lang.py;." --add-data "script_io.py;." --add-data "about.py;." --add-data "mini.py;." --add-data "window_selector.py;." --add-data "script_parser.py;." --add-data "config_manager.py;." --add-data "hotkey_manager.py;." --add-data "script_editor_methods.py;." --add-data "script_manager.py;." --add-data "ui_components.py;." --add-data "visual_script_editor.py;." --add-data "update_manager.py;." ChroLens_Mimic.py
 
-VERSION = "2.6.5"
+VERSION = "2.6.4"
 
 import ttkbootstrap as tb
 from ttkbootstrap.constants import *
@@ -611,6 +601,8 @@ class RecorderApp(tb.Window):
             cursor="hand2"  # 滑鼠懸停時顯示手型游標
         )
         self.target_label.pack(side="left", padx=(0, 4))
+        # 綁定左鍵點擊事件來刷新相同視窗
+        self.target_label.bind("<Button-1>", self._refresh_target_window)
         # 綁定右鍵點擊事件來取消視窗選擇
         self.target_label.bind("<Button-3>", self._clear_target_window)
 
@@ -1097,9 +1089,9 @@ class RecorderApp(tb.Window):
             print(f"顯示 about 視窗失敗: {e}")
     
     def check_for_updates(self):
-        """檢查 GitHub 上的新版本 (使用 UpdateManager)"""
+        """檢查 GitHub 上的新版本 (使用簡化的外部更新器策略)"""
         try:
-            from update_manager import UpdateManager
+            from update_manager_v2 import UpdateManager
         except Exception as e:
             messagebox.showerror("錯誤", f"無法載入更新管理器: {e}")
             return
@@ -1256,12 +1248,12 @@ class RecorderApp(tb.Window):
         
         def download_and_update():
             try:
-                from update_manager import format_size
+                from update_manager_v2 import format_size
                 
                 if cancel_flag['cancelled']:
                     return
                 
-                # 1. 下載檔案
+                # 下載檔案
                 self.after(0, lambda: status_label.config(text="正在下載更新檔案..."))
                 self.after(0, lambda: detail_label.config(text=f"來源：{filename}"))
                 
@@ -1269,7 +1261,7 @@ class RecorderApp(tb.Window):
                     if cancel_flag['cancelled']:
                         raise Exception("使用者取消更新")
                     if total > 0:
-                        percent = min(50, int(downloaded * 50 / total))  # 下載佔 50%
+                        percent = int(downloaded * 100 / total)
                         self.after(0, lambda: progress_bar.config(value=percent))
                         self.after(0, lambda: percent_label.config(text=f"{percent}%"))
                         self.after(0, lambda: detail_label.config(
@@ -1282,71 +1274,15 @@ class RecorderApp(tb.Window):
                     update_mgr.cleanup()
                     return
                 
-                # 2. 解壓檔案
-                self.after(0, lambda: status_label.config(text="正在解壓縮檔案..."))
-                self.after(0, lambda: progress_bar.config(value=55))
-                self.after(0, lambda: percent_label.config(text="55%"))
-                self.after(0, lambda: detail_label.config(text="正在解壓縮更新檔案..."))
-                
-                def extract_progress(current, total):
-                    if cancel_flag['cancelled']:
-                        raise Exception("使用者取消更新")
-                    percent = 55 + int(current * 15 / total)  # 解壓縮佔 15% (55-70%)
-                    self.after(0, lambda: progress_bar.config(value=percent))
-                    self.after(0, lambda: percent_label.config(text=f"{percent}%"))
-                
-                update_dir = update_mgr.extract_update(download_path, extract_progress)
-                
-                if cancel_flag['cancelled']:
-                    update_mgr.cleanup()
-                    return
-                
-                # 3. 備份當前版本
-                self.after(0, lambda: status_label.config(text="正在備份當前版本..."))
-                self.after(0, lambda: progress_bar.config(value=75))
-                self.after(0, lambda: percent_label.config(text="75%"))
-                self.after(0, lambda: detail_label.config(text="建立備份..."))
-                
-                backup_path = update_mgr.backup_current_version()
-                self.after(0, lambda: detail_label.config(text=f"備份至: {backup_path.name}"))
-                
-                if cancel_flag['cancelled']:
-                    update_mgr.cleanup()
-                    return
-                
-                # 4. 安裝更新
-                self.after(0, lambda: status_label.config(text="正在安裝新版本..."))
-                self.after(0, lambda: detail_label.config(text="複製更新檔案..."))
-                
-                def install_progress(current, total):
-                    if cancel_flag['cancelled']:
-                        raise Exception("使用者取消更新")
-                    percent = 80 + int(current * 15 / total)  # 安裝佔 15% (80-95%)
-                    self.after(0, lambda: progress_bar.config(value=percent))
-                    self.after(0, lambda: percent_label.config(text=f"{percent}%"))
-                
-                update_mgr.install_update(update_dir, install_progress)
-                
-                # 5. 建立版本檔
-                update_mgr.create_version_file(new_version)
-                
-                # 6. 清理臨時檔案
-                self.after(0, lambda: status_label.config(text="正在清理暫存檔案..."))
-                self.after(0, lambda: progress_bar.config(value=95))
-                self.after(0, lambda: percent_label.config(text="95%"))
-                self.after(0, lambda: detail_label.config(text="清理中..."))
-                
-                update_mgr.cleanup()
-                
-                # 7. 完成
+                # 完成下載
                 self.after(0, lambda: progress_bar.config(value=100))
                 self.after(0, lambda: percent_label.config(text="100%"))
-                self.after(0, lambda: status_label.config(text="更新完成！"))
-                self.after(0, lambda: detail_label.config(text="準備重新啟動..."))
+                self.after(0, lambda: status_label.config(text="下載完成！"))
+                self.after(0, lambda: detail_label.config(text="準備安裝..."))
                 self.after(0, lambda: cancel_btn.config(state='disabled'))
                 
-                # 延遲後詢問是否重啟
-                self.after(1000, lambda: self._ask_restart_v2(update_window))
+                # 延遲後詢問是否重啟並更新
+                self.after(1000, lambda: self._ask_restart_and_update_v3(update_window, update_mgr, download_path, new_version))
                 
             except Exception as e:
                 if not cancel_flag['cancelled']:
@@ -1360,34 +1296,85 @@ class RecorderApp(tb.Window):
         # 在背景執行緒中下載
         threading.Thread(target=download_and_update, daemon=True).start()
     
+    def _ask_restart_and_update_v3(self, update_window, update_mgr, zip_path, new_version):
+        """詢問是否立即安裝更新（使用外部更新器）"""
+        update_window.destroy()
+        
+        result = messagebox.askyesno(
+            "下載完成",
+            f"更新檔案已下載完成！\n\n"
+            f"新版本：v{new_version}\n\n"
+            f"立即安裝並重新啟動程式？\n"
+            f"（選擇「否」將稍後手動安裝）",
+            icon='info'
+        )
+        
+        if result:
+            try:
+                # 啟動外部更新器並關閉當前程式
+                update_mgr.apply_update_with_external_updater(zip_path, new_version)
+                
+                # 關閉程式（更新器會在程式關閉後執行）
+                messagebox.showinfo("準備更新", "即將啟動更新程式並關閉當前程式。\n\n請稍候...")
+                sys.exit(0)
+                
+            except Exception as e:
+                messagebox.showerror("更新失敗", f"啟動更新器失敗：{e}\n\n請嘗試手動更新")
+        else:
+            messagebox.showinfo("提示", "您可以稍後在程式目錄中找到更新檔案")
+    
     def _ask_restart_v2(self, update_window):
         """詢問是否重新啟動程式 (新版本)"""
         update_window.destroy()
         
-        result = messagebox.askyesno(
-            "更新完成",
-            "程式已成功更新！\n\n"
-            "是否立即重新啟動程式以套用更新？\n"
-            "（選擇「否」將在下次啟動時套用）"
-        )
+        # 檢查是否需要使用批次檔更新
+        from update_manager import UpdateManager
+        update_mgr = UpdateManager(VERSION)
         
-        if result:
-            import sys
-            import subprocess
+        if update_mgr.needs_restart():
+            # 需要使用批次檔完成 .exe 更新
+            result = messagebox.askyesno(
+                "更新完成",
+                "程式已成功更新！\n\n"
+                "需要重新啟動程式以完成 .exe 檔案的更新。\n\n"
+                "是否立即重新啟動？"
+            )
             
-            if getattr(sys, 'frozen', False):
-                # 打包後的環境：啟動新的 exe
-                exe_path = sys.executable
-                subprocess.Popen([exe_path], cwd=os.path.dirname(exe_path))
+            if result:
+                # 使用批次檔進行更新並重啟
+                update_mgr.apply_update_and_restart()
+                # 上面的方法會關閉程式，所以下面的程式碼不會執行
             else:
-                # 開發環境：重新執行 Python 腳本
-                python = sys.executable
-                script = os.path.abspath(__file__)
-                subprocess.Popen([python, script])
+                messagebox.showinfo(
+                    "提示",
+                    "更新將在下次重新啟動程式時完成。"
+                )
+        else:
+            # 一般更新（不需要替換 .exe）
+            result = messagebox.askyesno(
+                "更新完成",
+                "程式已成功更新！\n\n"
+                "是否立即重新啟動程式以套用更新？\n"
+                "（選擇「否」將在下次啟動時套用）"
+            )
             
-            # 關閉當前程式
-            self.quit()
-            sys.exit(0)
+            if result:
+                import sys
+                import subprocess
+                
+                if getattr(sys, 'frozen', False):
+                    # 打包後的環境：啟動新的 exe
+                    exe_path = sys.executable
+                    subprocess.Popen([exe_path], cwd=os.path.dirname(exe_path))
+                else:
+                    # 開發環境：重新執行 Python 腳本
+                    python = sys.executable
+                    script = os.path.abspath(__file__)
+                    subprocess.Popen([python, script])
+                
+                # 關閉當前程式
+                self.quit()
+                sys.exit(0)
 
     def _show_update_result(self, is_newer, current_ver, latest_ver, notes, page_url, asset_url, asset_name):
         """顯示更新檢查結果"""
@@ -3563,6 +3550,56 @@ class RecorderApp(tb.Window):
         if hasattr(self.core_recorder, 'set_target_window'):
             self.core_recorder.set_target_window(None)
         self.log("已清除目標視窗設定")
+
+    def _refresh_target_window(self, event=None):
+        """刷新目標視窗（可由左鍵點擊觸發）- 以相同視窗名稱重新指定"""
+        if not self.target_title:
+            self.log("沒有目標視窗可刷新")
+            return
+        
+        original_title = self.target_title
+        self.log(f"正在搜尋視窗：{original_title}")
+        
+        # 搜尋所有可見視窗，找到符合標題的第一個
+        found_hwnd = None
+        
+        def enum_callback(hwnd, _):
+            nonlocal found_hwnd
+            if found_hwnd:
+                return True  # 已經找到，繼續枚舉但不處理
+            
+            try:
+                if not win32gui.IsWindowVisible(hwnd):
+                    return True
+                
+                window_text = win32gui.GetWindowText(hwnd)
+                if window_text and window_text == original_title:
+                    found_hwnd = hwnd
+                    return False  # 找到了，停止枚舉
+            except Exception:
+                pass
+            return True
+        
+        try:
+            win32gui.EnumWindows(enum_callback, None)
+        except Exception as e:
+            self.log(f"枚舉視窗時發生錯誤：{e}")
+        
+        if found_hwnd:
+            # 更新視窗控制碼
+            self.target_hwnd = found_hwnd
+            self.target_title = original_title
+            self.target_label.config(text=f"視窗：{original_title}")
+            
+            # 通知 core_recorder
+            if hasattr(self.core_recorder, 'set_target_window'):
+                self.core_recorder.set_target_window(found_hwnd)
+            
+            # 顯示高亮邊框
+            self.show_window_highlight(found_hwnd)
+            self.log(f"已重新指定視窗：{original_title}")
+        else:
+            self.log(f"找不到名為「{original_title}」的視窗，請檢查視窗是否已關閉或更名")
 
     # 新增：在畫面上以 topmost 無邊框視窗顯示選定視窗的邊框提示
     def show_window_highlight(self, hwnd):

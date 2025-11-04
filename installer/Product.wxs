@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+    
+    <!-- 
+        ChroLens Mimic MSI 安裝程式
+        使用 WiX Toolset 構建
+    -->
+    
+    <!-- 產品定義 -->
+    <Product Id="*" 
+             Name="ChroLens Mimic" 
+             Language="1033" 
+             Version="$(var.Version)" 
+             Manufacturer="Lucien" 
+             UpgradeCode="6F8C9D3E-1B4A-4C2E-9F5D-8A7B3C4D5E6F">
+        
+        <!-- 安裝程式套件資訊 -->
+        <Package InstallerVersion="200" 
+                 Compressed="yes" 
+                 InstallScope="perUser" 
+                 Description="ChroLens Mimic - 自動化滑鼠鍵盤操作工具"
+                 Comments="ChroLens Mimic 安裝程式" />
+        
+        <!-- 升級規則：允許主版本升級，禁止降級 -->
+        <MajorUpgrade 
+            DowngradeErrorMessage="已安裝較新版本的 ChroLens Mimic。"
+            AllowSameVersionUpgrades="yes" 
+            Schedule="afterInstallInitialize" />
+        
+        <!-- 必要的媒體定義 -->
+        <MediaTemplate EmbedCab="yes" />
+        
+        <!-- 功能定義 -->
+        <Feature Id="ProductFeature" 
+                 Title="ChroLens Mimic" 
+                 Level="1"
+                 Description="主程式和必要檔案"
+                 Display="expand"
+                 ConfigurableDirectory="INSTALLFOLDER">
+            
+            <ComponentGroupRef Id="ProductComponents" />
+            <ComponentGroupRef Id="InternalFiles" />
+            <ComponentRef Id="ApplicationShortcut" />
+        </Feature>
+        
+        <!-- UI 定義 -->
+        <UI>
+            <!-- 使用內建的最小 UI -->
+            <UIRef Id="WixUI_InstallDir" />
+            <Publish Dialog="ExitDialog"
+                     Control="Finish" 
+                     Event="DoAction" 
+                     Value="LaunchApplication">
+                WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 and NOT Installed
+            </Publish>
+        </UI>
+        
+        <!-- 安裝完成後啟動程式選項 -->
+        <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" 
+                  Value="啟動 ChroLens Mimic" />
+        <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
+        
+        <!-- 啟動應用程式的自定義動作 -->
+        <Property Id="WixShellExecTarget" Value="[#ChroLens_Mimic.exe]" />
+        <CustomAction Id="LaunchApplication"
+                      BinaryKey="WixCA"
+                      DllEntry="WixShellExec"
+                      Impersonate="yes" />
+    </Product>
+    
+    <!-- 檔案和目錄結構 -->
+    <Fragment>
+        <Directory Id="TARGETDIR" Name="SourceDir">
+            <!-- 本機應用程式資料夾 (Per-User 安裝) -->
+            <Directory Id="LocalAppDataFolder">
+                <Directory Id="INSTALLFOLDER" Name="ChroLens Mimic">
+                    <!-- 主程式目錄 -->
+                </Directory>
+            </Directory>
+            
+            <!-- 開始功能表 -->
+            <Directory Id="ProgramMenuFolder">
+                <Directory Id="ApplicationProgramsFolder" Name="ChroLens Mimic"/>
+            </Directory>
+        </Directory>
+    </Fragment>
+    
+    <!-- 主要元件：可執行檔 -->
+    <Fragment>
+        <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
+            <Component Id="ChroLens_Mimic.exe" Guid="*">
+                <File Id="ChroLens_Mimic.exe" 
+                      Source="$(var.SourceDir)\ChroLens_Mimic.exe" 
+                      KeyPath="yes" />
+            </Component>
+            
+            <!-- 可以在此添加其他根目錄檔案 -->
+        </ComponentGroup>
+    </Fragment>
+    
+    <!-- _internal 目錄的所有檔案 -->
+    <Fragment>
+        <ComponentGroup Id="InternalFiles" Directory="INSTALLFOLDER">
+            <!-- 
+                注意：實際使用時需要用 heat.exe 工具自動生成 _internal 目錄的所有檔案
+                命令：heat dir "dist\ChroLens_Mimic\_internal" 
+                          -cg InternalFiles 
+                          -dr INSTALLFOLDER 
+                          -var var.SourceDir 
+                          -gg -sfrag -srd -out InternalFiles.wxs
+            -->
+            <!-- 這裡僅為示例，實際會由 heat.exe 生成 -->
+        </ComponentGroup>
+    </Fragment>
+    
+    <!-- 開始功能表捷徑 -->
+    <Fragment>
+        <DirectoryRef Id="ApplicationProgramsFolder">
+            <Component Id="ApplicationShortcut" Guid="*">
+                <Shortcut Id="ApplicationStartMenuShortcut"
+                          Name="ChroLens Mimic"
+                          Description="ChroLens Mimic - 自動化操作工具"
+                          Target="[#ChroLens_Mimic.exe]"
+                          WorkingDirectory="INSTALLFOLDER"/>
+                
+                <RemoveFolder Id="CleanUpShortCut" 
+                              Directory="ApplicationProgramsFolder" 
+                              On="uninstall"/>
+                
+                <RegistryValue Root="HKCU" 
+                               Key="Software\Lucien\ChroLens Mimic" 
+                               Name="installed" 
+                               Type="integer" 
+                               Value="1" 
+                               KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+    </Fragment>
+    
+</Wix>
