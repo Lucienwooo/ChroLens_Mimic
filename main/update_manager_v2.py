@@ -47,17 +47,31 @@ class UpdateManager:
             
             latest_version = data.get('tag_name', '').lstrip('v')
             
-            # 找 ZIP 下載連結
+            # 優先尋找安裝器 (類似 ExplorerPatcher)
             download_url = None
             asset_name = None
             file_size = 0
+            use_installer = False
             
             for asset in data.get('assets', []):
-                if asset.get('name', '').endswith('.zip'):
+                name = asset.get('name', '')
+                # 優先使用安裝器
+                if 'Setup' in name and name.endswith('.exe'):
                     download_url = asset.get('browser_download_url')
-                    asset_name = asset.get('name')
+                    asset_name = name
                     file_size = asset.get('size', 0)
+                    use_installer = True
                     break
+            
+            # 如果沒有安裝器，回退到 ZIP
+            if not download_url:
+                for asset in data.get('assets', []):
+                    if asset.get('name', '').endswith('.zip'):
+                        download_url = asset.get('browser_download_url')
+                        asset_name = asset.get('name')
+                        file_size = asset.get('size', 0)
+                        use_installer = False
+                        break
             
             if not download_url:
                 return {"has_update": False, "error": "找不到更新檔案"}
@@ -72,7 +86,8 @@ class UpdateManager:
                 "release_notes": data.get('body', ''),
                 "download_url": download_url,
                 "asset_name": asset_name,
-                "size": file_size
+                "size": file_size,
+                "use_installer": use_installer
             }
         except Exception as e:
             return {"has_update": False, "error": str(e)}
@@ -109,37 +124,56 @@ class UpdateManager:
         
         return download_path
     
-    def apply_update_with_external_updater(self, zip_path: Path, new_version: str):
+    def apply_update(self, file_path: Path, use_installer: bool = False):
         """
-        使用外部更新器應用更新
-        這會啟動外部更新器程式，然後關閉當前程式
+        應用更新
+        如果是安裝器：直接執行安裝器（類似 ExplorerPatcher）
+        如果是 ZIP：使用 updater.bat
         """
-        # 使用 .bat 更新器（更簡單可靠）
-        updater_bat = self.install_dir / "updater.bat"
-        
-        if not updater_bat.exists():
-            raise Exception(f"找不到更新器: {updater_bat}")
-        
-        # 準備參數
-        zip_path_str = str(zip_path.absolute())
-        install_dir_str = str(self.install_dir.absolute())
-        exe_name = self.exe_path.name
-        
-        # 啟動 .bat 更新器
-        cmd = [str(updater_bat), zip_path_str, install_dir_str, exe_name]
-        
-        # 使用 CREATE_NEW_CONSOLE 讓更新器在新視窗執行
-        startupinfo = subprocess.STARTUPINFO()
-        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-        
-        subprocess.Popen(
-            cmd,
-            cwd=str(self.temp_dir),
-            creationflags=subprocess.CREATE_NEW_CONSOLE,
-            shell=True  # .bat 需要 shell=True
-        )
-        
-        # 當前程式會被主視窗關閉（透過 sys.exit）
+        if use_installer:
+            # 使用安裝器模式（推薦）
+            print(f"使用安裝器模式更新: {file_path}")
+            
+            # 傳遞安裝目錄參數
+            install_dir_str = str(self.install_dir.absolute())
+            
+            # 直接執行安裝器
+            subprocess.Popen(
+                [str(file_path), install_dir_str],
+                creationflags=subprocess.CREATE_NEW_CONSOLE
+            )
+            
+            # 主程式關閉，讓安裝器接手
+            print("安裝器已啟動，主程式即將關閉...")
+            
+        else:
+            # 使用 ZIP + updater.bat 模式（備用）
+            print(f"使用 ZIP 模式更新: {file_path}")
+            
+            updater_bat = self.install_dir / "updater.bat"
+            
+            if not updater_bat.exists():
+                raise Exception(f"找不到更新器: {updater_bat}")
+            
+            # 準備參數
+            zip_path_str = str(file_path.absolute())
+            install_dir_str = str(self.install_dir.absolute())
+            exe_name = self.exe_path.name
+            
+            # 啟動 .bat 更新器
+            cmd = [str(updater_bat), zip_path_str, install_dir_str, exe_name]
+            
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            
+            subprocess.Popen(
+                cmd,
+                cwd=str(self.temp_dir),
+                creationflags=subprocess.CREATE_NEW_CONSOLE,
+                shell=True
+            )
+            
+            print("更新器已啟動，主程式即將關閉...")
     
     def cleanup(self):
         """清理臨時檔案"""

@@ -35,7 +35,7 @@
 #
 #pyinstaller --noconsole --onedir --icon=..\umi_奶茶色.ico --add-data "..\umi_奶茶色.ico;." --add-data "TTF;TTF" --add-data "recorder.py;." --add-data "lang.py;." --add-data "script_io.py;." --add-data "about.py;." --add-data "mini.py;." --add-data "window_selector.py;." --add-data "script_parser.py;." --add-data "config_manager.py;." --add-data "hotkey_manager.py;." --add-data "script_editor_methods.py;." --add-data "script_manager.py;." --add-data "ui_components.py;." --add-data "visual_script_editor.py;." --add-data "update_manager.py;." ChroLens_Mimic.py
 
-VERSION = "2.6.4"
+VERSION = "2.6.3"
 
 import ttkbootstrap as tb
 from ttkbootstrap.constants import *
@@ -1089,11 +1089,11 @@ class RecorderApp(tb.Window):
             print(f"顯示 about 視窗失敗: {e}")
     
     def check_for_updates(self):
-        """檢查 GitHub 上的新版本 (使用簡化的外部更新器策略)"""
+        """檢查 GitHub 上的新版本 (使用完整更新系統)"""
         try:
-            from update_manager_v2 import UpdateManager
+            from update_system import UpdateSystem
         except Exception as e:
-            messagebox.showerror("錯誤", f"無法載入更新管理器: {e}")
+            messagebox.showerror("錯誤", f"無法載入更新系統: {e}")
             return
         
         # 創建進度視窗
@@ -1130,17 +1130,17 @@ class RecorderApp(tb.Window):
         
         def check_update_thread():
             try:
-                # 建立更新管理器
+                # 建立更新系統
                 self.after(0, lambda: progress_bar.configure(value=10))
-                self.after(0, lambda: detail_label.config(text="初始化更新管理器..."))
+                self.after(0, lambda: detail_label.config(text="初始化更新系統..."))
                 
-                update_mgr = UpdateManager(VERSION)
+                update_sys = UpdateSystem(VERSION)
                 
                 # 檢查更新
                 self.after(0, lambda: progress_bar.configure(value=30))
                 self.after(0, lambda: detail_label.config(text="正在連線到伺服器..."))
                 
-                update_info = update_mgr.check_for_updates()
+                update_info = update_sys.check_for_updates()
                 
                 # 更新進度
                 self.after(0, lambda: progress_bar.configure(value=90))
@@ -1150,28 +1150,55 @@ class RecorderApp(tb.Window):
                 self.after(0, lambda: progress_bar.configure(value=100))
                 self.after(0, lambda: detail_label.config(text="檢查完成！"))
                 
-                # 延遲後顯示結果
-                self.after(500, lambda: progress_window.destroy())
-                self.after(600, lambda: self._show_update_result_v2(update_info, update_mgr))
+                # 延遲後關閉進度視窗並顯示結果
+                time.sleep(0.5)
+                
+                def show_result():
+                    try:
+                        progress_window.destroy()
+                        time.sleep(0.1)
+                        self._show_update_result(update_info, update_sys)
+                    except Exception as inner_e:
+                        print(f"顯示結果時發生錯誤：{inner_e}")
+                        import traceback
+                        traceback.print_exc()
+                        messagebox.showerror("錯誤", f"顯示更新結果時發生錯誤：{str(inner_e)}")
+                
+                self.after(0, show_result)
                     
             except Exception as e:
-                self.after(0, lambda: progress_window.destroy())
-                self.after(50, lambda: messagebox.showerror("錯誤", f"檢查更新失敗：{str(e)}\n\n請確認網路連線正常"))
+                import traceback
+                error_msg = f"檢查更新失敗：{str(e)}\n\n{traceback.format_exc()}"
+                print(error_msg)  # 輸出到控制台以便除錯
+                
+                def show_error():
+                    try:
+                        progress_window.destroy()
+                    except:
+                        pass
+                    messagebox.showerror("錯誤", f"檢查更新失敗：{str(e)}\n\n請確認網路連線正常")
+                
+                self.after(0, show_error)
         
         # 在背景執行緒中檢查
         threading.Thread(target=check_update_thread, daemon=True).start()
     
-    def _show_update_result_v2(self, update_info: dict, update_mgr):
-        """顯示更新檢查結果 (新版本)"""
-        if update_info["has_update"]:
-            from update_manager import format_size
+    def _show_update_result(self, update_info: dict, update_sys):
+        """顯示更新檢查結果"""
+        # 檢查是否有錯誤
+        if "error" in update_info:
+            messagebox.showerror("檢查更新失敗", f"無法檢查更新：\n{update_info['error']}\n\n請確認網路連線正常")
+            return
+        
+        if update_info.get("has_update", False):
+            from update_system import format_size
             
-            current_ver = update_info["current_version"]
-            latest_ver = update_info["latest_version"]
-            notes = update_info["release_notes"]
-            download_url = update_info["download_url"]
-            asset_name = update_info["asset_name"]
-            file_size = update_info["size"]
+            current_ver = update_info.get("current_version", VERSION)
+            latest_ver = update_info.get("latest_version", "未知")
+            notes = update_info.get("release_notes", "")
+            download_url = update_info.get("download_url", "")
+            asset_name = update_info.get("asset_name", "")
+            file_size = update_info.get("size", 0)
             
             message = f"發現新版本！\n\n"
             message += f"目前版本：{current_ver}\n"
@@ -1188,10 +1215,12 @@ class RecorderApp(tb.Window):
             
             result = messagebox.askyesno("發現新版本", message)
             if result and download_url:
-                # 使用新的更新管理器
-                self._start_auto_update_v2(update_mgr, download_url, asset_name, latest_ver)
+                # 開始自動更新
+                self._start_auto_update(update_sys, download_url, asset_name, latest_ver)
         else:
-            messagebox.showinfo("已是最新版本", f"您使用的是最新版本 {update_info['current_version']}")
+            # 沒有更新時顯示目前版本
+            current_ver = update_info.get("current_version", VERSION)
+            messagebox.showinfo("已是最新版本", f"您使用的是最新版本 {current_ver}")
     
     def _start_auto_update_v2(self, update_mgr, download_url, filename, new_version):
         """開始自動更新流程 (使用 UpdateManager)"""
@@ -1311,11 +1340,15 @@ class RecorderApp(tb.Window):
         
         if result:
             try:
-                # 啟動外部更新器並關閉當前程式
-                update_mgr.apply_update_with_external_updater(zip_path, new_version)
+                # 判斷是安裝器還是 ZIP
+                use_installer = str(zip_path).endswith('.exe')
+                
+                # 啟動更新器並關閉當前程式
+                update_mgr.apply_update(zip_path, use_installer=use_installer)
                 
                 # 關閉程式（更新器會在程式關閉後執行）
-                messagebox.showinfo("準備更新", "即將啟動更新程式並關閉當前程式。\n\n請稍候...")
+                mode_text = "安裝器" if use_installer else "更新程式"
+                messagebox.showinfo("準備更新", f"即將啟動{mode_text}並關閉當前程式。\n\n請稍候...")
                 sys.exit(0)
                 
             except Exception as e:
@@ -1324,90 +1357,40 @@ class RecorderApp(tb.Window):
             messagebox.showinfo("提示", "您可以稍後在程式目錄中找到更新檔案")
     
     def _ask_restart_v2(self, update_window):
-        """詢問是否重新啟動程式 (新版本)"""
+        """詢問是否重新啟動程式 (新版本) - 已廢棄，保留兼容性"""
         update_window.destroy()
         
-        # 檢查是否需要使用批次檔更新
-        from update_manager import UpdateManager
-        update_mgr = UpdateManager(VERSION)
+        # 簡單重啟邏輯
+        result = messagebox.askyesno(
+            "更新完成",
+            "程式已成功更新！\n\n"
+            "是否立即重新啟動程式以套用更新？"
+        )
         
-        if update_mgr.needs_restart():
-            # 需要使用批次檔完成 .exe 更新
-            result = messagebox.askyesno(
-                "更新完成",
-                "程式已成功更新！\n\n"
-                "需要重新啟動程式以完成 .exe 檔案的更新。\n\n"
-                "是否立即重新啟動？"
-            )
+        if result:
+            import sys
+            import subprocess
             
-            if result:
-                # 使用批次檔進行更新並重啟
-                update_mgr.apply_update_and_restart()
-                # 上面的方法會關閉程式，所以下面的程式碼不會執行
+            if getattr(sys, 'frozen', False):
+                # 打包後的環境：啟動新的 exe
+                exe_path = sys.executable
+                subprocess.Popen([exe_path], creationflags=subprocess.CREATE_NEW_CONSOLE)
             else:
-                messagebox.showinfo(
-                    "提示",
-                    "更新將在下次重新啟動程式時完成。"
-                )
-        else:
-            # 一般更新（不需要替換 .exe）
-            result = messagebox.askyesno(
-                "更新完成",
-                "程式已成功更新！\n\n"
-                "是否立即重新啟動程式以套用更新？\n"
-                "（選擇「否」將在下次啟動時套用）"
-            )
+                # 開發環境：重新執行腳本
+                python_exe = sys.executable
+                script_path = os.path.abspath(__file__)
+                subprocess.Popen([python_exe, script_path])
             
-            if result:
-                import sys
-                import subprocess
-                
-                if getattr(sys, 'frozen', False):
-                    # 打包後的環境：啟動新的 exe
-                    exe_path = sys.executable
-                    subprocess.Popen([exe_path], cwd=os.path.dirname(exe_path))
-                else:
-                    # 開發環境：重新執行 Python 腳本
-                    python = sys.executable
-                    script = os.path.abspath(__file__)
-                    subprocess.Popen([python, script])
-                
-                # 關閉當前程式
-                self.quit()
-                sys.exit(0)
+            # 關閉當前程式
+            self.root.destroy()
+            sys.exit(0)
 
-    def _show_update_result(self, is_newer, current_ver, latest_ver, notes, page_url, asset_url, asset_name):
-        """顯示更新檢查結果"""
-        if is_newer:
-            message = f"發現新版本！\n\n"
-            message += f"目前版本：{current_ver}\n"
-            message += f"最新版本：{latest_ver}\n\n"
-            message += f"更新內容：\n{notes[:200]}{'...' if len(notes) > 200 else ''}\n\n"
-            
-            if asset_url:
-                message += f"是否立即下載並安裝更新？\n"
-                message += f"檔案：{asset_name}"
-            else:
-                message += f"是否前往下載頁面手動更新？"
-            
-            result = messagebox.askyesno("發現新版本", message)
-            if result:
-                if asset_url:
-                    # 自動更新
-                    self._start_auto_update(asset_url, asset_name, latest_ver)
-                else:
-                    # 手動更新（開啟網頁）
-                    import webbrowser
-                    webbrowser.open(page_url)
-        else:
-            messagebox.showinfo("已是最新版本", f"您使用的是最新版本 {current_ver}")
-    
-    def _start_auto_update(self, download_url, filename, new_version):
-        """開始自動更新流程（高級版本）"""
+    def _start_auto_update(self, update_sys, download_url, filename, new_version):
+        """開始自動更新流程（完整版本）"""
         # 創建更新進度視窗
         update_window = tk.Toplevel(self)
         update_window.title("自動更新")
-        update_window.geometry("500x300")
+        update_window.geometry("500x350")
         update_window.resizable(False, False)
         update_window.transient(self)
         update_window.grab_set()
@@ -1428,9 +1411,160 @@ class RecorderApp(tb.Window):
                               font=("Microsoft JhengHei", 12, "bold"))
         title_label.pack(pady=(0, 20))
         
+        # 階段標籤
+        stage_label = tb.Label(main_frame, text="[1/2] 下載更新", 
+                              font=("Microsoft JhengHei", 10))
+        stage_label.pack(pady=(0, 5))
+        
         # 進度標籤
         status_label = tb.Label(main_frame, text="準備下載更新...", font=("Microsoft JhengHei", 11))
         status_label.pack(pady=(0, 10))
+        
+        # 進度條
+        progress_bar = tb.Progressbar(main_frame, length=450, mode='determinate')
+        progress_bar.pack(pady=10)
+        
+        # 詳細資訊
+        detail_label = tb.Label(main_frame, text="", font=("Microsoft JhengHei", 9), foreground="#888")
+        detail_label.pack(pady=5)
+        
+        # 百分比顯示
+        percent_label = tb.Label(main_frame, text="0%", font=("Consolas", 14, "bold"), foreground="#00A0E9")
+        percent_label.pack(pady=5)
+        
+        # 取消按鈕
+        cancel_flag = {'cancelled': False}
+        
+        def cancel_update():
+            cancel_flag['cancelled'] = True
+            update_window.destroy()
+            messagebox.showinfo("已取消", "更新已取消")
+        
+        cancel_btn = tb.Button(main_frame, text="取消", command=cancel_update, bootstyle="danger")
+        cancel_btn.pack(pady=10)
+        
+        def download_and_update():
+            try:
+                from update_system import format_size
+                
+                if cancel_flag['cancelled']:
+                    return
+                
+                # 階段1: 下載檔案
+                self.after(0, lambda: stage_label.config(text="[1/2] 下載更新"))
+                self.after(0, lambda: status_label.config(text="正在下載更新檔案..."))
+                self.after(0, lambda: detail_label.config(text=f"來源：{filename}"))
+                
+                def download_progress(downloaded, total):
+                    if cancel_flag['cancelled']:
+                        raise Exception("使用者取消更新")
+                    if total > 0:
+                        percent = int(downloaded * 50 / total)  # 下載佔 50%
+                        self.after(0, lambda: progress_bar.config(value=percent))
+                        self.after(0, lambda: percent_label.config(text=f"{percent}%"))
+                        self.after(0, lambda: detail_label.config(
+                            text=f"已下載：{format_size(downloaded)} / {format_size(total)}"
+                        ))
+                
+                download_path = update_sys.download_update(download_url, filename, download_progress)
+                
+                if cancel_flag['cancelled']:
+                    update_sys.cleanup()
+                    return
+                
+                # 階段2: 安裝更新
+                self.after(0, lambda: stage_label.config(text="[2/2] 準備更新"))
+                self.after(0, lambda: status_label.config(text="正在準備更新..."))
+                self.after(0, lambda: cancel_btn.config(state='disabled'))
+                
+                def install_progress(message, percent):
+                    self.after(0, lambda: status_label.config(text=message))
+                    self.after(0, lambda: progress_bar.config(value=50 + int(percent / 2)))  # 安裝佔 50%
+                    self.after(0, lambda: percent_label.config(text=f"{50 + int(percent / 2)}%"))
+                
+                # 準備外部更新器
+                self.after(0, lambda: status_label.config(text="準備更新批次檔..."))
+                self.after(0, lambda: progress_bar.config(value=70))
+                self.after(0, lambda: percent_label.config(text="70%"))
+                
+                bat_path = update_sys.prepare_external_update(download_path, new_version)
+                
+                # 完成準備
+                self.after(0, lambda: progress_bar.config(value=100))
+                self.after(0, lambda: percent_label.config(text="100%"))
+                self.after(0, lambda: status_label.config(text="準備完成！"))
+                self.after(0, lambda: detail_label.config(text="即將啟動更新程式..."))
+                
+                # 延遲後啟動外部更新器
+                self.after(1000, lambda: self._launch_external_updater(update_window, bat_path))
+                
+            except Exception as e:
+                if not cancel_flag['cancelled']:
+                    self.after(0, lambda: update_window.destroy())
+                    self.after(0, lambda: messagebox.showerror("更新失敗", f"自動更新失敗：{str(e)}\n\n請嘗試手動更新"))
+                try:
+                    update_sys.cleanup()
+                except:
+                    pass
+        
+        # 在背景執行緒中執行更新
+        threading.Thread(target=download_and_update, daemon=True).start()
+    
+    def _launch_external_updater(self, update_window, bat_path):
+        """啟動外部更新器並關閉程式"""
+        update_window.destroy()
+        
+        result = messagebox.askyesno(
+            "準備更新",
+            f"更新檔案已準備完成！\n\n"
+            f"點擊「是」將會：\n"
+            f"  1. 關閉此程式\n"
+            f"  2. 啟動更新程式\n"
+            f"  3. 自動安裝新版本\n"
+            f"  4. 完成後自動啟動\n\n"
+            f"所有用戶數據將被保留。\n\n"
+            f"是否立即執行更新？",
+            icon='info'
+        )
+        
+        if result:
+            # 啟動外部更新器
+            subprocess.Popen([str(bat_path)], creationflags=subprocess.CREATE_NEW_CONSOLE)
+            
+            # 關閉程式
+            self.root.destroy()
+            sys.exit(0)
+    
+    def _ask_restart_application(self, update_window, update_sys):
+        """詢問是否重啟應用程式"""
+        update_window.destroy()
+        
+        result = messagebox.askyesno(
+            "更新完成",
+            f"ChroLens_Mimic 已成功更新！\n\n"
+            f"所有用戶數據已保留：\n"
+            f"  ✓ 腳本文件\n"
+            f"  ✓ 使用者設定\n"
+            f"  ✓ 快捷鍵設定\n\n"
+            f"是否立即重新啟動程式？",
+            icon='info'
+        )
+        
+        if result:
+            try:
+                # 清理臨時文件
+                update_sys.cleanup()
+                
+                # 重啟應用程式
+                update_sys.restart_application()
+                
+                # 延遲後關閉當前程式
+                self.after(500, lambda: sys.exit(0))
+                
+            except Exception as e:
+                messagebox.showerror("重啟失敗", f"無法自動重啟程式：{e}\n\n請手動重新開啟程式")
+        else:
+            messagebox.showinfo("提示", "更新已完成，請手動重新啟動程式以使用新版本")
         
         # 進度條
         progress_bar = tb.Progressbar(main_frame, length=450, mode='determinate')
