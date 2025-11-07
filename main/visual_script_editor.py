@@ -1533,19 +1533,24 @@ class VisualScriptEditor(tk.Toplevel):
                 print(traceback.format_exc())
     
     def _events_to_actions(self, events):
-        """將錄製的事件轉換為動作列表（簡化版）"""
-        actions = []
-        last_time = events[0].get('time', 0) if events else 0
-        last_pos = None
+        """將錄製的事件轉換為動作列表（修復版 - 解決載入0動作問題）"""
+        if not events:
+            return []
         
+        actions = []
+        last_time = events[0].get('time', 0)
+        last_mouse_pos = None
         i = 0
+        
+        print(f"[DEBUG] 開始轉換 {len(events)} 個事件...")
+        
         while i < len(events):
             event = events[i]
             event_type = event.get('type', '')
             current_time = event.get('time', 0)
             
-            # 計算延遲
-            delay = int((current_time - last_time) * 1000) if current_time > last_time else 0
+            # 計算延遲（毫秒）
+            delay = max(0, int((current_time - last_time) * 1000))
             
             if event_type == 'mouse':
                 mouse_event = event.get('event', '')
@@ -1553,26 +1558,38 @@ class VisualScriptEditor(tk.Toplevel):
                 y = event.get('y', 0)
                 button = event.get('button', 'left')
                 
-                # 滑鼠移動
+                # 滑鼠移動 - 降低門檻，第一個移動也要記錄
                 if mouse_event == 'move':
-                    # 只記錄顯著移動
-                    if last_pos is None or (abs(x - last_pos[0]) > 10 or abs(y - last_pos[1]) > 10):
+                    # 第一個移動或距離超過門檻就記錄
+                    if last_mouse_pos is None:
+                        # 第一個移動事件，一定要記錄
                         actions.append({
                             "command": "move_to",
                             "params": f"{x}, {y}",
                             "delay": str(delay)
                         })
-                        last_pos = (x, y)
+                        last_mouse_pos = (x, y)
+                        last_time = current_time
+                    elif abs(x - last_mouse_pos[0]) > 30 or abs(y - last_mouse_pos[1]) > 30:
+                        # 後續移動超過30像素才記錄
+                        actions.append({
+                            "command": "move_to",
+                            "params": f"{x}, {y}",
+                            "delay": str(delay)
+                        })
+                        last_mouse_pos = (x, y)
                         last_time = current_time
                 
-                # 滑鼠點擊
+                # 滑鼠點擊（down + up 配對）
                 elif mouse_event == 'down':
-                    # 檢查是否為雙擊
+                    # 檢查是否為雙擊（連續兩組 down/up，間隔 < 500ms）
                     is_double = False
                     if i + 3 < len(events):
-                        if (events[i+2].get('event') == 'down' and 
-                            events[i+3].get('event') == 'up' and
-                            events[i+3].get('time', 0) - current_time < 0.5):
+                        next_down = events[i+2] if i+2 < len(events) else None
+                        if (next_down and 
+                            next_down.get('type') == 'mouse' and
+                            next_down.get('event') == 'down' and
+                            next_down.get('time', 0) - current_time < 0.5):
                             is_double = True
                     
                     if is_double:
@@ -1581,47 +1598,52 @@ class VisualScriptEditor(tk.Toplevel):
                             "params": "",
                             "delay": str(delay)
                         })
-                        i += 3  # 跳過雙擊的其他事件
+                        print(f"[DEBUG] 新增雙擊動作 (delay={delay}ms)")
+                        i += 3  # 跳過雙擊的 down/up/down/up
+                        if i < len(events):
+                            last_time = events[i].get('time', current_time)
                     else:
-                        if button == 'right':
-                            actions.append({
-                                "command": "right_click",
-                                "params": "",
-                                "delay": str(delay)
-                            })
-                        else:
-                            actions.append({
-                                "command": "click",
-                                "params": "",
-                                "delay": str(delay)
-                            })
-                        i += 1  # 跳過 up 事件
-                    
-                    last_time = current_time
+                        # 單擊
+                        cmd = "right_click" if button == 'right' else "click"
+                        actions.append({
+                            "command": cmd,
+                            "params": "",
+                            "delay": str(delay)
+                        })
+                        print(f"[DEBUG] 新增{cmd}動作 (delay={delay}ms)")
+                        last_time = current_time
+                        # 跳過配對的 up 事件
+                        if i + 1 < len(events) and events[i+1].get('event') == 'up':
+                            i += 1
             
             elif event_type == 'keyboard':
                 keyboard_event = event.get('event', '')
                 
                 if keyboard_event == 'type':
                     text = event.get('text', '')
-                    actions.append({
-                        "command": "type_text",
-                        "params": text,
-                        "delay": str(delay)
-                    })
+                    if text:  # 只有非空文字才新增
+                        actions.append({
+                            "command": "type_text",
+                            "params": text,
+                            "delay": str(delay)
+                        })
+                        print(f"[DEBUG] 新增輸入文字動作: {text} (delay={delay}ms)")
+                        last_time = current_time
                 
                 elif keyboard_event == 'press':
                     key = event.get('key', '')
-                    actions.append({
-                        "command": "press_key",
-                        "params": key,
-                        "delay": str(delay)
-                    })
-                
-                last_time = current_time
+                    if key:  # 只有非空按鍵才新增
+                        actions.append({
+                            "command": "press_key",
+                            "params": key,
+                            "delay": str(delay)
+                        })
+                        print(f"[DEBUG] 新增按鍵動作: {key} (delay={delay}ms)")
+                        last_time = current_time
             
             i += 1
         
+        print(f"[DEBUG] 轉換完成，共 {len(actions)} 個動作")
         return actions
     
     def clear_actions(self):

@@ -22,16 +22,6 @@
 #   - 修正：備份目錄結構為 backup\版本號\ (例如: backup\2.6.3\)
 #   - 移除：錯誤的 .exe.old 檔案產生
 #
-# === 未來功能規劃 ===
-# 🎯 高優先級功能 (待開發)
-#   ✅ OCR 識別      - 讓腳本會讀字 (pytesseract/easyocr)
-#   ✅ 圖像識別      - 讓腳本會看圖 (opencv-python)
-#   ✅ 變數系統      - 讓腳本有記憶 (SET/GET 變數操作)
-#   ✅ 條件分支      - 讓腳本會判斷 (IF/ELSE/ELIF 結構)
-#   ✅ 執行排程      - 定時自動執行 (schedule/APScheduler)
-#   ✅ 迴圈增強      - 更靈活的重複 (WHILE/FOR/BREAK/CONTINUE)
-#   ✅ 效能優化      - 更快更穩 (記憶體管理/多執行緒)
-#   ⚠️ 多螢幕支援   - 解析度/DPI縮放適配待加強
 #
 #pyinstaller --noconsole --onedir --icon=..\umi_奶茶色.ico --add-data "..\umi_奶茶色.ico;." --add-data "TTF;TTF" --add-data "recorder.py;." --add-data "lang.py;." --add-data "script_io.py;." --add-data "about.py;." --add-data "mini.py;." --add-data "window_selector.py;." --add-data "script_parser.py;." --add-data "config_manager.py;." --add-data "hotkey_manager.py;." --add-data "script_editor_methods.py;." --add-data "script_manager.py;." --add-data "ui_components.py;." --add-data "visual_script_editor.py;." --add-data "update_manager.py;." ChroLens_Mimic.py
 
@@ -379,8 +369,7 @@ class RecorderApp(tb.Window):
             # 顯示警告但仍繼續執行
             print("⚠️ 警告：程式未以管理員身份執行，錄製功能可能無法正常工作！")
         
-        # 先初始化 core_recorder，確保它能正確記錄事件
-        self.core_recorder = CoreRecorder(logger=self.log)
+        # 初始化基本變數
         self.recording = False
         self.playing = False
         self.paused = False
@@ -404,6 +393,13 @@ class RecorderApp(tb.Window):
         self.mini_window = None
         self.target_hwnd = None
         self.target_title = None
+        
+        # 首次運行標誌（用於控制是否顯示快捷鍵提示）
+        self._is_first_run = self.user_config.get("first_run", True)
+        if self._is_first_run:
+            # 標記為已運行過
+            self.user_config["first_run"] = False
+            save_user_config(self.user_config)
 
         # 讀取 hotkey_map，若無則用預設
         self.hotkey_map = self.user_config.get("hotkey_map", {
@@ -449,6 +445,14 @@ class RecorderApp(tb.Window):
         self.script_dir = self.user_config.get("script_dir", SCRIPTS_DIR)
         if not os.path.exists(self.script_dir):
             os.makedirs(self.script_dir)
+        
+        # ====== 新增管理器 ======
+        # 多螢幕管理器
+        self.multi_monitor = None
+        # 排程管理器
+        self.schedule_manager = None
+        # 效能優化器
+        self.performance_optimizer = None
 
         # ====== 上方操作區 ======
         frm_top = tb.Frame(self, padding=(8, 10, 8, 5))
@@ -665,18 +669,20 @@ class RecorderApp(tb.Window):
         list_frame.grid_rowconfigure(0, weight=1)
         list_frame.grid_columnconfigure(0, weight=1)
         
-        # 使用 Treeview 來顯示兩欄（腳本名稱 | 快捷鍵）
+        # 使用 Treeview 來顯示三欄（腳本名稱 | 快捷鍵 | 定時）
         from tkinter import ttk
         self.script_treeview = ttk.Treeview(
             list_frame,
-            columns=("name", "hotkey"),
+            columns=("name", "hotkey", "schedule"),
             show="headings",
             height=15
         )
         self.script_treeview.heading("name", text="腳本名稱")
         self.script_treeview.heading("hotkey", text="快捷鍵")
-        self.script_treeview.column("name", width=300, anchor="w")
-        self.script_treeview.column("hotkey", width=100, anchor="center")
+        self.script_treeview.heading("schedule", text="定時")
+        self.script_treeview.column("name", width=250, anchor="w")
+        self.script_treeview.column("hotkey", width=80, anchor="center")
+        self.script_treeview.column("schedule", width=120, anchor="center")
         self.script_treeview.grid(row=0, column=0, sticky="nsew")
         
         # 加入捲軸
@@ -720,6 +726,10 @@ class RecorderApp(tb.Window):
         # d) 視覺化編輯器按鈕：開啟拖放式編輯器（主要編輯器）
         self.visual_editor_btn = tb.Button(self.script_right_frame, text="腳本編輯器", width=16, bootstyle=SUCCESS, command=self.open_visual_editor)
         self.visual_editor_btn.pack(anchor="w", pady=4)
+        
+        # e) 排程按鈕：設定腳本定時執行
+        self.schedule_btn = tb.Button(self.script_right_frame, text="排程", width=16, bootstyle=INFO, command=self.open_schedule_settings)
+        self.schedule_btn.pack(anchor="w", pady=4)
 
         # 初始化清單
         self.refresh_script_listbox()
@@ -811,6 +821,9 @@ class RecorderApp(tb.Window):
             self.log(f"重新啟動為管理員時發生錯誤: {e}")
 
     def _delayed_init(self):
+        # 初始化 core_recorder（需要在 self.log 可用之後）
+        self.core_recorder = CoreRecorder(logger=self.log)
+        
         self.after(1600, self._register_hotkeys)
         self.after(1650, self._register_script_hotkeys)
         self.after(1700, self.refresh_script_list)
@@ -1089,800 +1102,73 @@ class RecorderApp(tb.Window):
             print(f"顯示 about 視窗失敗: {e}")
     
     def check_for_updates(self):
-        """檢查 GitHub 上的新版本 (使用完整更新系統)"""
-        try:
-            from update_system import UpdateSystem
-        except Exception as e:
-            messagebox.showerror("錯誤", f"無法載入更新系統: {e}")
-            return
+        """檢查 GitHub 上的新版本（僅顯示版本資訊，不提供自動下載）"""
+        import urllib.request
+        import json
         
-        # 創建進度視窗
-        progress_window = tk.Toplevel(self)
-        progress_window.title("檢查更新")
-        progress_window.geometry("400x150")
-        progress_window.resizable(False, False)
-        progress_window.transient(self)
-        progress_window.grab_set()
-        set_window_icon(progress_window)
-        
-        # 居中顯示
-        progress_window.update_idletasks()
-        x = (progress_window.winfo_screenwidth() // 2) - (progress_window.winfo_width() // 2)
-        y = (progress_window.winfo_screenheight() // 2) - (progress_window.winfo_height() // 2)
-        progress_window.geometry(f"+{x}+{y}")
-        
-        # 主框架
-        main_frame = tb.Frame(progress_window, padding=20)
-        main_frame.pack(fill="both", expand=True)
-        
-        # 狀態標籤
-        status_label = tb.Label(main_frame, text="正在連線到 GitHub...", font=("Microsoft JhengHei", 11))
-        status_label.pack(pady=(0, 15))
-        
-        # 進度條
-        progress_bar = tb.Progressbar(main_frame, length=350, mode='determinate')
-        progress_bar.pack(pady=10)
-        progress_bar['value'] = 0
-        
-        # 詳細資訊標籤
-        detail_label = tb.Label(main_frame, text="初始化...", font=("Microsoft JhengHei", 9), foreground="#888")
-        detail_label.pack(pady=(5, 0))
-        
-        def check_update_thread():
+        def check_in_thread():
             try:
-                # 建立更新系統
-                self.after(0, lambda: progress_bar.configure(value=10))
-                self.after(0, lambda: detail_label.config(text="初始化更新系統..."))
+                # GitHub API URL
+                api_url = 'https://api.github.com/repos/Lucienwooo/ChroLens_Mimic/releases/latest'
                 
-                update_sys = UpdateSystem(VERSION)
+                # 發送請求
+                req = urllib.request.Request(api_url)
+                req.add_header('User-Agent', 'ChroLens_Mimic')
                 
-                # 檢查更新
-                self.after(0, lambda: progress_bar.configure(value=30))
-                self.after(0, lambda: detail_label.config(text="正在連線到伺服器..."))
+                with urllib.request.urlopen(req, timeout=10) as response:
+                    data = json.loads(response.read().decode('utf-8'))
                 
-                update_info = update_sys.check_for_updates()
-                
-                # 更新進度
-                self.after(0, lambda: progress_bar.configure(value=90))
-                self.after(0, lambda: detail_label.config(text="正在比較版本..."))
-                
-                # 完成
-                self.after(0, lambda: progress_bar.configure(value=100))
-                self.after(0, lambda: detail_label.config(text="檢查完成！"))
-                
-                # 延遲後關閉進度視窗並顯示結果
-                time.sleep(0.5)
+                latest_version = data.get('tag_name', '').lstrip('v')
+                release_notes = data.get('body', '無更新說明')
+                release_url = data.get('html_url', '')
                 
                 def show_result():
-                    try:
-                        progress_window.destroy()
-                        time.sleep(0.1)
-                        self._show_update_result(update_info, update_sys)
-                    except Exception as inner_e:
-                        print(f"顯示結果時發生錯誤：{inner_e}")
-                        import traceback
-                        traceback.print_exc()
-                        messagebox.showerror("錯誤", f"顯示更新結果時發生錯誤：{str(inner_e)}")
-                
-                self.after(0, show_result)
+                    if not latest_version:
+                        messagebox.showerror("錯誤", "無法獲取版本資訊")
+                        return
                     
-            except Exception as e:
-                import traceback
-                error_msg = f"檢查更新失敗：{str(e)}\n\n{traceback.format_exc()}"
-                print(error_msg)  # 輸出到控制台以便除錯
-                
-                def show_error():
+                    # 比較版本
+                    current_parts = VERSION.split('.')
+                    latest_parts = latest_version.split('.')
+                    
+                    has_update = False
                     try:
-                        progress_window.destroy()
+                        for i in range(max(len(current_parts), len(latest_parts))):
+                            c = int(current_parts[i]) if i < len(current_parts) else 0
+                            l = int(latest_parts[i]) if i < len(latest_parts) else 0
+                            if l > c:
+                                has_update = True
+                                break
+                            elif l < c:
+                                break
                     except:
                         pass
-                    messagebox.showerror("錯誤", f"檢查更新失敗：{str(e)}\n\n請確認網路連線正常")
+                    
+                    if has_update:
+                        ellipsis = '...' if len(release_notes) > 300 else ''
+                        message = f"發現新版本！\n\n"
+                        message += f"目前版本：{VERSION}\n"
+                        message += f"最新版本：{latest_version}\n\n"
+                        message += f"更新內容：\n{release_notes[:300]}{ellipsis}\n\n"
+                        message += f"請前往 GitHub 下載新版本"
+                        
+                        result = messagebox.askyesno("發現新版本", message)
+                        if result:
+                            import webbrowser
+                            webbrowser.open(release_url)
+                    else:
+                        messagebox.showinfo("已是最新版本", f"您使用的是最新版本 {VERSION}")
                 
-                self.after(0, show_error)
-        
-        # 在背景執行緒中檢查
-        threading.Thread(target=check_update_thread, daemon=True).start()
-    
-    def _show_update_result(self, update_info: dict, update_sys):
-        """顯示更新檢查結果"""
-        # 檢查是否有錯誤
-        if "error" in update_info:
-            messagebox.showerror("檢查更新失敗", f"無法檢查更新：\n{update_info['error']}\n\n請確認網路連線正常")
-            return
-        
-        if update_info.get("has_update", False):
-            from update_system import format_size
-            
-            current_ver = update_info.get("current_version", VERSION)
-            latest_ver = update_info.get("latest_version", "未知")
-            notes = update_info.get("release_notes", "")
-            download_url = update_info.get("download_url", "")
-            asset_name = update_info.get("asset_name", "")
-            file_size = update_info.get("size", 0)
-            
-            message = f"發現新版本！\n\n"
-            message += f"目前版本：{current_ver}\n"
-            message += f"最新版本：{latest_ver}\n\n"
-            message += f"更新內容：\n{notes[:200]}{'...' if len(notes) > 200 else ''}\n\n"
-            
-            if download_url and asset_name:
-                message += f"檔案：{asset_name}\n"
-                if file_size > 0:
-                    message += f"大小：{format_size(file_size)}\n\n"
-                message += f"是否立即下載並安裝更新？"
-            else:
-                message += f"未找到下載連結，請前往 GitHub 手動下載"
-            
-            result = messagebox.askyesno("發現新版本", message)
-            if result and download_url:
-                # 開始自動更新
-                self._start_auto_update(update_sys, download_url, asset_name, latest_ver)
-        else:
-            # 沒有更新時顯示目前版本
-            current_ver = update_info.get("current_version", VERSION)
-            messagebox.showinfo("已是最新版本", f"您使用的是最新版本 {current_ver}")
-    
-    def _start_auto_update_v2(self, update_mgr, download_url, filename, new_version):
-        """開始自動更新流程 (使用 UpdateManager)"""
-        # 創建更新進度視窗
-        update_window = tk.Toplevel(self)
-        update_window.title("自動更新")
-        update_window.geometry("500x300")
-        update_window.resizable(False, False)
-        update_window.transient(self)
-        update_window.grab_set()
-        set_window_icon(update_window)
-        
-        # 居中顯示
-        update_window.update_idletasks()
-        x = (update_window.winfo_screenwidth() // 2) - (update_window.winfo_width() // 2)
-        y = (update_window.winfo_screenheight() // 2) - (update_window.winfo_height() // 2)
-        update_window.geometry(f"+{x}+{y}")
-        
-        # 主框架
-        main_frame = tb.Frame(update_window, padding=20)
-        main_frame.pack(fill="both", expand=True)
-        
-        # 標題
-        title_label = tb.Label(main_frame, text=f"正在更新到版本 {new_version}", 
-                              font=("Microsoft JhengHei", 12, "bold"))
-        title_label.pack(pady=(0, 20))
-        
-        # 進度標籤
-        status_label = tb.Label(main_frame, text="準備下載更新...", font=("Microsoft JhengHei", 11))
-        status_label.pack(pady=(0, 10))
-        
-        # 進度條
-        progress_bar = tb.Progressbar(main_frame, length=450, mode='determinate')
-        progress_bar.pack(pady=10)
-        
-        # 詳細資訊
-        detail_label = tb.Label(main_frame, text="", font=("Microsoft JhengHei", 9), foreground="#888")
-        detail_label.pack(pady=5)
-        
-        # 百分比顯示
-        percent_label = tb.Label(main_frame, text="0%", font=("Consolas", 14, "bold"), foreground="#00A0E9")
-        percent_label.pack(pady=5)
-        
-        # 取消按鈕
-        cancel_flag = {'cancelled': False}
-        
-        def cancel_update():
-            cancel_flag['cancelled'] = True
-            update_window.destroy()
-            messagebox.showinfo("已取消", "更新已取消")
-        
-        cancel_btn = tb.Button(main_frame, text="取消", command=cancel_update, bootstyle="danger")
-        cancel_btn.pack(pady=10)
-        
-        def download_and_update():
-            try:
-                from update_manager_v2 import format_size
+                self.after(0, show_result)
                 
-                if cancel_flag['cancelled']:
-                    return
-                
-                # 下載檔案
-                self.after(0, lambda: status_label.config(text="正在下載更新檔案..."))
-                self.after(0, lambda: detail_label.config(text=f"來源：{filename}"))
-                
-                def download_progress(downloaded, total):
-                    if cancel_flag['cancelled']:
-                        raise Exception("使用者取消更新")
-                    if total > 0:
-                        percent = int(downloaded * 100 / total)
-                        self.after(0, lambda: progress_bar.config(value=percent))
-                        self.after(0, lambda: percent_label.config(text=f"{percent}%"))
-                        self.after(0, lambda: detail_label.config(
-                            text=f"已下載：{format_size(downloaded)} / {format_size(total)}"
-                        ))
-                
-                download_path = update_mgr.download_update(download_url, filename, download_progress)
-                
-                if cancel_flag['cancelled']:
-                    update_mgr.cleanup()
-                    return
-                
-                # 完成下載
-                self.after(0, lambda: progress_bar.config(value=100))
-                self.after(0, lambda: percent_label.config(text="100%"))
-                self.after(0, lambda: status_label.config(text="下載完成！"))
-                self.after(0, lambda: detail_label.config(text="準備安裝..."))
-                self.after(0, lambda: cancel_btn.config(state='disabled'))
-                
-                # 延遲後詢問是否重啟並更新
-                self.after(1000, lambda: self._ask_restart_and_update_v3(update_window, update_mgr, download_path, new_version))
-                
+            except urllib.error.URLError as e:
+                self.after(0, lambda: messagebox.showerror("網路錯誤", f"無法連線到 GitHub：\n{str(e)}\n\n請檢查網路連線"))
             except Exception as e:
-                if not cancel_flag['cancelled']:
-                    self.after(0, lambda: update_window.destroy())
-                    self.after(0, lambda: messagebox.showerror("更新失敗", f"自動更新失敗：{str(e)}\n\n請嘗試手動更新"))
-                try:
-                    update_mgr.cleanup()
-                except:
-                    pass
+                self.after(0, lambda: messagebox.showerror("錯誤", f"檢查更新失敗：\n{str(e)}"))
         
-        # 在背景執行緒中下載
-        threading.Thread(target=download_and_update, daemon=True).start()
-    
-    def _ask_restart_and_update_v3(self, update_window, update_mgr, zip_path, new_version):
-        """詢問是否立即安裝更新（使用外部更新器）"""
-        update_window.destroy()
-        
-        result = messagebox.askyesno(
-            "下載完成",
-            f"更新檔案已下載完成！\n\n"
-            f"新版本：v{new_version}\n\n"
-            f"立即安裝並重新啟動程式？\n"
-            f"（選擇「否」將稍後手動安裝）",
-            icon='info'
-        )
-        
-        if result:
-            try:
-                # 判斷是安裝器還是 ZIP
-                use_installer = str(zip_path).endswith('.exe')
-                
-                # 啟動更新器並關閉當前程式
-                update_mgr.apply_update(zip_path, use_installer=use_installer)
-                
-                # 關閉程式（更新器會在程式關閉後執行）
-                mode_text = "安裝器" if use_installer else "更新程式"
-                messagebox.showinfo("準備更新", f"即將啟動{mode_text}並關閉當前程式。\n\n請稍候...")
-                sys.exit(0)
-                
-            except Exception as e:
-                messagebox.showerror("更新失敗", f"啟動更新器失敗：{e}\n\n請嘗試手動更新")
-        else:
-            messagebox.showinfo("提示", "您可以稍後在程式目錄中找到更新檔案")
-    
-    def _ask_restart_v2(self, update_window):
-        """詢問是否重新啟動程式 (新版本) - 已廢棄，保留兼容性"""
-        update_window.destroy()
-        
-        # 簡單重啟邏輯
-        result = messagebox.askyesno(
-            "更新完成",
-            "程式已成功更新！\n\n"
-            "是否立即重新啟動程式以套用更新？"
-        )
-        
-        if result:
-            import sys
-            import subprocess
-            
-            if getattr(sys, 'frozen', False):
-                # 打包後的環境：啟動新的 exe
-                exe_path = sys.executable
-                subprocess.Popen([exe_path], creationflags=subprocess.CREATE_NEW_CONSOLE)
-            else:
-                # 開發環境：重新執行腳本
-                python_exe = sys.executable
-                script_path = os.path.abspath(__file__)
-                subprocess.Popen([python_exe, script_path])
-            
-            # 關閉當前程式
-            self.root.destroy()
-            sys.exit(0)
+        # 在背景執行緒中執行
+        threading.Thread(target=check_in_thread, daemon=True).start()
 
-    def _start_auto_update(self, update_sys, download_url, filename, new_version):
-        """開始自動更新流程（完整版本）"""
-        # 創建更新進度視窗
-        update_window = tk.Toplevel(self)
-        update_window.title("自動更新")
-        update_window.geometry("500x350")
-        update_window.resizable(False, False)
-        update_window.transient(self)
-        update_window.grab_set()
-        set_window_icon(update_window)
-        
-        # 居中顯示
-        update_window.update_idletasks()
-        x = (update_window.winfo_screenwidth() // 2) - (update_window.winfo_width() // 2)
-        y = (update_window.winfo_screenheight() // 2) - (update_window.winfo_height() // 2)
-        update_window.geometry(f"+{x}+{y}")
-        
-        # 主框架
-        main_frame = tb.Frame(update_window, padding=20)
-        main_frame.pack(fill="both", expand=True)
-        
-        # 標題
-        title_label = tb.Label(main_frame, text=f"正在更新到版本 {new_version}", 
-                              font=("Microsoft JhengHei", 12, "bold"))
-        title_label.pack(pady=(0, 20))
-        
-        # 階段標籤
-        stage_label = tb.Label(main_frame, text="[1/2] 下載更新", 
-                              font=("Microsoft JhengHei", 10))
-        stage_label.pack(pady=(0, 5))
-        
-        # 進度標籤
-        status_label = tb.Label(main_frame, text="準備下載更新...", font=("Microsoft JhengHei", 11))
-        status_label.pack(pady=(0, 10))
-        
-        # 進度條
-        progress_bar = tb.Progressbar(main_frame, length=450, mode='determinate')
-        progress_bar.pack(pady=10)
-        
-        # 詳細資訊
-        detail_label = tb.Label(main_frame, text="", font=("Microsoft JhengHei", 9), foreground="#888")
-        detail_label.pack(pady=5)
-        
-        # 百分比顯示
-        percent_label = tb.Label(main_frame, text="0%", font=("Consolas", 14, "bold"), foreground="#00A0E9")
-        percent_label.pack(pady=5)
-        
-        # 取消按鈕
-        cancel_flag = {'cancelled': False}
-        
-        def cancel_update():
-            cancel_flag['cancelled'] = True
-            update_window.destroy()
-            messagebox.showinfo("已取消", "更新已取消")
-        
-        cancel_btn = tb.Button(main_frame, text="取消", command=cancel_update, bootstyle="danger")
-        cancel_btn.pack(pady=10)
-        
-        def download_and_update():
-            try:
-                from update_system import format_size
-                
-                if cancel_flag['cancelled']:
-                    return
-                
-                # 階段1: 下載檔案
-                self.after(0, lambda: stage_label.config(text="[1/2] 下載更新"))
-                self.after(0, lambda: status_label.config(text="正在下載更新檔案..."))
-                self.after(0, lambda: detail_label.config(text=f"來源：{filename}"))
-                
-                def download_progress(downloaded, total):
-                    if cancel_flag['cancelled']:
-                        raise Exception("使用者取消更新")
-                    if total > 0:
-                        percent = int(downloaded * 50 / total)  # 下載佔 50%
-                        self.after(0, lambda: progress_bar.config(value=percent))
-                        self.after(0, lambda: percent_label.config(text=f"{percent}%"))
-                        self.after(0, lambda: detail_label.config(
-                            text=f"已下載：{format_size(downloaded)} / {format_size(total)}"
-                        ))
-                
-                download_path = update_sys.download_update(download_url, filename, download_progress)
-                
-                if cancel_flag['cancelled']:
-                    update_sys.cleanup()
-                    return
-                
-                # 階段2: 安裝更新
-                self.after(0, lambda: stage_label.config(text="[2/2] 準備更新"))
-                self.after(0, lambda: status_label.config(text="正在準備更新..."))
-                self.after(0, lambda: cancel_btn.config(state='disabled'))
-                
-                def install_progress(message, percent):
-                    self.after(0, lambda: status_label.config(text=message))
-                    self.after(0, lambda: progress_bar.config(value=50 + int(percent / 2)))  # 安裝佔 50%
-                    self.after(0, lambda: percent_label.config(text=f"{50 + int(percent / 2)}%"))
-                
-                # 準備外部更新器
-                self.after(0, lambda: status_label.config(text="準備更新批次檔..."))
-                self.after(0, lambda: progress_bar.config(value=70))
-                self.after(0, lambda: percent_label.config(text="70%"))
-                
-                bat_path = update_sys.prepare_external_update(download_path, new_version)
-                
-                # 完成準備
-                self.after(0, lambda: progress_bar.config(value=100))
-                self.after(0, lambda: percent_label.config(text="100%"))
-                self.after(0, lambda: status_label.config(text="準備完成！"))
-                self.after(0, lambda: detail_label.config(text="即將啟動更新程式..."))
-                
-                # 延遲後啟動外部更新器
-                self.after(1000, lambda: self._launch_external_updater(update_window, bat_path))
-                
-            except Exception as e:
-                if not cancel_flag['cancelled']:
-                    self.after(0, lambda: update_window.destroy())
-                    self.after(0, lambda: messagebox.showerror("更新失敗", f"自動更新失敗：{str(e)}\n\n請嘗試手動更新"))
-                try:
-                    update_sys.cleanup()
-                except:
-                    pass
-        
-        # 在背景執行緒中執行更新
-        threading.Thread(target=download_and_update, daemon=True).start()
-    
-    def _launch_external_updater(self, update_window, bat_path):
-        """啟動外部更新器並關閉程式"""
-        update_window.destroy()
-        
-        result = messagebox.askyesno(
-            "準備更新",
-            f"更新檔案已準備完成！\n\n"
-            f"點擊「是」將會：\n"
-            f"  1. 關閉此程式\n"
-            f"  2. 啟動更新程式\n"
-            f"  3. 自動安裝新版本\n"
-            f"  4. 完成後自動啟動\n\n"
-            f"所有用戶數據將被保留。\n\n"
-            f"是否立即執行更新？",
-            icon='info'
-        )
-        
-        if result:
-            # 啟動外部更新器
-            subprocess.Popen([str(bat_path)], creationflags=subprocess.CREATE_NEW_CONSOLE)
-            
-            # 關閉程式
-            self.root.destroy()
-            sys.exit(0)
-    
-    def _ask_restart_application(self, update_window, update_sys):
-        """詢問是否重啟應用程式"""
-        update_window.destroy()
-        
-        result = messagebox.askyesno(
-            "更新完成",
-            f"ChroLens_Mimic 已成功更新！\n\n"
-            f"所有用戶數據已保留：\n"
-            f"  ✓ 腳本文件\n"
-            f"  ✓ 使用者設定\n"
-            f"  ✓ 快捷鍵設定\n\n"
-            f"是否立即重新啟動程式？",
-            icon='info'
-        )
-        
-        if result:
-            try:
-                # 清理臨時文件
-                update_sys.cleanup()
-                
-                # 重啟應用程式
-                update_sys.restart_application()
-                
-                # 延遲後關閉當前程式
-                self.after(500, lambda: sys.exit(0))
-                
-            except Exception as e:
-                messagebox.showerror("重啟失敗", f"無法自動重啟程式：{e}\n\n請手動重新開啟程式")
-        else:
-            messagebox.showinfo("提示", "更新已完成，請手動重新啟動程式以使用新版本")
-        
-        # 進度條
-        progress_bar = tb.Progressbar(main_frame, length=450, mode='determinate')
-        progress_bar.pack(pady=10)
-        
-        # 詳細資訊
-        detail_label = tb.Label(main_frame, text="", font=("Microsoft JhengHei", 9), foreground="#888")
-        detail_label.pack(pady=5)
-        
-        # 百分比顯示
-        percent_label = tb.Label(main_frame, text="0%", font=("Consolas", 14, "bold"), foreground="#00A0E9")
-        percent_label.pack(pady=5)
-        
-        # 取消按鈕
-        cancel_flag = {'cancelled': False}
-        
-        def cancel_update():
-            cancel_flag['cancelled'] = True
-            update_window.destroy()
-            messagebox.showinfo("已取消", "更新已取消")
-        
-        cancel_btn = tb.Button(main_frame, text="取消", command=cancel_update, bootstyle="danger")
-        cancel_btn.pack(pady=10)
-        
-        def download_and_update():
-            try:
-                import urllib.request
-                import os
-                import tempfile
-                import shutil
-                import zipfile
-                import sys
-                
-                if cancel_flag['cancelled']:
-                    return
-                
-                # 1. 下載檔案
-                self.after(0, lambda: status_label.config(text="正在下載更新檔案..."))
-                self.after(0, lambda: detail_label.config(text=f"來源：{filename}"))
-                
-                # 建立臨時目錄
-                temp_dir = tempfile.mkdtemp(prefix="ChroLens_Update_")
-                download_path = os.path.join(temp_dir, filename)
-                
-                def download_progress(block_num, block_size, total_size):
-                    if cancel_flag['cancelled']:
-                        raise Exception("使用者取消更新")
-                    downloaded = block_num * block_size
-                    if total_size > 0:
-                        percent = min(100, int(downloaded * 50 / total_size))  # 下載佔 50%
-                        self.after(0, lambda: progress_bar.config(value=percent))
-                        self.after(0, lambda: percent_label.config(text=f"{percent}%"))
-                        size_mb = downloaded / (1024 * 1024)
-                        total_mb = total_size / (1024 * 1024)
-                        self.after(0, lambda: detail_label.config(
-                            text=f"已下載：{size_mb:.1f} MB / {total_mb:.1f} MB"
-                        ))
-                
-                urllib.request.urlretrieve(download_url, download_path, download_progress)
-                
-                if cancel_flag['cancelled']:
-                    shutil.rmtree(temp_dir, ignore_errors=True)
-                    return
-                
-                # 2. 解壓檔案
-                if filename.endswith('.zip'):
-                    self.after(0, lambda: status_label.config(text="正在解壓縮檔案..."))
-                    self.after(0, lambda: progress_bar.config(value=55))
-                    self.after(0, lambda: percent_label.config(text="55%"))
-                    self.after(0, lambda: detail_label.config(text="正在解壓縮更新檔案..."))
-                    
-                    extract_dir = os.path.join(temp_dir, "extracted")
-                    os.makedirs(extract_dir, exist_ok=True)
-                    
-                    with zipfile.ZipFile(download_path, 'r') as zip_ref:
-                        members = zip_ref.namelist()
-                        total_files = len(members)
-                        for idx, member in enumerate(members):
-                            if cancel_flag['cancelled']:
-                                shutil.rmtree(temp_dir, ignore_errors=True)
-                                return
-                            zip_ref.extract(member, extract_dir)
-                            percent = 55 + int(idx * 15 / total_files)  # 解壓縮佔 15% (55-70%)
-                            self.after(0, lambda p=percent: progress_bar.config(value=p))
-                            self.after(0, lambda p=percent: percent_label.config(text=f"{p}%"))
-                    
-                    self.after(0, lambda: progress_bar.config(value=70))
-                    self.after(0, lambda: percent_label.config(text="70%"))
-                    
-                    # 尋找更新檔案（ChroLens_Mimic 資料夾）
-                    update_source_dir = None
-                    for root, dirs, files in os.walk(extract_dir):
-                        if 'ChroLens_Mimic' in dirs:
-                            update_source_dir = os.path.join(root, 'ChroLens_Mimic')
-                            break
-                        # 如果直接就是 ChroLens_Mimic 內容
-                        if any(f.endswith('.exe') and 'ChroLens' in f for f in files):
-                            update_source_dir = root
-                            break
-                    
-                    if not update_source_dir:
-                        raise Exception("無法在壓縮檔中找到更新檔案")
-                else:
-                    update_source_dir = os.path.dirname(download_path)
-                
-                if cancel_flag['cancelled']:
-                    shutil.rmtree(temp_dir, ignore_errors=True)
-                    return
-                
-                # 3. 備份當前程式
-                self.after(0, lambda: status_label.config(text="正在備份當前版本..."))
-                self.after(0, lambda: progress_bar.config(value=75))
-                self.after(0, lambda: percent_label.config(text="75%"))
-                self.after(0, lambda: detail_label.config(text="建立備份..."))
-                
-                if getattr(sys, 'frozen', False):
-                    # 打包後的執行檔
-                    current_exe_dir = os.path.dirname(sys.executable)
-                    backup_dir = os.path.join(current_exe_dir, f"backup_{VERSION}")
-                    
-                    if os.path.exists(backup_dir):
-                        shutil.rmtree(backup_dir, ignore_errors=True)
-                    
-                    # 備份整個目錄（除了 scripts 等使用者資料）
-                    os.makedirs(backup_dir, exist_ok=True)
-                    for item in os.listdir(current_exe_dir):
-                        if item not in ['scripts', 'backup_', 'user_config.json', 'last_script.txt']:
-                            src = os.path.join(current_exe_dir, item)
-                            dst = os.path.join(backup_dir, item)
-                            try:
-                                if os.path.isdir(src):
-                                    shutil.copytree(src, dst, ignore_dangling_symlinks=True)
-                                else:
-                                    shutil.copy2(src, dst)
-                            except Exception as e:
-                                print(f"備份 {item} 時發生錯誤: {e}")
-                
-                self.after(0, lambda: progress_bar.config(value=85))
-                self.after(0, lambda: percent_label.config(text="85%"))
-                
-                # 4. 複製新版本檔案
-                self.after(0, lambda: status_label.config(text="正在安裝新版本..."))
-                self.after(0, lambda: detail_label.config(text="複製更新檔案..."))
-                
-                if getattr(sys, 'frozen', False):
-                    # 複製所有檔案到當前目錄
-                    files_to_copy = [f for f in os.listdir(update_source_dir)]
-                    total_copy = len(files_to_copy)
-                    
-                    for idx, item in enumerate(files_to_copy):
-                        if cancel_flag['cancelled']:
-                            # 如果取消，還原備份
-                            self.after(0, lambda: status_label.config(text="正在還原備份..."))
-                            if os.path.exists(backup_dir):
-                                for backup_item in os.listdir(backup_dir):
-                                    src = os.path.join(backup_dir, backup_item)
-                                    dst = os.path.join(current_exe_dir, backup_item)
-                                    if os.path.isdir(src):
-                                        if os.path.exists(dst):
-                                            shutil.rmtree(dst, ignore_errors=True)
-                                        shutil.copytree(src, dst)
-                                    else:
-                                        shutil.copy2(src, dst)
-                            shutil.rmtree(temp_dir, ignore_errors=True)
-                            return
-                        
-                        src = os.path.join(update_source_dir, item)
-                        dst = os.path.join(current_exe_dir, item)
-                        
-                        # 跳過使用者資料
-                        if item in ['scripts', 'user_config.json', 'last_script.txt']:
-                            continue
-                        
-                        try:
-                            if os.path.isdir(src):
-                                if os.path.exists(dst):
-                                    shutil.rmtree(dst, ignore_errors=True)
-                                shutil.copytree(src, dst)
-                            else:
-                                # 特殊處理：如果是 exe 檔案，重新命名當前檔案
-                                if item.endswith('.exe'):
-                                    if os.path.exists(dst):
-                                        os.rename(dst, dst + '.old')
-                                shutil.copy2(src, dst)
-                        except Exception as e:
-                            print(f"複製 {item} 時發生錯誤: {e}")
-                        
-                        percent = 85 + int(idx * 10 / total_copy)  # 複製佔 10% (85-95%)
-                        self.after(0, lambda p=percent: progress_bar.config(value=p))
-                        self.after(0, lambda p=percent: percent_label.config(text=f"{p}%"))
-                
-                # 5. 清理臨時檔案
-                self.after(0, lambda: status_label.config(text="正在清理暫存檔案..."))
-                self.after(0, lambda: progress_bar.config(value=95))
-                self.after(0, lambda: percent_label.config(text="95%"))
-                self.after(0, lambda: detail_label.config(text="清理中..."))
-                
-                shutil.rmtree(temp_dir, ignore_errors=True)
-                
-                # 6. 完成
-                self.after(0, lambda: progress_bar.config(value=100))
-                self.after(0, lambda: percent_label.config(text="100%"))
-                self.after(0, lambda: status_label.config(text="更新完成！"))
-                self.after(0, lambda: detail_label.config(text="準備重新啟動..."))
-                self.after(0, lambda: cancel_btn.config(state='disabled'))
-                
-                # 延遲後詢問是否重啟
-                self.after(1000, lambda: self._ask_restart(update_window, current_exe_dir if getattr(sys, 'frozen', False) else None))
-                
-            except Exception as e:
-                if not cancel_flag['cancelled']:
-                    self.after(0, lambda: update_window.destroy())
-                    self.after(0, lambda: messagebox.showerror("更新失敗", f"自動更新失敗：{str(e)}\n\n請嘗試手動更新"))
-                # 清理臨時檔案
-                try:
-                    if 'temp_dir' in locals():
-                        shutil.rmtree(temp_dir, ignore_errors=True)
-                except:
-                    pass
-        
-        # 在背景執行緒中下載
-        threading.Thread(target=download_and_update, daemon=True).start()
-    
-    def _ask_restart(self, update_window, exe_dir):
-        """詢問是否重新啟動程式"""
-        update_window.destroy()
-        
-        result = messagebox.askyesno(
-            "更新完成",
-            "程式已成功更新！\n\n"
-            "是否立即重新啟動程式以套用更新？\n"
-            "（選擇「否」將在下次啟動時套用）"
-        )
-        
-        if result:
-            import sys
-            import subprocess
-            
-            if getattr(sys, 'frozen', False) and exe_dir:
-                # 打包後的環境：啟動新的 exe
-                exe_path = os.path.join(exe_dir, 'ChroLens_Mimic.exe')
-                if os.path.exists(exe_path):
-                    subprocess.Popen([exe_path], cwd=exe_dir)
-                else:
-                    messagebox.showerror("錯誤", "找不到更新後的執行檔")
-                    return
-            else:
-                # 開發環境：重新執行 Python 腳本
-                python = sys.executable
-                script = os.path.abspath(__file__)
-                subprocess.Popen([python, script])
-            
-            # 關閉當前程式
-            self.quit()
-            sys.exit(0)
-
-    def _init_language(self, lang):
-        # 初始化 UI 語言
-        lang_map = LANG_MAP.get(lang, LANG_MAP["繁體中文"])
-        self.btn_start.config(text=lang_map["開始錄製"] + f" ({self.hotkey_map['start']})")
-        self.btn_pause.config(text=lang_map["暫停/繼續"] + f" ({self.hotkey_map['pause']})")
-        self.btn_stop.config(text=lang_map["停止"] + f" ({self.hotkey_map['stop']})")
-        self.btn_play.config(text=lang_map["回放"] + f" ({self.hotkey_map['play']})")
-        self.mini_mode_btn.config(text=lang_map["MiniMode"])
-        self.about_btn.config(text=lang_map["關於"])
-        self.lbl_speed.config(text=lang_map["回放速度:"])
-        self.btn_hotkey.config(text=lang_map["快捷鍵"])
-        self.total_time_label_prefix.config(text=lang_map["總運作"])
-        self.countdown_label_prefix.config(text=lang_map["單次"])
-        self.time_label_prefix.config(text=lang_map["錄製"])
-        self.repeat_label.config(text=lang_map["重複次數:"])
-        self.repeat_time_label.config(text=lang_map["重複時間"])
-        self.repeat_interval_label.config(text=lang_map["重複間隔"])
-        self.script_menu_label.config(text=lang_map["Script:"])
-        self.save_script_btn_text.set(lang_map["儲存"])
-        # 腳本管理按鈕
-        if hasattr(self, 'rename_btn'):
-            self.rename_btn.config(text=lang_map["重新命名"])
-        if hasattr(self, 'select_target_btn'):
-            self.select_target_btn.config(text=lang_map["選擇視窗"])
-        if hasattr(self, 'mouse_mode_check'):
-            self.mouse_mode_check.config(text=lang_map["滑鼠模式"])
-        if hasattr(self, 'hotkey_capture_label'):
-            self.hotkey_capture_label.config(text=lang_map["捕捉快捷鍵："])
-        if hasattr(self, 'set_hotkey_btn'):
-            self.set_hotkey_btn.config(text=lang_map["設定快捷鍵"])
-        if hasattr(self, 'open_dir_btn'):
-            self.open_dir_btn.config(text=lang_map["開啟資料夾"])
-        if hasattr(self, 'del_script_btn'):
-            self.del_script_btn.config(text=lang_map["刪除腳本"])
-        if hasattr(self, 'edit_script_btn'):
-            self.edit_script_btn.config(text=lang_map["腳本編輯器"])
-        # Treeview 標題
-        if hasattr(self, 'script_treeview'):
-            self.script_treeview.heading("name", text=lang_map["腳本名稱"])
-            self.script_treeview.heading("hotkey", text=lang_map["快捷鍵"])
-        # 勾選框
-        if hasattr(self, 'random_interval_check'):
-            self.random_interval_check.config(text=lang_map["隨機"])
-        if hasattr(self, 'main_auto_mini_check'):
-            self.main_auto_mini_check.config(text=lang_map["自動切換"])
-            # 更新 tooltip
-            if hasattr(self, 'main_auto_mini_check'):
-                # 移除舊的 tooltip 並建立新的
-                try:
-                    Tooltip(self.main_auto_mini_check, lang_map["勾選時，程式錄製/回放將自動轉換"])
-                except:
-                    pass
-            self.random_interval_check.config(text=lang_map["隨機"])
-        
-        # 更新左側選單
-        if hasattr(self, 'page_menu'):
-            self.page_menu.delete(0, tk.END)
-            self.page_menu.insert(0, lang_map["1.日誌顯示"])
-            self.page_menu.insert(1, lang_map["2.腳本設定"])
-            self.page_menu.insert(2, lang_map["3.整體設定"])
-        
-        self.update_idletasks()
 
     def change_language(self, event=None):
         lang = self.language_display_var.get()
@@ -1934,6 +1220,7 @@ class RecorderApp(tb.Window):
         if hasattr(self, 'script_treeview'):
             self.script_treeview.heading("name", text=lang_map["腳本名稱"])
             self.script_treeview.heading("hotkey", text=lang_map["快捷鍵"])
+            self.script_treeview.heading("schedule", text=lang_map.get("定時", "定時"))
         # 勾選框
         if hasattr(self, 'random_interval_check'):
             self.random_interval_check.config(text=lang_map["隨機"])
@@ -2553,6 +1840,17 @@ class RecorderApp(tb.Window):
         self.update_total_time_label(0)
         self._update_play_time()
         self._update_record_time()
+        
+        # 修復快捷鍵問題：停止後重新註冊快捷鍵（增加延遲確保清理完成）
+        self.after(1000, self._reregister_hotkeys)  # 從 500ms 增加到 1000ms
+    
+    def _reregister_hotkeys(self):
+        """重新註冊快捷鍵（修復快捷鍵失效問題）"""
+        try:
+            self._register_hotkeys()
+            # 不再顯示重新註冊訊息
+        except Exception as e:
+            self.log(f"重新註冊快捷鍵失敗: {e}")
     
     def _release_all_modifiers(self):
         """釋放所有修飾鍵以防止卡住"""
@@ -3080,27 +2378,48 @@ class RecorderApp(tb.Window):
                 pass  # 忽略移除錯誤
         self._hotkey_handlers.clear()
         
+        # 清除所有 keyboard 模組的 hotkey（徹底清理）
+        try:
+            keyboard.unhook_all_hotkeys()
+        except:
+            pass
+        
         # 重新註冊快捷鍵
         for key, hotkey in self.hotkey_map.items():
+            if not hotkey:  # 跳過空的快捷鍵
+                continue
             try:
-                # 對於 stop 使用 suppress=True 確保能攔截
-                use_suppress = (key == "stop")
+                # 定義回調函數（修復 lambda 閉包問題）
+                def make_callback(action_key):
+                    """創建回調函數，避免 lambda 閉包問題"""
+                    if action_key == "start":
+                        return lambda: self.start_record()
+                    elif action_key == "pause":
+                        return lambda: self.toggle_pause()
+                    elif action_key == "stop":
+                        return lambda: self.stop_all()
+                    elif action_key == "play":
+                        return lambda: self.play_record()
+                    elif action_key == "mini":
+                        return lambda: self.toggle_mini_mode()
+                    else:
+                        return lambda: None
+                
+                callback = make_callback(key)
+                
+                # 使用 trigger_on_release=False 確保立即響應
                 handler = keyboard.add_hotkey(
                     hotkey,
-                    getattr(self, {
-                        "start": "start_record",
-                        "pause": "toggle_pause",
-                        "stop": "stop_all",
-                        "play": "play_record",
-                        "mini": "toggle_mini_mode"
-                    }[key]),
-                    suppress=use_suppress,  # stop 使用 suppress=True
-                    trigger_on_release=False
+                    callback,
+                    suppress=False,  # 不抑制按鍵
+                    trigger_on_release=False  # 按下時立即觸發
                 )
                 self._hotkey_handlers[key] = handler
-                self.log(f"已註冊快捷鍵: {hotkey} → {key}")
+                # 只在首次運行時顯示註冊成功訊息
+                if self._is_first_run:
+                    self.log(f"✓ 註冊快捷鍵: {hotkey} → {key}")
             except Exception as ex:
-                self.log(f"快捷鍵 {hotkey} 註冊失敗: {ex}")
+                self.log(f"✗ 快捷鍵 {hotkey} 註冊失敗: {ex}")
 
     def _register_script_hotkeys(self):
         """註冊所有腳本的快捷鍵（而非僅當前選中的）"""
@@ -3328,7 +2647,7 @@ class RecorderApp(tb.Window):
             self.script_var.set(current_display)
 
     def refresh_script_listbox(self):
-        """刷新腳本設定區左側列表（顯示檔名和快捷鍵）"""
+        """刷新腳本設定區左側列表（顯示檔名、快捷鍵和定時）"""
         try:
             # 清空 Treeview
             for item in self.script_treeview.get_children():
@@ -3344,19 +2663,27 @@ class RecorderApp(tb.Window):
                 # 去除副檔名
                 script_name = os.path.splitext(script_file)[0]
                 
-                # 讀取快捷鍵
+                # 讀取快捷鍵和定時
                 hotkey = ""
+                schedule_time = ""
                 try:
                     path = os.path.join(self.script_dir, script_file)
                     with open(path, "r", encoding="utf-8") as f:
                         data = json.load(f)
-                        if "settings" in data and "script_hotkey" in data["settings"]:
-                            hotkey = data["settings"]["script_hotkey"]
+                        if "settings" in data:
+                            if "script_hotkey" in data["settings"]:
+                                hotkey = data["settings"]["script_hotkey"]
+                            if "schedule_time" in data["settings"]:
+                                schedule_time = data["settings"]["schedule_time"]
                 except Exception:
                     pass
                 
-                # 插入到 Treeview（兩欄）
-                self.script_treeview.insert("", "end", values=(script_name, hotkey if hotkey else ""))
+                # 插入到 Treeview（三欄：名稱、快捷鍵、定時）
+                self.script_treeview.insert("", "end", values=(
+                    script_name, 
+                    hotkey if hotkey else "", 
+                    schedule_time if schedule_time else ""
+                ))
                 
         except Exception as ex:
             self.log(f"刷新腳本清單失敗: {ex}")
@@ -3629,6 +2956,254 @@ class RecorderApp(tb.Window):
                 import traceback
                 self.log(f"錯誤詳情: {traceback.format_exc()}")
         pass
+
+    def open_schedule_settings(self):
+        """開啟排程設定視窗"""
+        # 檢查是否有選中的腳本
+        selection = self.script_treeview.selection()
+        if not selection:
+            self.log("請先選擇一個腳本")
+            return
+        
+        item = selection[0]
+        values = self.script_treeview.item(item, "values")
+        script_name = values[0]
+        script_file = f"{script_name}.json"
+        script_path = os.path.join(self.script_dir, script_file)
+        
+        if not os.path.exists(script_path):
+            self.log(f"腳本檔案不存在：{script_file}")
+            return
+        
+        # 讀取現有排程
+        current_schedule = ""
+        try:
+            with open(script_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if "settings" in data and "schedule_time" in data["settings"]:
+                    current_schedule = data["settings"]["schedule_time"]
+        except Exception as e:
+            self.log(f"讀取腳本失敗：{e}")
+            return
+        
+        # 創建排程設定視窗
+        schedule_win = tk.Toplevel(self)
+        schedule_win.title(f"設定排程 - {script_name}")
+        schedule_win.geometry("400x250")
+        schedule_win.resizable(False, False)
+        schedule_win.grab_set()
+        
+        # 標題
+        title_frame = tb.Frame(schedule_win)
+        title_frame.pack(fill="x", padx=20, pady=15)
+        tb.Label(title_frame, text=f"腳本：{script_name}", 
+                font=("Microsoft JhengHei", 12, "bold")).pack(anchor="w")
+        
+        # 時間選擇框架
+        time_frame = tb.Frame(schedule_win)
+        time_frame.pack(fill="x", padx=20, pady=10)
+        
+        tb.Label(time_frame, text="執行時間：", 
+                font=("Microsoft JhengHei", 11)).pack(side="left", padx=5)
+        
+        # 小時下拉選單
+        hour_var = tk.StringVar()
+        hour_combo = tb.Combobox(time_frame, textvariable=hour_var, 
+                                 values=[f"{i:02d}" for i in range(24)], 
+                                 width=5, state="readonly")
+        hour_combo.pack(side="left", padx=5)
+        
+        tb.Label(time_frame, text=":", font=("Microsoft JhengHei", 11)).pack(side="left")
+        
+        # 分鐘下拉選單
+        minute_var = tk.StringVar()
+        minute_combo = tb.Combobox(time_frame, textvariable=minute_var,
+                                   values=[f"{i:02d}" for i in range(60)],
+                                   width=5, state="readonly")
+        minute_combo.pack(side="left", padx=5)
+        
+        # 設定當前值
+        if current_schedule:
+            try:
+                parts = current_schedule.split(":")
+                if len(parts) == 2:
+                    hour_var.set(parts[0])
+                    minute_var.set(parts[1])
+                else:
+                    hour_var.set("09")
+                    minute_var.set("00")
+            except:
+                hour_var.set("09")
+                minute_var.set("00")
+        else:
+            hour_var.set("09")
+            minute_var.set("00")
+        
+        # 說明文字
+        info_frame = tb.Frame(schedule_win)
+        info_frame.pack(fill="x", padx=20, pady=10)
+        info_text = "設定後，程式將在每天指定時間\n自動執行此腳本"
+        tb.Label(info_frame, text=info_text, 
+                font=("Microsoft JhengHei", 9), 
+                foreground="#666").pack(anchor="w")
+        
+        # 按鈕框架
+        btn_frame = tb.Frame(schedule_win)
+        btn_frame.pack(fill="x", padx=20, pady=20)
+        
+        def save_schedule():
+            hour = hour_var.get()
+            minute = minute_var.get()
+            
+            if not hour or not minute:
+                self.log("請選擇時間")
+                return
+            
+            schedule_time = f"{hour}:{minute}"
+            
+            # 儲存到腳本
+            try:
+                with open(script_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                
+                if "settings" not in data:
+                    data["settings"] = {}
+                
+                data["settings"]["schedule_time"] = schedule_time
+                
+                with open(script_path, "w", encoding="utf-8") as f:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
+                
+                # 更新排程管理器
+                if hasattr(self, 'schedule_manager') and self.schedule_manager:
+                    schedule_id = f"script_{script_name}"
+                    self.schedule_manager.add_schedule(schedule_id, {
+                        'name': script_name,
+                        'type': 'daily',
+                        'time': f"{hour}:{minute}:00",
+                        'script': script_file,
+                        'enabled': True,
+                        'callback': self._execute_scheduled_script
+                    })
+                    self.log(f"✓ 已設定排程：{script_name} 每天 {schedule_time}")
+                
+                # 刷新列表
+                self.refresh_script_listbox()
+                schedule_win.destroy()
+                
+            except Exception as e:
+                self.log(f"儲存排程失敗：{e}")
+        
+        def clear_schedule():
+            # 清除排程
+            try:
+                with open(script_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                
+                if "settings" in data and "schedule_time" in data["settings"]:
+                    del data["settings"]["schedule_time"]
+                
+                with open(script_path, "w", encoding="utf-8") as f:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
+                
+                # 移除排程管理器中的排程
+                if hasattr(self, 'schedule_manager') and self.schedule_manager:
+                    schedule_id = f"script_{script_name}"
+                    self.schedule_manager.remove_schedule(schedule_id)
+                    self.log(f"✓ 已清除排程：{script_name}")
+                
+                # 刷新列表
+                self.refresh_script_listbox()
+                schedule_win.destroy()
+                
+            except Exception as e:
+                self.log(f"清除排程失敗：{e}")
+        
+        tb.Button(btn_frame, text="確定", width=10, bootstyle=SUCCESS,
+                 command=save_schedule).pack(side="left", padx=5)
+        tb.Button(btn_frame, text="清除排程", width=10, bootstyle=WARNING,
+                 command=clear_schedule).pack(side="left", padx=5)
+        tb.Button(btn_frame, text="取消", width=10, bootstyle=SECONDARY,
+                 command=schedule_win.destroy).pack(side="left", padx=5)
+
+    def _load_all_schedules(self):
+        """從所有腳本中載入排程設定"""
+        if not hasattr(self, 'schedule_manager') or not self.schedule_manager:
+            return
+        
+        try:
+            if not os.path.exists(self.script_dir):
+                return
+            
+            scripts = [f for f in os.listdir(self.script_dir) if f.endswith('.json')]
+            loaded_count = 0
+            
+            for script_file in scripts:
+                script_path = os.path.join(self.script_dir, script_file)
+                try:
+                    with open(script_path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    
+                    if "settings" in data and "schedule_time" in data["settings"]:
+                        schedule_time = data["settings"]["schedule_time"]
+                        script_name = os.path.splitext(script_file)[0]
+                        schedule_id = f"script_{script_name}"
+                        
+                        self.schedule_manager.add_schedule(schedule_id, {
+                            'name': script_name,
+                            'type': 'daily',
+                            'time': f"{schedule_time}:00",
+                            'script': script_file,
+                            'enabled': True,
+                            'callback': self._execute_scheduled_script
+                        })
+                        loaded_count += 1
+                except Exception as e:
+                    self.log(f"載入排程失敗 ({script_file}): {e}")
+            
+            if loaded_count > 0:
+                self.log(f"✓ 已載入 {loaded_count} 個排程")
+        except Exception as e:
+            self.log(f"載入排程失敗: {e}")
+    
+    def _execute_scheduled_script(self, script_file):
+        """執行排程腳本的回調函數"""
+        try:
+            script_path = os.path.join(self.script_dir, script_file)
+            if not os.path.exists(script_path):
+                self.log(f"排程腳本不存在：{script_file}")
+                return
+            
+            # 載入腳本
+            with open(script_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            
+            self.events = data.get("events", [])
+            self.script_settings = data.get("settings", {})
+            
+            # 更新設定
+            if "loop_count" in self.script_settings:
+                try:
+                    self.loop_count_var.set(str(self.script_settings["loop_count"]))
+                except:
+                    pass
+            
+            if "interval" in self.script_settings:
+                try:
+                    self.interval_var.set(str(self.script_settings["interval"]))
+                except:
+                    pass
+            
+            self.log(f"⏰ [排程執行] {script_file}")
+            self.log(f"載入 {len(self.events)} 筆事件")
+            
+            # 自動開始回放
+            self.after(500, self.play_record)
+            
+        except Exception as e:
+            self.log(f"執行排程腳本失敗：{e}")
+            import traceback
+            self.log(f"錯誤詳情: {traceback.format_exc()}")
 
     def select_target_window(self):
         """開啟視窗選擇器，選定後只錄製該視窗內的滑鼠動作"""
