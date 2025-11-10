@@ -1,0 +1,10 @@
+ttkbootstrap
+pywin32
+pynput
+keyboard
+mouse
+pyinstaller
+
+# Optional (for packaging or extras)
+# pillow
+# requests
