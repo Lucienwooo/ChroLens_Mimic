@@ -29,6 +29,8 @@ class CoreRecorder:
         self._target_hwnd = None  # 新增：目標視窗 handle
         self._background_mode = "smart"  # 後台模式：smart, fast_switch, postmessage, foreground
         self._mouse_mode = False  # 新增：滑鼠模式（是否控制真實滑鼠）
+    self._mouse_listener = None
+    self._pressed_keys = set()
 
     def set_target_window(self, hwnd):
         """設定目標視窗，只錄製/回放該視窗內的操作"""
@@ -129,6 +131,7 @@ class CoreRecorder:
         self.recording = False
         self.paused = False
         self._keyboard_recording = False
+<<<<<<< Updated upstream
         
         # 確保 keyboard hook 被正確釋放
         try:
@@ -139,6 +142,28 @@ class CoreRecorder:
             self.logger(f"[警告] 停止鍵盤錄製時發生錯誤: {e}")
         
         self.logger(f"[{time.ctime()}] 停止錄製（等待事件處理完成...）")
+=======
+        self.logger(f"[{time.ctime()}] 停止錄製")
+        # 嘗試停止並 join mouse listener（若有）以釋放資源
+        try:
+            if getattr(self, '_mouse_listener', None):
+                try:
+                    self._mouse_listener.stop()
+                except Exception:
+                    pass
+                try:
+                    self._mouse_listener.join(timeout=1.0)
+                except Exception:
+                    pass
+                self._mouse_listener = None
+        except Exception:
+            pass
+        # 釋放播放或錄製期間可能遺留的按鍵
+        try:
+            self._release_pressed_keys()
+        except Exception:
+            pass
+>>>>>>> Stashed changes
 
     def toggle_pause(self):
         """切換暫停狀態（改善版）"""
@@ -250,6 +275,11 @@ class CoreRecorder:
                     on_scroll=on_scroll
                 )
                 mouse_listener.start()
+                # 儲存 reference，以便外部能停止/join
+                try:
+                    self._mouse_listener = mouse_listener
+                except Exception:
+                    pass
                 self.logger("[錄製] pynput.mouse.Listener 已啟動")
             except Exception as e:
                 self.logger(f"[警告] pynput.mouse.Listener 啟動失敗（可能需要管理員權限）: {e}")
@@ -371,6 +401,7 @@ class CoreRecorder:
         was_playing = self.playing
         self.playing = False
         self.paused = False
+<<<<<<< Updated upstream
         
         if was_playing:
             self.logger(f"[{time.ctime()}] 已停止回放")
@@ -386,6 +417,13 @@ class CoreRecorder:
                         pass
             except:
                 pass
+=======
+        # 釋放所有被按下但未 release 的鍵
+        try:
+            self._release_pressed_keys()
+        except Exception:
+            pass
+>>>>>>> Stashed changes
 
     def _play_loop(self, speed, repeat, on_event):
         """回放主循環（強化版 - 修復點擊其他視窗導致停止的問題）"""
@@ -920,6 +958,7 @@ class CoreRecorder:
     def _execute_event(self, event):
         """執行單一事件（滑鼠模式 - 強化版）"""
         if event['type'] == 'keyboard':
+<<<<<<< Updated upstream
             # 鍵盤事件執行
             try:
                 if event['event'] == 'down':
@@ -929,6 +968,21 @@ class CoreRecorder:
             except Exception as e:
                 self.logger(f"鍵盤事件執行失敗: {e}")
                 
+=======
+            if event['event'] == 'down':
+                keyboard.press(event['name'])
+                try:
+                    self._pressed_keys.add(event['name'])
+                except Exception:
+                    pass
+            elif event['event'] == 'up':
+                keyboard.release(event['name'])
+                try:
+                    if event['name'] in self._pressed_keys:
+                        self._pressed_keys.discard(event['name'])
+                except Exception:
+                    pass
+>>>>>>> Stashed changes
         elif event['type'] == 'mouse':
             x, y = event.get('x', 0), event.get('y', 0)
             
@@ -1008,6 +1062,7 @@ class CoreRecorder:
                 if result == 0:
                     self.logger(f"SendInput 失敗: {ctypes.get_last_error()}")
                 
+<<<<<<< Updated upstream
             elif event == 'wheel':
                 # 滾輪事件
                 inp = INPUT()
@@ -1021,3 +1076,43 @@ class CoreRecorder:
                     
         except Exception as e:
             self.logger(f"滑鼠事件發送失敗: {e}")
+=======
+            inp = INPUT()
+            inp.type = 0
+            inp.mi = MOUSEINPUT(0, 0, int(delta * 120), 0x0800, 0, None)
+            user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(inp))
+
+    def _release_pressed_keys(self):
+        """釋放在回放期間可能被 press 但未 release 的按鍵集合"""
+        try:
+            import keyboard
+            for k in list(getattr(self, '_pressed_keys', [])):
+                try:
+                    keyboard.release(k)
+                except Exception:
+                    pass
+            self._pressed_keys.clear()
+            self.logger("[recorder] 已釋放遺留的按鍵")
+        except Exception as ex:
+            self.logger(f"[recorder] 釋放遺留按鍵失敗: {ex}")
+
+    def join_threads(self, timeout=1.0):
+        """嘗試 join 內部的 record/play thread，回傳是否成功 join"""
+        ok = True
+        try:
+            t = getattr(self, '_record_thread', None)
+            if t and getattr(t, 'is_alive', lambda: False)():
+                try:
+                    t.join(timeout)
+                except Exception:
+                    ok = False
+            p = getattr(self, '_play_thread', None)
+            if p and getattr(p, 'is_alive', lambda: False)():
+                try:
+                    p.join(timeout)
+                except Exception:
+                    ok = False
+        except Exception:
+            ok = False
+        return ok
+>>>>>>> Stashed changes

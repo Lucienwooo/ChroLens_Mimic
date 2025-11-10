@@ -421,6 +421,11 @@ class RecorderApp(tb.Window):
         self.title(f"ChroLens_Mimic_{VERSION}")
         # 設定視窗圖示
         set_window_icon(self)
+        # 關閉視窗時使用強制關閉清理函式
+        try:
+            self.protocol("WM_DELETE_WINDOW", self.force_quit)
+        except Exception:
+            pass
 
         # 在左上角建立一個小label作為icon區域的懸浮觸發點
         self.icon_tip_label = tk.Label(self, width=2, height=1, bg=self.cget("background"))
@@ -453,6 +458,34 @@ class RecorderApp(tb.Window):
         self.schedule_manager = None
         # 效能優化器
         self.performance_optimizer = None
+
+        # 初始化管理器（ConfigManager、ScriptManager、HotkeyManager）
+        try:
+            from config_manager import ConfigManager
+            from script_manager import ScriptManager
+            from hotkey_manager import HotkeyManager
+
+            self.config_manager = ConfigManager()
+            # 保持與 existing user_config 同步
+            try:
+                self.config_manager.config = self.user_config
+            except Exception:
+                pass
+
+            # 建立 ScriptManager
+            self.script_manager = ScriptManager(self.script_dir, logger=getattr(self, 'log', print))
+
+            # 建立 HotkeyManager
+            self.hotkey_manager = HotkeyManager(self, self.config_manager, self.script_manager)
+        except Exception as e:
+            # 若沒法建立管理器，仍維持相容性
+            try:
+                self.log(f"無法初始化管理器: {e}")
+            except:
+                pass
+            self.config_manager = None
+            self.script_manager = None
+            self.hotkey_manager = None
 
         # ====== 上方操作區 ======
         frm_top = tb.Frame(self, padding=(8, 10, 8, 5))
@@ -821,11 +854,21 @@ class RecorderApp(tb.Window):
             self.log(f"重新啟動為管理員時發生錯誤: {e}")
 
     def _delayed_init(self):
+<<<<<<< Updated upstream
         # 初始化 core_recorder（需要在 self.log 可用之後）
         self.core_recorder = CoreRecorder(logger=self.log)
         
         self.after(1600, self._register_hotkeys)
         self.after(1650, self._register_script_hotkeys)
+=======
+        # 使用 centralized HotkeyManager 註冊所有熱鍵（若存在）
+        if hasattr(self, 'hotkey_manager') and self.hotkey_manager:
+            self.after(1600, self.hotkey_manager.register_all)
+        else:
+            # 向後相容：若沒有 HotkeyManager，保留原本的註冊方式
+            self.after(1600, self._register_hotkeys)
+            self.after(1650, self._register_script_hotkeys)
+>>>>>>> Stashed changes
         self.after(1700, self.refresh_script_list)
         self.after(1800, self.load_last_script)
         self.after(1900, self.update_mouse_pos)
@@ -1831,6 +1874,12 @@ class RecorderApp(tb.Window):
             
             # 釋放所有可能卡住的修飾鍵
             self._release_all_modifiers()
+            # 嘗試 join core_recorder 的 play thread
+            try:
+                if hasattr(self.core_recorder, 'join_threads'):
+                    self.core_recorder.join_threads(timeout=0.5)
+            except Exception:
+                pass
 
         if not stopped:
             self.log(f"[{format_time(time.time())}] 無進行中動作可停止。")
@@ -1840,6 +1889,7 @@ class RecorderApp(tb.Window):
         self.update_total_time_label(0)
         self._update_play_time()
         self._update_record_time()
+<<<<<<< Updated upstream
         
         # 修復快捷鍵問題：停止後重新註冊快捷鍵（增加延遲確保清理完成）
         self.after(1000, self._reregister_hotkeys)  # 從 500ms 增加到 1000ms
@@ -1851,19 +1901,127 @@ class RecorderApp(tb.Window):
             # 不再顯示重新註冊訊息
         except Exception as e:
             self.log(f"重新註冊快捷鍵失敗: {e}")
+=======
+
+    def force_quit(self):
+        """強制關閉整個程式：嘗試清理、解除註冊快捷鍵並終止程序。"""
+        try:
+            self.log("[系統] 收到強制關閉指令，開始清理資源...")
+        except:
+            pass
+
+        # 儘量安全停止錄製與回放
+        try:
+            self.stop_all()
+        except Exception:
+            pass
+
+        # 釋放並移除所有快捷鍵註冊
+        try:
+            import keyboard
+            # 移除 main 註冊的快捷鍵 handlers
+            try:
+                for handler in getattr(self, '_hotkey_handlers', {}).values():
+                    try:
+                        keyboard.remove_hotkey(handler)
+                    except:
+                        pass
+            except Exception:
+                pass
+            try:
+                for info in getattr(self, '_script_hotkey_handlers', {}).values():
+                    try:
+                        keyboard.remove_hotkey(info.get('handler'))
+                    except:
+                        pass
+            except Exception:
+                pass
+
+            # 若有 hotkey_manager，請其解除註冊
+            try:
+                if hasattr(self, 'hotkey_manager') and self.hotkey_manager:
+                    try:
+                        self.hotkey_manager.unregister_all()
+                    except:
+                        pass
+            except Exception:
+                pass
+
+            # 嘗試全域解除 hook
+            try:
+                if hasattr(keyboard, 'unhook_all_hotkeys'):
+                    try:
+                        keyboard.unhook_all_hotkeys()
+                    except:
+                        pass
+                if hasattr(keyboard, 'unhook_all'):
+                    try:
+                        keyboard.unhook_all()
+                    except:
+                        pass
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+        # 嘗試關閉視窗與退出
+        try:
+            self.log("[系統] 即將結束程式")
+        except:
+            pass
+        try:
+            # 直接使用 os._exit 以確保立即終止
+            import os, sys
+            try:
+                self.quit()
+            except:
+                try:
+                    self.destroy()
+                except:
+                    pass
+            try:
+                os._exit(0)
+            except SystemExit:
+                sys.exit(0)
+        except Exception:
+            try:
+                import sys
+                sys.exit(0)
+            except:
+                pass
+>>>>>>> Stashed changes
     
     def _release_all_modifiers(self):
         """釋放所有修飾鍵以防止卡住"""
         try:
             import keyboard
-            # 釋放常見的修飾鍵
-            modifiers = ['ctrl', 'shift', 'alt', 'win']
-            for mod in modifiers:
+            # 釋放常見的修飾鍵與常用按鍵，盡量避免卡鍵
+            keys_to_release = ['ctrl', 'shift', 'alt', 'win']
+            # 加入功能鍵與字母數字
+            keys_to_release += [f'f{i}' for i in range(1, 13)]
+            keys_to_release += [chr(c) for c in range(ord('a'), ord('z')+1)]
+            keys_to_release += [str(d) for d in range(0, 10)]
+
+            for k in keys_to_release:
                 try:
-                    keyboard.release(mod)
+                    keyboard.release(k)
                 except:
                     pass
-            self.log("[系統] 已釋放所有修飾鍵")
+
+            # 另外嘗試解除所有 hotkeys/hook
+            try:
+                if hasattr(keyboard, 'unhook_all_hotkeys'):
+                    keyboard.unhook_all_hotkeys()
+            except:
+                pass
+
+            try:
+                if hasattr(keyboard, 'unhook_all'):
+                    keyboard.unhook_all()
+            except:
+                pass
+
+            self.log("[系統] 已嘗試釋放常見按鍵並解除快捷鍵註冊")
         except Exception as e:
             self.log(f"[警告] 釋放修飾鍵時發生錯誤: {e}")
 
@@ -2355,7 +2513,14 @@ class RecorderApp(tb.Window):
                 val = vars[key].get()
                 if val and val != "輸入按鍵":
                     self.hotkey_map[key] = val.lower()
-            self._register_hotkeys()
+            # 由 HotkeyManager 統一註冊（若存在），否則使用舊的 _register_hotkeys
+            if hasattr(self, 'hotkey_manager') and self.hotkey_manager:
+                try:
+                    self.hotkey_manager.register_all()
+                except Exception:
+                    self._register_hotkeys()
+            else:
+                self._register_hotkeys()
             self._update_hotkey_labels()
             self.save_config()  # 新增這行,確保儲存
             self.log("快捷鍵設定已更新。")
@@ -2410,9 +2575,22 @@ class RecorderApp(tb.Window):
                 # 使用 trigger_on_release=False 確保立即響應
                 handler = keyboard.add_hotkey(
                     hotkey,
+<<<<<<< Updated upstream
                     callback,
                     suppress=False,  # 不抑制按鍵
                     trigger_on_release=False  # 按下時立即觸發
+=======
+                    getattr(self, {
+                        "start": "start_record",
+                        "pause": "toggle_pause",
+                        "stop": "stop_all",
+                        "play": "play_record",
+                        "mini": "toggle_mini_mode",
+                        "force_quit": "force_quit"
+                    }[key]),
+                    suppress=use_suppress,  # stop 使用 suppress=True
+                    trigger_on_release=False
+>>>>>>> Stashed changes
                 )
                 self._hotkey_handlers[key] = handler
                 # 只在首次運行時顯示註冊成功訊息

@@ -23,9 +23,11 @@ class ConfigManager:
         "hotkey_map": {
             "start": "F10",
             "pause": "F11",
-            "stop": "F9",
+                "stop": "F9",
             "play": "F12",
-            "mini": "alt+`"
+                "mini": "alt+`",
+                # 強制關閉（注意: Ctrl+Alt+Delete 無法被應用程式攔截，預設使用 Ctrl+Alt+End）
+                "force_quit": "ctrl+alt+end"
         }
     }
     

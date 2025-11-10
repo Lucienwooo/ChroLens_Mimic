@@ -47,11 +47,15 @@ class HotkeyManager:
             "stop": self.app.stop_all,
             "play": self.app.play_record,
             "mini": self.app.toggle_mini_mode
+            ,"force_quit": getattr(self.app, 'force_quit', None)
         }
         
         # 註冊每個快捷鍵
         for key, callback in hotkey_actions.items():
             hotkey = hotkey_map.get(key, "")
+            # 如果沒有對應的回調，跳過（例如 force_quit 在某些情況下可能不存在）
+            if not callback:
+                continue
             if hotkey:
                 try:
                     handler = keyboard.add_hotkey(
