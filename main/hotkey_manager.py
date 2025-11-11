@@ -1,9 +1,13 @@
 """
 快捷鍵管理器 - Hotkey Manager
 負責註冊、取消註冊和管理所有快捷鍵
+
+重要更新 (2025/01/12):
+- 改用 pynput 模組取代 keyboard 模組
+- 解決 PyInstaller 打包後快捷鍵失效問題
+- 使用主程式的監聽器系統，不再獨立註冊
 """
 
-import keyboard
 import os
 import json
 
@@ -29,81 +33,43 @@ class HotkeyManager:
         self._script_handlers = {}  # 腳本快捷鍵
     
     def register_all(self):
-        """註冊所有快捷鍵"""
-        self.register_system_hotkeys()
-        self.register_script_hotkeys()
+        """
+        註冊所有快捷鍵（透過主程式的 pynput 監聽器）
+        
+        新設計：
+        - 不再直接使用 keyboard.add_hotkey()
+        - 委託給主程式的 _register_hotkeys() 和 _register_script_hotkeys()
+        - 確保與主程式的 pynput 監聽器保持一致
+        """
+        # 使用主程式的快捷鍵註冊方法
+        if hasattr(self.app, '_register_hotkeys'):
+            self.app._register_hotkeys()
+        if hasattr(self.app, '_register_script_hotkeys'):
+            self.app._register_script_hotkeys()
     
     def register_system_hotkeys(self):
-        """註冊系統快捷鍵（錄製、停止、回放等）"""
-        # 先清除所有已註冊的系統快捷鍵
-        self.unregister_system_hotkeys()
+        """
+        註冊系統快捷鍵（錄製、停止、回放等）
         
-        hotkey_map = self.config.get_all_hotkeys()
-        
-        # 定義快捷鍵與回調函式的映射
-        hotkey_actions = {
-            "start": self.app.start_record,
-            "pause": self.app.toggle_pause,
-            "stop": self.app.stop_all,
-            "play": self.app.play_record,
-            "mini": self.app.toggle_mini_mode
-            ,"force_quit": getattr(self.app, 'force_quit', None)
-        }
-        
-        # 註冊每個快捷鍵
-        for key, callback in hotkey_actions.items():
-            hotkey = hotkey_map.get(key, "")
-            # 如果沒有對應的回調，跳過（例如 force_quit 在某些情況下可能不存在）
-            if not callback:
-                continue
-            if hotkey:
-                try:
-                    handler = keyboard.add_hotkey(
-                        hotkey,
-                        callback,
-                        suppress=False,
-                        trigger_on_release=False
-                    )
-                    self._system_handlers[key] = handler
-                    if hasattr(self.app, 'log'):
-                        self.app.log(f"已註冊快捷鍵: {hotkey} → {key}")
-                except Exception as ex:
-                    if hasattr(self.app, 'log'):
-                        self.app.log(f"快捷鍵 {hotkey} 註冊失敗: {ex}")
+        新實現：委託給主程式的 _register_hotkeys()
+        """
+        if hasattr(self.app, '_register_hotkeys'):
+            self.app._register_hotkeys()
+        else:
+            if hasattr(self.app, 'log'):
+                self.app.log("警告：主程式缺少 _register_hotkeys() 方法")
     
     def register_script_hotkeys(self):
-        """註冊所有腳本快捷鍵"""
-        # 先清除所有已註冊的腳本快捷鍵
-        self.unregister_script_hotkeys()
+        """
+        註冊所有腳本快捷鍵
         
-        # 掃描所有腳本並註冊快捷鍵
-        scripts = self.script_manager.get_all_scripts()
-        
-        for script in scripts:
-            path = self.script_manager.get_script_path(script)
-            try:
-                with open(path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                
-                hotkey = data.get("script_hotkey", "")
-                if hotkey:
-                    # 為每個腳本註冊快捷鍵
-                    handler = keyboard.add_hotkey(
-                        hotkey,
-                        lambda s=script: self._play_script_by_hotkey(s),
-                        suppress=False,
-                        trigger_on_release=False
-                    )
-                    self._script_handlers[script] = {
-                        "handler": handler,
-                        "script": script,
-                        "hotkey": hotkey
-                    }
-                    if hasattr(self.app, 'log'):
-                        self.app.log(f"已註冊腳本快捷鍵: {hotkey} → {script}")
-            except Exception as ex:
-                # 忽略讀取錯誤的腳本
-                pass
+        新實現：委託給主程式的 _register_script_hotkeys()
+        """
+        if hasattr(self.app, '_register_script_hotkeys'):
+            self.app._register_script_hotkeys()
+        else:
+            if hasattr(self.app, 'log'):
+                self.app.log("警告：主程式缺少 _register_script_hotkeys() 方法")
     
     def _play_script_by_hotkey(self, script):
         """
@@ -143,26 +109,53 @@ class HotkeyManager:
         self.app.play_record()
     
     def unregister_all(self):
-        """取消註冊所有快捷鍵"""
-        self.unregister_system_hotkeys()
-        self.unregister_script_hotkeys()
-    
-    def unregister_system_hotkeys(self):
-        """取消註冊系統快捷鍵"""
-        for key, handler in list(self._system_handlers.items()):
+        """
+        取消註冊所有快捷鍵
+        
+        新實現：停止主程式的 pynput 監聽器
+        """
+        # 停止主程式的監聽器
+        if hasattr(self.app, '_pynput_listener') and self.app._pynput_listener:
             try:
-                keyboard.remove_hotkey(handler)
+                self.app._pynput_listener.stop()
             except Exception:
                 pass
+        
+        # 清空快捷鍵組合表
+        if hasattr(self.app, '_hotkey_combinations'):
+            self.app._hotkey_combinations.clear()
+        
+        self._system_handlers.clear()
+        self._script_handlers.clear()
+    
+    def unregister_system_hotkeys(self):
+        """
+        取消註冊系統快捷鍵
+        
+        新實現：清空快捷鍵組合表中的系統快捷鍵
+        """
+        if hasattr(self.app, '_hotkey_combinations'):
+            # 移除非腳本快捷鍵
+            to_remove = [k for k, v in self.app._hotkey_combinations.items() 
+                        if not v.get("name", "").startswith("script:")]
+            for k in to_remove:
+                self.app._hotkey_combinations.pop(k, None)
+        
         self._system_handlers.clear()
     
     def unregister_script_hotkeys(self):
-        """取消註冊腳本快捷鍵"""
-        for info in self._script_handlers.values():
-            try:
-                keyboard.remove_hotkey(info.get("handler"))
-            except Exception:
-                pass
+        """
+        取消註冊腳本快捷鍵
+        
+        新實現：清空快捷鍵組合表中的腳本快捷鍵
+        """
+        if hasattr(self.app, '_hotkey_combinations'):
+            # 移除腳本快捷鍵
+            to_remove = [k for k, v in self.app._hotkey_combinations.items() 
+                        if v.get("name", "").startswith("script:")]
+            for k in to_remove:
+                self.app._hotkey_combinations.pop(k, None)
+        
         self._script_handlers.clear()
     
     def set_script_hotkey(self, script_name, hotkey):
@@ -191,8 +184,12 @@ class HotkeyManager:
             except Exception:
                 data = {}
             
-            # 儲存快捷鍵到腳本
-            data["script_hotkey"] = hotkey
+            # 儲存快捷鍵到腳本（可能在 settings 或根層級）
+            if "settings" in data:
+                data["settings"]["script_hotkey"] = hotkey
+            else:
+                data["script_hotkey"] = hotkey
+            
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
             

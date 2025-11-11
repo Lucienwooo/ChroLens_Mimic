@@ -1,6 +1,28 @@
 #ChroLens Studio - Lucienwooo
 #python "C:\Users\Lucien\Documents\GitHub\ChroLens_Mimic\main\ChroLens_Mimic.py"
 #
+# === 專案文件清理規則（給 AI Agent） ===
+# 重要：本專案應該保持精簡，避免累積測試檔案
+# 
+# 【應保留的檔案】
+# - README.md (專案根目錄，主要說明文件)
+# - 使用說明_sop.md, 更新系統說明.md, RELEASE_NOTES_*.md (功能文檔)
+# - installer/BUILD_GUIDE.md (打包指南)
+# 
+# 【應刪除的檔案】（每次修復後清理）
+# - main/tests/*.py (所有測試腳本：test_*.py, *_test.py, quick_check.py 等)
+# - main/tests/*.md (測試報告：REPAIR_REPORT.md, TEST_REPORT.md 等)
+# - main/*_test.py, main/test_*.py (主目錄下的測試檔案)
+# - main/run_*.py (臨時執行腳本)
+# - main/tests
+#
+# 【清理命令】
+# Remove-Item main\tests\*.py -Force
+# Remove-Item main\tests\*.md -Force
+# Remove-Item main\*_test.py -Force
+# Remove-Item main\test_*.py -Force
+# Remove-Item main\run_*.py -Force
+#
 # === 打包說明 ===
 # 1. 執行 python build.py 進行打包 (取代舊的 build.bat)
 # 2. 打包後檔名統一為 "ChroLens_Mimic.exe"
@@ -8,21 +30,8 @@
 # 4. 舊版本會自動備份至 backup\版本號\ 資料夾
 #
 # === 版本更新紀錄 ===
-# [2.6.4] - 2025/11/04
-#   - 🚀 重新設計更新系統架構
-#   - 新增：用滑鼠左鍵點擊 target_label 時,會自動刷新並以相同視窗名稱重新指定
-#   - 新增：_refresh_target_window() 方法,搜尋並重新指定相同標題的視窗
-#   - 修改：target_label 綁定左鍵刷新、右鍵清除
-#   - 新增：UpdateManager 模組處理版本管理
-#   - 新增：build.py Python 打包腳本 (取代 build.bat)
-#   - 新增：智能差異備份和版本回退功能
-#   - 新增：外部更新器 updater.exe 機制,完全避免 WinError 5 問題
-#   - 改進：更新流程更加穩定和安全
-#   - 修正：版本資訊檔命名為 version{版本號}.txt (例如: version2.6.4.txt)
-#   - 修正：備份目錄結構為 backup\版本號\ (例如: backup\2.6.3\)
-#   - 移除：錯誤的 .exe.old 檔案產生
-#
-#
+# [2.6.3] 目前快捷鍵有嚴重問題,無法觸發"停止"
+# 錄製一次之後,也無法進行第二次的錄製
 #pyinstaller --noconsole --onedir --icon=..\umi_奶茶色.ico --add-data "..\umi_奶茶色.ico;." --add-data "TTF;TTF" --add-data "recorder.py;." --add-data "lang.py;." --add-data "script_io.py;." --add-data "about.py;." --add-data "mini.py;." --add-data "window_selector.py;." --add-data "script_parser.py;." --add-data "config_manager.py;." --add-data "hotkey_manager.py;." --add-data "script_editor_methods.py;." --add-data "script_manager.py;." --add-data "ui_components.py;." --add-data "visual_script_editor.py;." --add-data "update_manager.py;." ChroLens_Mimic.py
 
 VERSION = "2.6.3"
@@ -41,6 +50,8 @@ import pywintypes
 import random  # 新增
 import tkinter.font as tkfont
 import sys
+from pynput import keyboard as pynput_keyboard
+from pynput.keyboard import Key, KeyCode
 
 # 檢查是否以管理員身份執行
 def is_admin():
@@ -367,7 +378,10 @@ class RecorderApp(tb.Window):
         # 檢查管理員權限
         if not is_admin():
             # 顯示警告但仍繼續執行
-            print("⚠️ 警告：程式未以管理員身份執行，錄製功能可能無法正常工作！")
+            try:
+                print("⚠️ 警告：程式未以管理員身份執行，錄製功能可能無法正常工作！")
+            except:
+                print("[WARNING] Program not running as administrator, recording may not work properly!")
         
         # 初始化基本變數
         self.recording = False
@@ -391,6 +405,7 @@ class RecorderApp(tb.Window):
         self._script_hotkey_handlers = {}
         # MiniMode 管理器（由 mini.py 提供）
         self.mini_window = None
+        self.mini_mode_on = False  # ✅ 修復: 初始化 mini_mode_on
         self.target_hwnd = None
         self.target_title = None
         
@@ -402,13 +417,19 @@ class RecorderApp(tb.Window):
             save_user_config(self.user_config)
 
         # 讀取 hotkey_map，若無則用預設
-        self.hotkey_map = self.user_config.get("hotkey_map", {
+        default_hotkeys = {
             "start": "F10",
             "pause": "F11",
             "stop": "F9",
             "play": "F12",
-            "mini": "alt+`"
-        })
+            "mini": "alt+`",
+            "force_quit": "ctrl+alt+z"  # 強制停止的預設快捷鍵
+        }
+        self.hotkey_map = self.user_config.get("hotkey_map", default_hotkeys)
+        
+        # 確保 force_quit 存在（向下相容舊配置）
+        if "force_quit" not in self.hotkey_map:
+            self.hotkey_map["force_quit"] = "ctrl+alt+z"
 
         # ====== 統一字體 style ======
         self.style.configure("My.TButton", font=font_tuple(9))
@@ -525,6 +546,8 @@ class RecorderApp(tb.Window):
         self.repeat_var = tk.StringVar(value=self.user_config.get("repeat", "1"))
         entry_repeat = tb.Entry(frm_bottom, textvariable=self.repeat_var, width=6, style="My.TEntry")
         entry_repeat.grid(row=0, column=3, padx=2)
+        # 添加重複次數的懸浮提示
+        self.repeat_tooltip = Tooltip(self.repeat_label, "設定重複執行次數\n輸入 0 表示無限重複\n右鍵點擊輸入框可快速設為0")
 
         self.repeat_time_var = tk.StringVar(value="00:00:00")
         entry_repeat_time = tb.Entry(frm_bottom, textvariable=self.repeat_time_var, width=10, style="My.TEntry", justify="center")
@@ -708,7 +731,8 @@ class RecorderApp(tb.Window):
             list_frame,
             columns=("name", "hotkey", "schedule"),
             show="headings",
-            height=15
+            height=15,
+            selectmode="extended"  # 支援多選（Ctrl+點擊 或 Shift+點擊）
         )
         self.script_treeview.heading("name", text="腳本名稱")
         self.script_treeview.heading("hotkey", text="快捷鍵")
@@ -801,7 +825,7 @@ class RecorderApp(tb.Window):
         self.refresh_script_list()
         if self.script_var.get():
             self.on_script_selected()
-        self._init_language(saved_lang)
+        # self._init_language(saved_lang)  # 此方法不存在，已移除
         self.after(1500, self._delayed_init)
 
     def _show_admin_warning(self):
@@ -854,13 +878,9 @@ class RecorderApp(tb.Window):
             self.log(f"重新啟動為管理員時發生錯誤: {e}")
 
     def _delayed_init(self):
-<<<<<<< Updated upstream
         # 初始化 core_recorder（需要在 self.log 可用之後）
         self.core_recorder = CoreRecorder(logger=self.log)
         
-        self.after(1600, self._register_hotkeys)
-        self.after(1650, self._register_script_hotkeys)
-=======
         # 使用 centralized HotkeyManager 註冊所有熱鍵（若存在）
         if hasattr(self, 'hotkey_manager') and self.hotkey_manager:
             self.after(1600, self.hotkey_manager.register_all)
@@ -868,7 +888,6 @@ class RecorderApp(tb.Window):
             # 向後相容：若沒有 HotkeyManager，保留原本的註冊方式
             self.after(1600, self._register_hotkeys)
             self.after(1650, self._register_script_hotkeys)
->>>>>>> Stashed changes
         self.after(1700, self.refresh_script_list)
         self.after(1800, self.load_last_script)
         self.after(1900, self.update_mouse_pos)
@@ -1305,6 +1324,12 @@ class RecorderApp(tb.Window):
             )
 
     def update_total_time_label(self, seconds):
+        # 處理無限重複的情況
+        if seconds == float('inf') or (isinstance(seconds, float) and (seconds != seconds or seconds > 1e10)):
+            # NaN 或無限大，顯示 ∞
+            self.total_time_label_time.config(text="∞", foreground="#FF95CA")
+            return
+        
         h = int(seconds // 3600)
         m = int((seconds % 3600) // 60)
         s = int(seconds % 60)
@@ -1315,6 +1340,12 @@ class RecorderApp(tb.Window):
             self.total_time_label_time.config(text=time_str, foreground="#FF95CA")
 
     def update_countdown_label(self, seconds):
+        # 處理無限重複的情況
+        if seconds == float('inf') or (isinstance(seconds, float) and (seconds != seconds or seconds > 1e10)):
+            # NaN 或無限大，顯示 ∞
+            self.countdown_label_time.config(text="∞", foreground="#FF95CA")
+            return
+        
         h = int(seconds // 3600)
         m = int((seconds % 3600) // 60)
         s = int(seconds % 60)
@@ -1382,7 +1413,10 @@ class RecorderApp(tb.Window):
             if hasattr(self, "_play_start_time") and self._play_start_time:
                 elapsed_real = time.time() - self._play_start_time
                 
-                if self._repeat_time_limit:
+                # 處理無限重複的情況
+                if self._total_play_time == float('inf'):
+                    total_remain = float('inf')
+                elif self._repeat_time_limit:
                     # 使用時間限制模式
                     total_remain = max(0, self._repeat_time_limit - elapsed_real)
                 else:
@@ -1397,10 +1431,16 @@ class RecorderApp(tb.Window):
                         try:
                             lang = self.language_var.get()
                             lang_map = LANG_MAP.get(lang, LANG_MAP["繁體中文"])
-                            h = int(total_remain // 3600)
-                            m = int((total_remain % 3600) // 60)
-                            s = int(total_remain % 60)
-                            time_str = f"{h:02d}:{m:02d}:{s:02d}"
+                            
+                            # 處理無限重複
+                            if total_remain == float('inf'):
+                                time_str = "∞"
+                            else:
+                                h = int(total_remain // 3600)
+                                m = int((total_remain % 3600) // 60)
+                                s = int(total_remain % 60)
+                                time_str = f"{h:02d}:{m:02d}:{s:02d}"
+                            
                             self.mini_countdown_label.config(text=f"{lang_map['剩餘']}: {time_str}")
                         except Exception:
                             pass
@@ -1423,8 +1463,9 @@ class RecorderApp(tb.Window):
                         pass
 
     def start_record(self):
-        """開始錄製"""
-        if getattr(self.core_recorder, "recording", False):
+        """開始錄製 (修復版 - 參考 v2.5)"""
+        # ✅ 修復: 檢查自身狀態,不依賴 core_recorder
+        if self.recording:
             return
         
         # 自動切換到 MiniMode（如果勾選）
@@ -1436,8 +1477,9 @@ class RecorderApp(tb.Window):
             self.reset_to_defaults()
         except Exception:
             pass
+        
         # 確保 core_recorder 知道目標視窗設定
-        if hasattr(self.core_recorder, 'set_target_window'):
+        if hasattr(self, 'core_recorder') and hasattr(self.core_recorder, 'set_target_window'):
             self.core_recorder.set_target_window(self.target_hwnd)
         
         # 記錄目標視窗的完整資訊（包含 DPI、解析度等）
@@ -1455,13 +1497,22 @@ class RecorderApp(tb.Window):
             except Exception as e:
                 self.log(f"無法記錄視窗資訊: {e}")
         
-        # 清空目前 events（避免舊資料殘留），並啟動 recorder
+        # ✅ 修復: 清空 events 並設定狀態
         self.events = []
         self.recording = True
         self.paused = False
-        self._record_start_time = self.core_recorder.start_record()
-        # 盡量抓取 core_recorder 的 thread handle（若尚未建立，稍後等待）
-        self._record_thread_handle = getattr(self.core_recorder, "_record_thread", None)
+        self.log(f"[{format_time(time.time())}] 開始錄製...")
+        
+        # 啟動 core_recorder (如果存在)
+        if hasattr(self, 'core_recorder'):
+            self._record_start_time = self.core_recorder.start_record()
+            self._record_thread_handle = getattr(self.core_recorder, "_record_thread", None)
+        else:
+            # 向後相容: 使用舊的 threading 方式
+            self._record_start_time = time.time()
+            self._record_thread_handle = threading.Thread(target=self._record_thread, daemon=True)
+            self._record_thread_handle.start()
+        
         self.after(100, self._update_record_time)
 
     def _update_record_time(self):
@@ -1811,11 +1862,20 @@ class RecorderApp(tb.Window):
             repeat = int(self.repeat_var.get())
         except:
             repeat = 1
-        repeat = 0 if repeat <= 0 else repeat
+        
+        # 重複次數 = 0 表示無限重複，傳入 -1 給 core_recorder
+        if repeat == 0:
+            repeat = -1  # 無限重複
+            self.log(f"[{format_time(time.time())}] 設定為無限重複模式")
+        elif repeat < 0:
+            repeat = 1  # 負數視為1次
 
         # 計算總運作時間
         single_time = (self.events[-1]['time'] - self.events[0]['time']) / self.speed if self.events else 0
-        if self._repeat_time_limit and repeat > 0:
+        if repeat == -1:
+            # 無限重複模式
+            total_time = float('inf') if not self._repeat_time_limit else self._repeat_time_limit
+        elif self._repeat_time_limit and repeat > 0:
             total_time = self._repeat_time_limit
         else:
             total_time = single_time * repeat + repeat_interval_sec * max(0, repeat - 1)
@@ -1852,111 +1912,132 @@ class RecorderApp(tb.Window):
             self.log("沒有可回放的事件，請先錄製或載入腳本。")
 
     def stop_all(self):
-        """停止所有動作"""
+        """停止所有動作 (修復版 - 參考 v2.5 簡單直接的實現)"""
         stopped = False
-
+        
+        # ✅ 修復: 先設定狀態再執行停止
         if self.recording:
             self.recording = False
-            # 確保 core_recorder 的 recording 標記也設為 False
-            if hasattr(self.core_recorder, 'recording'):
-                self.core_recorder.recording = False
-            self.core_recorder.stop_record()
-            self.events = self.core_recorder.events
             stopped = True
-            self.log(f"[{format_time(time.time())}] 停止錄製，共 {len(self.events)} 筆事件。")
+            self.log(f"[{format_time(time.time())}] 停止錄製。")
+            
+            # 停止 core_recorder (如果存在)
+            if hasattr(self, 'core_recorder'):
+                if hasattr(self.core_recorder, 'recording'):
+                    self.core_recorder.recording = False
+                if hasattr(self.core_recorder, 'stop_record'):
+                    self.core_recorder.stop_record()
+                if hasattr(self.core_recorder, 'events'):
+                    self.events = self.core_recorder.events
+            
             self._wait_record_thread_finish()
-
+        
         if self.playing:
             self.playing = False
-            self.core_recorder.stop_play()
             stopped = True
             self.log(f"[{format_time(time.time())}] 停止回放。")
             
+            # 停止 core_recorder 播放
+            if hasattr(self, 'core_recorder') and hasattr(self.core_recorder, 'stop_play'):
+                self.core_recorder.stop_play()
+            
             # 釋放所有可能卡住的修飾鍵
-            self._release_all_modifiers()
-            # 嘗試 join core_recorder 的 play thread
             try:
-                if hasattr(self.core_recorder, 'join_threads'):
-                    self.core_recorder.join_threads(timeout=0.5)
+                self._release_all_modifiers()
             except Exception:
                 pass
-
+        
         if not stopped:
             self.log(f"[{format_time(time.time())}] 無進行中動作可停止。")
-
+        
+        # ✅ 修復: 立即刷新顯示 (參考 v2.5)
         self.update_time_label(0)
         self.update_countdown_label(0)
         self.update_total_time_label(0)
-        self._update_play_time()
-        self._update_record_time()
-<<<<<<< Updated upstream
-        
-        # 修復快捷鍵問題：停止後重新註冊快捷鍵（增加延遲確保清理完成）
-        self.after(1000, self._reregister_hotkeys)  # 從 500ms 增加到 1000ms
+        # 強制更新時間顯示
+        try:
+            self._update_play_time()
+            self._update_record_time()
+        except Exception:
+            pass
     
     def _reregister_hotkeys(self):
-        """重新註冊快捷鍵（修復快捷鍵失效問題）"""
-        try:
-            self._register_hotkeys()
-            # 不再顯示重新註冊訊息
-        except Exception as e:
-            self.log(f"重新註冊快捷鍵失敗: {e}")
-=======
+        """
+        重新註冊快捷鍵（修復快捷鍵失效問題）
+        
+        注意：使用 pynput 監聽器後，這個方法通常不需要調用，
+        因為監聽器是持續運行的，不會因為停止動作而失效。
+        保留此方法是為了向後相容。
+        """
+        # pynput 監聽器已經在持續運行，無需重新註冊
+        pass
 
     def force_quit(self):
-        """強制關閉整個程式：嘗試清理、解除註冊快捷鍵並終止程序。"""
+        """
+        強制停止所有動作並關閉程式
+        
+        【優先級說明】
+        此方法的優先級高於所有其他操作：
+        1. 立即停止錄製和回放
+        2. 釋放所有資源和快捷鍵
+        3. 強制終止程式
+        
+        使用情境：
+        - 程式無回應時的緊急停止
+        - 需要立即終止所有動作
+        """
         try:
-            self.log("[系統] 收到強制關閉指令，開始清理資源...")
+            self.log("[系統] ⚠ 強制停止：收到強制關閉指令，開始清理資源...")
         except:
             pass
 
-        # 儘量安全停止錄製與回放
+        # 【關鍵1】立即停止所有錄製與回放動作
         try:
+            # 強制設定所有狀態為 False
+            self.recording = False
+            self.playing = False
+            self.paused = False
+            
+            # 停止 core_recorder 的所有動作
+            if hasattr(self, 'core_recorder'):
+                try:
+                    if hasattr(self.core_recorder, 'recording'):
+                        self.core_recorder.recording = False
+                    if hasattr(self.core_recorder, 'playing'):
+                        self.core_recorder.playing = False
+                    self.core_recorder.stop_record()
+                    self.core_recorder.stop_play()
+                except:
+                    pass
+            
+            # 呼叫 stop_all 確保清理完整
             self.stop_all()
-        except Exception:
-            pass
+        except Exception as e:
+            try:
+                self.log(f"[警告] 停止動作時發生錯誤: {e}")
+            except:
+                pass
 
         # 釋放並移除所有快捷鍵註冊
         try:
-            import keyboard
-            # 移除 main 註冊的快捷鍵 handlers
-            try:
-                for handler in getattr(self, '_hotkey_handlers', {}).values():
-                    try:
-                        keyboard.remove_hotkey(handler)
-                    except:
-                        pass
-            except Exception:
-                pass
-            try:
-                for info in getattr(self, '_script_hotkey_handlers', {}).values():
-                    try:
-                        keyboard.remove_hotkey(info.get('handler'))
-                    except:
-                        pass
-            except Exception:
-                pass
-
+            # 停止 pynput 監聽器
+            if hasattr(self, '_pynput_listener') and self._pynput_listener:
+                try:
+                    self._pynput_listener.stop()
+                except:
+                    pass
+            
+            # 清除快捷鍵映射
+            if hasattr(self, '_hotkey_combinations'):
+                self._hotkey_combinations.clear()
+            if hasattr(self, '_script_hotkey_handlers'):
+                self._script_hotkey_handlers.clear()
+            
             # 若有 hotkey_manager，請其解除註冊
             try:
                 if hasattr(self, 'hotkey_manager') and self.hotkey_manager:
                     try:
                         self.hotkey_manager.unregister_all()
-                    except:
-                        pass
-            except Exception:
-                pass
-
-            # 嘗試全域解除 hook
-            try:
-                if hasattr(keyboard, 'unhook_all_hotkeys'):
-                    try:
-                        keyboard.unhook_all_hotkeys()
-                    except:
-                        pass
-                if hasattr(keyboard, 'unhook_all'):
-                    try:
-                        keyboard.unhook_all()
                     except:
                         pass
             except Exception:
@@ -1989,7 +2070,6 @@ class RecorderApp(tb.Window):
                 sys.exit(0)
             except:
                 pass
->>>>>>> Stashed changes
     
     def _release_all_modifiers(self):
         """釋放所有修飾鍵以防止卡住"""
@@ -2146,12 +2226,24 @@ class RecorderApp(tb.Window):
     def save_script_settings(self):
         """將目前 speed/repeat/repeat_time/repeat_interval/random_interval 寫入當前腳本檔案"""
         script = self.script_var.get()
+        
+        # 必須先選擇腳本才能儲存設定
         if not script:
             self.log("請先選擇一個腳本再儲存設定。")
             return
-        path = os.path.join(self.script_dir, script)
+        
+        # 確保腳本名稱包含 .json 副檔名
+        if not script.endswith('.json'):
+            script_file = script + '.json'
+        else:
+            script_file = script
+        
+        # 建立完整路徑
+        path = os.path.join(self.script_dir, script_file)
+        
+        # 檢查檔案是否存在
         if not os.path.exists(path):
-            self.log("找不到腳本檔案，請先錄製或載入腳本。")
+            self.log("找不到腳本檔案，請確認腳本是否存在。")
             return
         try:
             settings = {
@@ -2388,11 +2480,17 @@ class RecorderApp(tb.Window):
     def open_hotkey_settings(self):
         win = tb.Toplevel(self)
         win.title("Hotkey")
-        win.geometry("350x380")  # 增大尺寸
+        win.geometry("350x430")  # 增大尺寸以容納強制停止欄位
         win.resizable(True, True)  # 允許調整大小
-        win.minsize(300, 320)  # 設置最小尺寸
+        win.minsize(300, 360)  # 設置最小尺寸
         # 設定視窗圖示
         set_window_icon(win)
+        
+        # 居中顯示
+        win.update_idletasks()
+        x = (win.winfo_screenwidth() // 2) - (win.winfo_width() // 2)
+        y = (win.winfo_screenheight() // 2) - (win.winfo_height() // 2)
+        win.geometry(f"+{x}+{y}")
 
         # 建立主框架
         main_frame = tb.Frame(win)
@@ -2406,7 +2504,8 @@ class RecorderApp(tb.Window):
             "pause": lang_map["暫停/繼續"],
             "stop": lang_map["停止"],
             "play": lang_map["回放"],
-            "mini": lang_map["MiniMode"]
+            "mini": lang_map["MiniMode"],
+            "force_quit": lang_map["強制停止"]
         }
         vars = {}
         entries = {}
@@ -2490,14 +2589,16 @@ class RecorderApp(tb.Window):
 
         def on_entry_focus_out(event, key, var):
             if var.get() == "輸入按鍵" or not var.get():
-                var.set(self.hotkey_map[key])
+                var.set(self.hotkey_map.get(key, ""))
 
         for key, label in labels.items():
             entry_frame = tb.Frame(main_frame)
             entry_frame.pack(fill="x", pady=5)
             
             tb.Label(entry_frame, text=label, font=("Microsoft JhengHei", 11), width=12, anchor="w").pack(side="left", padx=5)
-            var = tk.StringVar(value=self.hotkey_map[key])
+            # 確保 hotkey_map 有此鍵，避免 KeyError
+            hotkey_value = self.hotkey_map.get(key, "")
+            var = tk.StringVar(value=hotkey_value)
             entry = tb.Entry(entry_frame, textvariable=var, font=("Consolas", 10), state="normal")
             entry.pack(side="left", fill="x", expand=True, padx=5)
             vars[key] = var
@@ -2533,83 +2634,174 @@ class RecorderApp(tb.Window):
 
     # 不再需要 _make_hotkey_entry_handler
 
+    def _parse_hotkey_combo(self, hotkey_str):
+        """
+        解析快捷鍵字串，轉換為 pynput 可用的按鍵組合
+        例如: "ctrl+alt+z" -> {Key.ctrl, Key.alt, 'z'}
+        """
+        from pynput.keyboard import Key, KeyCode
+        
+        parts = hotkey_str.lower().replace(" ", "").split("+")
+        keys = set()
+        
+        for part in parts:
+            # 處理特殊鍵
+            if part in ["ctrl", "control"]:
+                keys.add(Key.ctrl_l)
+            elif part == "alt":
+                keys.add(Key.alt_l)
+            elif part == "shift":
+                keys.add(Key.shift_l)
+            elif part == "win" or part == "cmd":
+                keys.add(Key.cmd)
+            # 處理功能鍵
+            elif part.startswith("f") and len(part) <= 3:
+                try:
+                    fn_num = int(part[1:])
+                    if 1 <= fn_num <= 12:
+                        keys.add(getattr(Key, f"f{fn_num}"))
+                except:
+                    pass
+            # 處理特殊符號
+            elif part == "`":
+                keys.add(KeyCode.from_char("`"))
+            # 處理一般字元
+            elif len(part) == 1:
+                keys.add(KeyCode.from_char(part))
+        
+        return keys
+
     def _register_hotkeys(self):
-        import keyboard
-        # 先移除所有已註冊的快捷鍵
-        for handler in self._hotkey_handlers.values():
+        """
+        註冊系統快捷鍵（使用 pynput 模組）
+        
+        【設計說明】
+        1. 使用 pynput 取代 keyboard 模組，解決 PyInstaller 打包後失效問題
+        2. 使用 self.after(0, callback) 確保所有回調在主執行緒執行
+        3. 按優先級順序註冊快捷鍵，force_quit 最優先
+        """
+        from pynput import keyboard as pynput_keyboard
+        
+        # 停止舊的監聽器
+        if hasattr(self, '_pynput_listener') and self._pynput_listener:
             try:
-                keyboard.remove_hotkey(handler)
-            except Exception as ex:
-                pass  # 忽略移除錯誤
-        self._hotkey_handlers.clear()
+                self._pynput_listener.stop()
+            except:
+                pass
         
-        # 清除所有 keyboard 模組的 hotkey（徹底清理）
-        try:
-            keyboard.unhook_all_hotkeys()
-        except:
-            pass
+        # 當前按下的按鍵集合
+        self._current_keys = set()
         
-        # 重新註冊快捷鍵
-        for key, hotkey in self.hotkey_map.items():
-            if not hotkey:  # 跳過空的快捷鍵
+        # 快捷鍵映射表
+        self._hotkey_combinations = {}
+        
+        # 按優先級順序準備快捷鍵
+        priority_order = ["force_quit", "stop", "pause", "start", "play", "mini"]
+        sorted_keys = sorted(self.hotkey_map.keys(), 
+                            key=lambda k: priority_order.index(k) if k in priority_order else 999)
+        
+        # 建立快捷鍵組合表
+        for key in sorted_keys:
+            hotkey = self.hotkey_map.get(key)
+            if not hotkey:
                 continue
+            
             try:
-                # 定義回調函數（修復 lambda 閉包問題）
-                def make_callback(action_key):
-                    """創建回調函數，避免 lambda 閉包問題"""
-                    if action_key == "start":
-                        return lambda: self.start_record()
-                    elif action_key == "pause":
-                        return lambda: self.toggle_pause()
-                    elif action_key == "stop":
-                        return lambda: self.stop_all()
-                    elif action_key == "play":
-                        return lambda: self.play_record()
-                    elif action_key == "mini":
-                        return lambda: self.toggle_mini_mode()
-                    else:
-                        return lambda: None
-                
-                callback = make_callback(key)
-                
-                # 使用 trigger_on_release=False 確保立即響應
-                handler = keyboard.add_hotkey(
-                    hotkey,
-<<<<<<< Updated upstream
-                    callback,
-                    suppress=False,  # 不抑制按鍵
-                    trigger_on_release=False  # 按下時立即觸發
-=======
-                    getattr(self, {
-                        "start": "start_record",
-                        "pause": "toggle_pause",
-                        "stop": "stop_all",
-                        "play": "play_record",
-                        "mini": "toggle_mini_mode",
-                        "force_quit": "force_quit"
-                    }[key]),
-                    suppress=use_suppress,  # stop 使用 suppress=True
-                    trigger_on_release=False
->>>>>>> Stashed changes
-                )
-                self._hotkey_handlers[key] = handler
-                # 只在首次運行時顯示註冊成功訊息
-                if self._is_first_run:
-                    self.log(f"✓ 註冊快捷鍵: {hotkey} → {key}")
+                combo = self._parse_hotkey_combo(hotkey)
+                if combo:
+                    # 定義回調函數（關鍵修復：F9 直接調用方法而非 invoke 按鈕）
+                    def make_callback(action_key):
+                        if action_key == "force_quit":
+                            return lambda: self.force_quit()
+                        elif action_key == "start":
+                            # F10: 直接調用開始錄製方法
+                            return lambda: self.after(0, self.start_record)
+                        elif action_key == "pause":
+                            # F11: 直接調用暫停方法
+                            return lambda: self.after(0, self.toggle_pause)
+                        elif action_key == "stop":
+                            # F9: 直接調用停止方法（修復同步問題的關鍵）
+                            # 不使用 btn_stop.invoke()，避免雙重 after 延遲
+                            # stop_all 內部已經優化為立即執行，無需額外 after
+                            return lambda: self.stop_all()
+                        elif action_key == "play":
+                            # F12: 直接調用回放方法
+                            return lambda: self.after(0, self.play_record)
+                        elif action_key == "mini":
+                            # Alt+`: 直接調用 MiniMode 切換方法
+                            return lambda: self.after(0, self.toggle_mini_mode)
+                        else:
+                            return lambda: None
+                    
+                    callback = make_callback(key)
+                    self._hotkey_combinations[frozenset(combo)] = {
+                        "callback": callback,
+                        "name": key,
+                        "hotkey": hotkey
+                    }
+                    
+                    if self._is_first_run:
+                        priority_mark = "🔴" if key == "force_quit" else ("🟡" if key == "stop" else "🟢")
+                        self.log(f"{priority_mark} 註冊快捷鍵: {hotkey} → {key}")
             except Exception as ex:
                 self.log(f"✗ 快捷鍵 {hotkey} 註冊失敗: {ex}")
+        
+        # 定義按鍵處理函數
+        def on_press(key):
+            try:
+                # 標準化按鍵
+                if hasattr(key, 'vk'):
+                    normalized_key = key
+                elif hasattr(key, 'char') and key.char:
+                    normalized_key = pynput_keyboard.KeyCode.from_char(key.char.lower())
+                else:
+                    normalized_key = key
+                
+                self._current_keys.add(normalized_key)
+                
+                # 檢查是否匹配任何快捷鍵組合
+                for combo, info in self._hotkey_combinations.items():
+                    if self._current_keys >= combo:
+                        info["callback"]()
+                        # 清空當前按鍵，防止重複觸發
+                        self._current_keys.clear()
+                        return False  # 阻止按鍵傳遞（類似 suppress）
+            except Exception as ex:
+                print(f"on_press error: {ex}")
+        
+        def on_release(key):
+            try:
+                # 標準化按鍵
+                if hasattr(key, 'vk'):
+                    normalized_key = key
+                elif hasattr(key, 'char') and key.char:
+                    normalized_key = pynput_keyboard.KeyCode.from_char(key.char.lower())
+                else:
+                    normalized_key = key
+                
+                # 移除釋放的按鍵
+                if normalized_key in self._current_keys:
+                    self._current_keys.discard(normalized_key)
+            except Exception as ex:
+                print(f"on_release error: {ex}")
+        
+        # 啟動新的監聽器
+        try:
+            self._pynput_listener = pynput_keyboard.Listener(
+                on_press=on_press,
+                on_release=on_release,
+                suppress=False
+            )
+            self._pynput_listener.start()
+        except Exception as ex:
+            self.log(f"✗ 快捷鍵監聽器啟動失敗: {ex}")
 
     def _register_script_hotkeys(self):
-        """註冊所有腳本的快捷鍵（而非僅當前選中的）"""
-        # 先清除所有已註冊的腳本快捷鍵
-        for info in self._script_hotkey_handlers.values():
-            try:
-                keyboard.remove_hotkey(info.get("handler"))
-            except Exception as ex:
-                pass
+        """註冊所有腳本的快捷鍵（使用 pynput 整合到主監聽器）"""
+        # 清除舊的腳本快捷鍵映射
         self._script_hotkey_handlers.clear()
 
-        # 掃描所有腳本並註冊快捷鍵
+        # 掃描所有腳本並建立快捷鍵映射
         if not os.path.exists(self.script_dir):
             return
         
@@ -2628,20 +2820,26 @@ class RecorderApp(tb.Window):
                     hotkey = data["script_hotkey"]
                 
                 if hotkey:
-                    # 為每個腳本註冊快捷鍵，使用 functools.partial 確保正確捕獲參數
-                    from functools import partial
-                    handler = keyboard.add_hotkey(
-                        hotkey,
-                        partial(self._play_script_by_hotkey, script),
-                        suppress=False,
-                        trigger_on_release=False
-                    )
-                    self._script_hotkey_handlers[script] = {
-                        "handler": handler,
-                        "script": script,
-                        "hotkey": hotkey
-                    }
-                    self.log(f"已註冊腳本快捷鍵: {hotkey} → {script}")
+                    # 解析快捷鍵組合
+                    combo = self._parse_hotkey_combo(hotkey)
+                    if combo:
+                        # 為每個腳本創建回調
+                        from functools import partial
+                        callback = partial(self._play_script_by_hotkey, script)
+                        
+                        # 添加到快捷鍵組合表
+                        self._hotkey_combinations[frozenset(combo)] = {
+                            "callback": lambda s=script: self.after(0, lambda: self._play_script_by_hotkey(s)),
+                            "name": f"script:{script}",
+                            "hotkey": hotkey
+                        }
+                        
+                        self._script_hotkey_handlers[script] = {
+                            "script": script,
+                            "hotkey": hotkey,
+                            "combo": combo
+                        }
+                        self.log(f"已註冊腳本快捷鍵: {hotkey} → {script}")
             except Exception as ex:
                 self.log(f"註冊腳本快捷鍵失敗 ({script}): {ex}")
 
@@ -3063,58 +3261,91 @@ class RecorderApp(tb.Window):
             self.log(f"錯誤詳情: {traceback.format_exc()}")
 
     def delete_selected_script(self):
-        """刪除選中的腳本"""
-        if not self.script_var.get():
+        """刪除選中的腳本（支援多選）"""
+        # 從 Treeview 獲取所有選中的項目
+        selection = self.script_treeview.selection()
+        
+        if not selection:
             self.log("請先選擇要刪除的腳本。")
             return
         
-        script_name = self.script_var.get()
-        # 確保有 .json 副檔名
-        if not script_name.endswith('.json'):
-            script_name = script_name + '.json'
+        # 收集要刪除的腳本名稱
+        scripts_to_delete = []
+        for item in selection:
+            values = self.script_treeview.item(item, "values")
+            if values:
+                script_name = values[0]  # 腳本名稱（不含副檔名）
+                # 確保有 .json 副檔名
+                if not script_name.endswith('.json'):
+                    script_file = script_name + '.json'
+                else:
+                    script_file = script_name
+                
+                path = os.path.join(self.script_dir, script_file)
+                if os.path.exists(path):
+                    scripts_to_delete.append((script_name, script_file, path))
         
-        path = os.path.join(self.script_dir, script_name)
-        
-        if not os.path.exists(path):
-            self.log(f"找不到腳本檔案：{script_name}")
+        if not scripts_to_delete:
+            self.log("找不到可刪除的腳本檔案。")
             return
         
         # 確認刪除
         import tkinter.messagebox as messagebox
+        if len(scripts_to_delete) == 1:
+            # 單個腳本刪除
+            script_name = scripts_to_delete[0][0]
+            message = f"確定要刪除腳本「{script_name}」嗎？\n此操作無法復原！"
+        else:
+            # 多個腳本刪除
+            script_list = "\n".join([f"• {s[0]}" for s in scripts_to_delete])
+            message = f"確定要刪除以下 {len(scripts_to_delete)} 個腳本嗎？\n\n{script_list}\n\n此操作無法復原！"
+        
         result = messagebox.askyesno(
             "確認刪除",
-            f"確定要刪除腳本「{script_name}」嗎？\n此操作無法復原！",
+            message,
             icon='warning'
         )
         
         if not result:
             return
         
-        try:
-            os.remove(path)
-            self.log(f"已刪除腳本：{script_name}")
-            
-            # 取消註冊此腳本的快捷鍵（如果有的話）
-            if script_name in self._script_hotkey_handlers:
-                handler_id = self._script_hotkey_handlers[script_name]
-                try:
-                    keyboard.remove_hotkey(handler_id)
-                except:
-                    pass
-                del self._script_hotkey_handlers[script_name]
-            
-            # 重新整理列表
-            self.refresh_script_listbox()
-            self.refresh_script_list()
-            
-            # 清除相關 UI
-            self.script_var.set('')
-            self.hotkey_capture_var.set('')
+        # 執行刪除
+        deleted_count = 0
+        failed_count = 0
+        
+        for script_name, script_file, path in scripts_to_delete:
+            try:
+                os.remove(path)
+                self.log(f"✓ 已刪除腳本：{script_name}")
+                deleted_count += 1
+                
+                # 取消註冊此腳本的快捷鍵（如果有的話）
+                if script_file in self._script_hotkey_handlers:
+                    handler_info = self._script_hotkey_handlers[script_file]
+                    try:
+                        keyboard.remove_hotkey(handler_info.get('handler'))
+                    except:
+                        pass
+                    del self._script_hotkey_handlers[script_file]
+                    
+            except Exception as ex:
+                self.log(f"✗ 刪除腳本失敗 [{script_name}]: {ex}")
+                failed_count += 1
+        
+        # 顯示總結
+        if deleted_count > 0:
+            self.log(f"[完成] 成功刪除 {deleted_count} 個腳本" + 
+                    (f"，{failed_count} 個失敗" if failed_count > 0 else ""))
+        
+        # 重新整理列表
+        self.refresh_script_listbox()
+        self.refresh_script_list()
+        
+        # 清除相關 UI
+        self.script_var.set('')
+        self.hotkey_capture_var.set('')
+        if hasattr(self, 'selected_script_line'):
             self.selected_script_line = None
-        except Exception as ex:
-            self.log(f"刪除腳本失敗: {ex}")
-            import traceback
-            self.log(f"錯誤詳情: {traceback.format_exc()}")
 
 
     def open_visual_editor(self):
@@ -3167,9 +3398,17 @@ class RecorderApp(tb.Window):
         # 創建排程設定視窗
         schedule_win = tk.Toplevel(self)
         schedule_win.title(f"設定排程 - {script_name}")
-        schedule_win.geometry("400x250")
-        schedule_win.resizable(False, False)
+        schedule_win.geometry("450x320")  # 增加高度避免按鈕被遮住
+        schedule_win.resizable(True, True)  # 允許調整大小
         schedule_win.grab_set()
+        schedule_win.transient(self)
+        set_window_icon(schedule_win)  # 設定視窗圖示
+        
+        # 居中顯示
+        schedule_win.update_idletasks()
+        x = (schedule_win.winfo_screenwidth() // 2) - (schedule_win.winfo_width() // 2)
+        y = (schedule_win.winfo_screenheight() // 2) - (schedule_win.winfo_height() // 2)
+        schedule_win.geometry(f"+{x}+{y}")
         
         # 標題
         title_frame = tb.Frame(schedule_win)

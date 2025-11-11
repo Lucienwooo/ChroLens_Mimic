@@ -29,8 +29,8 @@ class CoreRecorder:
         self._target_hwnd = None  # 新增：目標視窗 handle
         self._background_mode = "smart"  # 後台模式：smart, fast_switch, postmessage, foreground
         self._mouse_mode = False  # 新增：滑鼠模式（是否控制真實滑鼠）
-    self._mouse_listener = None
-    self._pressed_keys = set()
+        self._mouse_listener = None
+        self._pressed_keys = set()
 
     def set_target_window(self, hwnd):
         """設定目標視窗，只錄製/回放該視窗內的操作"""
@@ -131,7 +131,6 @@ class CoreRecorder:
         self.recording = False
         self.paused = False
         self._keyboard_recording = False
-<<<<<<< Updated upstream
         
         # 確保 keyboard hook 被正確釋放
         try:
@@ -142,8 +141,7 @@ class CoreRecorder:
             self.logger(f"[警告] 停止鍵盤錄製時發生錯誤: {e}")
         
         self.logger(f"[{time.ctime()}] 停止錄製（等待事件處理完成...）")
-=======
-        self.logger(f"[{time.ctime()}] 停止錄製")
+        
         # 嘗試停止並 join mouse listener（若有）以釋放資源
         try:
             if getattr(self, '_mouse_listener', None):
@@ -163,7 +161,6 @@ class CoreRecorder:
             self._release_pressed_keys()
         except Exception:
             pass
->>>>>>> Stashed changes
 
     def toggle_pause(self):
         """切換暫停狀態（改善版）"""
@@ -401,7 +398,6 @@ class CoreRecorder:
         was_playing = self.playing
         self.playing = False
         self.paused = False
-<<<<<<< Updated upstream
         
         if was_playing:
             self.logger(f"[{time.ctime()}] 已停止回放")
@@ -417,125 +413,124 @@ class CoreRecorder:
                         pass
             except:
                 pass
-=======
+        
         # 釋放所有被按下但未 release 的鍵
         try:
             self._release_pressed_keys()
         except Exception:
             pass
->>>>>>> Stashed changes
 
     def _play_loop(self, speed, repeat, on_event):
-        """回放主循環（強化版 - 修復點擊其他視窗導致停止的問題）"""
+        """回放主循環（強化版 - 支援無限重複，修復點擊其他視窗導致停止的問題）"""
         try:
-            for r in range(max(1, repeat)):
-                if not self.playing:
-                    break
-
-                self._current_play_index = 0
-                base_time = self.events[0]['time']
-                play_start = time.time()
-                pause_start_time = None  # 暫停開始時間
-                total_pause_time = 0  # 累計暫停時間
-                last_pause_state = False  # 上一次的暫停狀態
-
-                while self._current_play_index < len(self.events):
-                    # 檢查 playing 狀態（不受外部事件影響）
+            # repeat = -1 表示無限重複
+            if repeat == -1:
+                r = 0
+                while self.playing:
                     if not self.playing:
                         break
-
-                    # 暫停處理：記錄暫停開始時間
-                    if self.paused:
-                        if not last_pause_state:
-                            # 剛進入暫停狀態
-                            pause_start_time = time.time()
-                            last_pause_state = True
-                            self.logger("[暫停] 回放已暫停")
-                        time.sleep(0.05)
-                        continue
-                    else:
-                        # 從暫停恢復：累計暫停時長
-                        if last_pause_state:
-                            # 剛從暫停恢復
-                            if pause_start_time is not None:
-                                pause_duration = time.time() - pause_start_time
-                                total_pause_time += pause_duration
-                                self.logger(f"[繼續] 回放繼續（暫停了 {pause_duration:.2f} 秒）")
-                                pause_start_time = None
-                            last_pause_state = False
-
-                    event = self.events[self._current_play_index]
-                    event_offset = (event['time'] - base_time) / speed
-                    # 考慮暫停時間的目標時間
-                    target_time = play_start + event_offset + total_pause_time
-
-                    # 等待到目標時間（強化版 - 確保時間計算不受干擾）
-                    while time.time() < target_time:
-                        if not self.playing:
-                            break
-                        if self.paused:
-                            # 進入暫停狀態
-                            if not last_pause_state:
-                                pause_start_time = time.time()
-                                last_pause_state = True
-                                self.logger("[暫停] 回放已暫停")
-                            break
-                        # 使用極短的睡眠時間以保持時間計算精確
-                        sleep_time = min(0.001, target_time - time.time())
-                        if sleep_time > 0:
-                            time.sleep(sleep_time)
-                        else:
-                            break  # 避免 busy-wait
-
-                    # 如果進入暫停，跳過事件執行
-                    if self.paused:
-                        continue
-
+                    self._execute_single_round(speed, on_event)
+                    r += 1
+            else:
+                for r in range(max(1, repeat)):
                     if not self.playing:
                         break
-
-                    # 執行事件（使用 try-except 確保單一事件錯誤不影響整體回放）
-                    try:
-                        # 檢查事件是否應該被執行
-                        should_execute = True
-                        if self._target_hwnd and event.get('type') == 'mouse':
-                            # 如果事件標記為不在目標視窗內，跳過執行
-                            if not event.get('in_target', True):
-                                should_execute = False
-                        
-                        if should_execute:
-                            # 根據後台模式選擇執行方法
-                            self._execute_event_with_mode(event)
-                        
-                        # 通知事件已執行（即使有錯誤也要通知，保持進度）
-                        if on_event:
-                            try:
-                                on_event(event)
-                            except:
-                                pass  # 忽略回調錯誤
-                    except Exception as ex:
-                        self.logger(f"執行事件時發生錯誤: {ex}")
-                        # 繼續執行下一個事件，不中斷回放
-
-                    # 更新索引（確保一定會執行）
-                    self._current_play_index += 1
-
-                if not self.playing:
-                    break
-                
-                # 重複之間的間隔（如果需要）
-                if r < repeat - 1:
-                    time.sleep(0.1)
-
-            self.logger(f"[{time.ctime()}] 回放完成")
-
+                    self._execute_single_round(speed, on_event)
+                    
         except Exception as ex:
-            self.logger(f"回放執行緒發生錯誤: {ex}")
-            import traceback
-            self.logger(f"詳細錯誤: {traceback.format_exc()}")
+            self.logger(f"回放循環錯誤: {ex}")
         finally:
             self.playing = False
-            self.paused = False
+            
+    def _execute_single_round(self, speed, on_event):
+        """執行單次回放循環"""
+        self._current_play_index = 0
+        base_time = self.events[0]['time']
+        play_start = time.time()
+        pause_start_time = None  # 暫停開始時間
+        total_pause_time = 0  # 累計暫停時間
+        last_pause_state = False  # 上一次的暫停狀態
+
+        while self._current_play_index < len(self.events):
+            # 檢查 playing 狀態（不受外部事件影響）
+            if not self.playing:
+                break
+
+            # 暫停處理：記錄暫停開始時間
+            if self.paused:
+                if not last_pause_state:
+                    # 剛進入暫停狀態
+                    pause_start_time = time.time()
+                    last_pause_state = True
+                    self.logger("[暫停] 回放已暫停")
+                time.sleep(0.05)
+                continue
+            else:
+                # 從暫停恢復：累計暫停時長
+                if last_pause_state:
+                    # 剛從暫停恢復
+                    if pause_start_time is not None:
+                        pause_duration = time.time() - pause_start_time
+                        total_pause_time += pause_duration
+                        self.logger(f"[繼續] 回放繼續（暫停了 {pause_duration:.2f} 秒）")
+                        pause_start_time = None
+                    last_pause_state = False
+
+            event = self.events[self._current_play_index]
+            event_offset = (event['time'] - base_time) / speed
+            # 考慮暫停時間的目標時間
+            target_time = play_start + event_offset + total_pause_time
+
+            # 等待到目標時間（強化版 - 確保時間計算不受干擾）
+            while time.time() < target_time:
+                if not self.playing:
+                    break
+                if self.paused:
+                    # 進入暫停狀態
+                    if not last_pause_state:
+                        pause_start_time = time.time()
+                        last_pause_state = True
+                        self.logger("[暫停] 回放已暫停")
+                    break
+                # 使用極短的睡眠時間以保持時間計算精確
+                sleep_time = min(0.001, target_time - time.time())
+                if sleep_time > 0:
+                    time.sleep(sleep_time)
+                else:
+                    break  # 避免 busy-wait
+
+            # 如果進入暫停，跳過事件執行
+            if self.paused:
+                continue
+
+            if not self.playing:
+                break
+
+            # 執行事件（使用 try-except 確保單一事件錯誤不影響整體回放）
+            try:
+                # 檢查事件是否應該被執行
+                should_execute = True
+                if self._target_hwnd and event.get('type') == 'mouse':
+                    # 如果事件標記為不在目標視窗內，跳過執行
+                    if not event.get('in_target', True):
+                        should_execute = False
+                
+                if should_execute:
+                    # 根據後台模式選擇執行方法
+                    self._execute_event_with_mode(event)
+                
+                # 通知事件已執行（即使有錯誤也要通知，保持進度）
+                if on_event:
+                    try:
+                        on_event(event)
+                    except:
+                        pass  # 忽略回調錯誤
+            except Exception as ex:
+                self.logger(f"執行事件時發生錯誤: {ex}")
+                # 繼續執行下一個事件，不中斷回放
+
+            # 更新索引（確保一定會執行）
+            self._current_play_index += 1
 
     def _execute_event_with_mode(self, event):
         """根據後台模式和滑鼠模式執行事件（強化版）"""
@@ -958,31 +953,24 @@ class CoreRecorder:
     def _execute_event(self, event):
         """執行單一事件（滑鼠模式 - 強化版）"""
         if event['type'] == 'keyboard':
-<<<<<<< Updated upstream
             # 鍵盤事件執行
             try:
                 if event['event'] == 'down':
                     keyboard.press(event['name'])
+                    try:
+                        self._pressed_keys.add(event['name'])
+                    except Exception:
+                        pass
                 elif event['event'] == 'up':
                     keyboard.release(event['name'])
+                    try:
+                        if event['name'] in self._pressed_keys:
+                            self._pressed_keys.discard(event['name'])
+                    except Exception:
+                        pass
             except Exception as e:
                 self.logger(f"鍵盤事件執行失敗: {e}")
                 
-=======
-            if event['event'] == 'down':
-                keyboard.press(event['name'])
-                try:
-                    self._pressed_keys.add(event['name'])
-                except Exception:
-                    pass
-            elif event['event'] == 'up':
-                keyboard.release(event['name'])
-                try:
-                    if event['name'] in self._pressed_keys:
-                        self._pressed_keys.discard(event['name'])
-                except Exception:
-                    pass
->>>>>>> Stashed changes
         elif event['type'] == 'mouse':
             x, y = event.get('x', 0), event.get('y', 0)
             
@@ -1062,7 +1050,6 @@ class CoreRecorder:
                 if result == 0:
                     self.logger(f"SendInput 失敗: {ctypes.get_last_error()}")
                 
-<<<<<<< Updated upstream
             elif event == 'wheel':
                 # 滾輪事件
                 inp = INPUT()
@@ -1076,11 +1063,6 @@ class CoreRecorder:
                     
         except Exception as e:
             self.logger(f"滑鼠事件發送失敗: {e}")
-=======
-            inp = INPUT()
-            inp.type = 0
-            inp.mi = MOUSEINPUT(0, 0, int(delta * 120), 0x0800, 0, None)
-            user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(inp))
 
     def _release_pressed_keys(self):
         """釋放在回放期間可能被 press 但未 release 的按鍵集合"""
@@ -1115,4 +1097,3 @@ class CoreRecorder:
         except Exception:
             ok = False
         return ok
->>>>>>> Stashed changes

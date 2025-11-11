@@ -107,11 +107,18 @@ class SimpleBuilder:
         if update_system_file.exists():
             cmd.append(f'--add-data={update_system_file};.')
         
-        # 隱藏控制台模組
+        # 隱藏控制台模組（特別注意 pynput 相關）
         hidden_imports = [
-            'pyautogui', 'pynput', 'keyboard', 'mouse',
-            'PIL', 'win32gui', 'win32con', 'win32api',
-            'ttkbootstrap', 'update_system'
+            # 快捷鍵與輸入控制（打包後必需）
+            'pynput', 'pynput.keyboard', 'pynput.mouse', 
+            'pynput.keyboard._win32', 'pynput.mouse._win32',
+            'keyboard', 'mouse', 'pyautogui',
+            # Windows API
+            'win32gui', 'win32con', 'win32api', 'pywintypes',
+            # GUI 與圖像
+            'PIL', 'ttkbootstrap',
+            # 其他模組
+            'update_system'
         ]
         for module in hidden_imports:
             cmd.append(f'--hidden-import={module}')
