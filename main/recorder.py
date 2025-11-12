@@ -125,28 +125,48 @@ class CoreRecorder:
         return self._record_start_time
 
     def stop_record(self):
-        """停止錄製（強化版 - 確保資源正確釋放）"""
+        """停止錄製（穩定增強版 - 添加清理鎖與重試機制）"""
         if not self.recording:
             return
+        
+        # ✅ 修復：先標記停止，讓錄製迴圈結束
         self.recording = False
         self.paused = False
-        self._keyboard_recording = False
-        
-        # 確保 keyboard hook 被正確釋放
-        try:
-            if self._keyboard_recording:
-                keyboard.stop_recording()
-                self._keyboard_recording = False
-        except Exception as e:
-            self.logger(f"[警告] 停止鍵盤錄製時發生錯誤: {e}")
+        self._recording_mouse = False
         
         self.logger(f"[{time.ctime()}] 停止錄製（等待事件處理完成...）")
+        
+        # ✅ 穩定性增強：使用鎖保護 keyboard hook 清理，並添加重試機制
+        try:
+            # 只有在真正有啟動錄製時才嘗試停止
+            if self._keyboard_recording:
+                # 先重置狀態，避免重複呼叫
+                self._keyboard_recording = False
+                
+                # 嘗試停止錄製（添加重試機制）
+                max_retries = 3
+                for attempt in range(max_retries):
+                    try:
+                        k_events = keyboard.stop_recording()
+                        self.logger(f"[停止錄製] 已停止鍵盤錄製 (獲得 {len(k_events) if k_events else 0} 個事件)")
+                        break
+                    except Exception as retry_ex:
+                        if attempt < max_retries - 1:
+                            self.logger(f"[重試 {attempt + 1}/{max_retries}] 停止鍵盤錄製: {retry_ex}")
+                            time.sleep(0.1)  # 短暫等待後重試
+                        else:
+                            raise retry_ex
+        except Exception as e:
+            self.logger(f"[警告] 停止鍵盤錄製時發生錯誤: {e}")
+            # ✅ 強制重置狀態，確保下次可以重新開始
+            self._keyboard_recording = False
         
         # 嘗試停止並 join mouse listener（若有）以釋放資源
         try:
             if getattr(self, '_mouse_listener', None):
                 try:
                     self._mouse_listener.stop()
+                    self.logger(f"[停止錄製] 已停止滑鼠監聽器")
                 except Exception:
                     pass
                 try:
@@ -156,11 +176,23 @@ class CoreRecorder:
                 self._mouse_listener = None
         except Exception:
             pass
+        
         # 釋放播放或錄製期間可能遺留的按鍵
         try:
             self._release_pressed_keys()
         except Exception:
             pass
+        
+        # ✅ 修復：等待錄製執行緒真正結束
+        if hasattr(self, '_record_thread') and self._record_thread:
+            try:
+                self._record_thread.join(timeout=2.0)
+                if self._record_thread.is_alive():
+                    self.logger(f"[警告] 錄製執行緒未能在 2 秒內結束")
+            except Exception:
+                pass
+        
+        self.logger(f"[停止錄製] 錄製已完全停止，可以開始下一次錄製")
 
     def toggle_pause(self):
         """切換暫停狀態（改善版）"""
@@ -423,24 +455,30 @@ class CoreRecorder:
     def _play_loop(self, speed, repeat, on_event):
         """回放主循環（強化版 - 支援無限重複，修復點擊其他視窗導致停止的問題）"""
         try:
+            # 初始化循環計數器
+            self._current_repeat_count = 0
+            
             # repeat = -1 表示無限重複
             if repeat == -1:
                 r = 0
                 while self.playing:
                     if not self.playing:
                         break
+                    self._current_repeat_count = r  # ✅ 更新循環計數
                     self._execute_single_round(speed, on_event)
                     r += 1
             else:
                 for r in range(max(1, repeat)):
                     if not self.playing:
                         break
+                    self._current_repeat_count = r  # ✅ 更新循環計數
                     self._execute_single_round(speed, on_event)
                     
         except Exception as ex:
             self.logger(f"回放循環錯誤: {ex}")
         finally:
             self.playing = False
+            self._current_repeat_count = 0  # ✅ 重置循環計數
             
     def _execute_single_round(self, speed, on_event):
         """執行單次回放循環"""

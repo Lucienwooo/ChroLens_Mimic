@@ -30,9 +30,8 @@
 # 4. 舊版本會自動備份至 backup\版本號\ 資料夾
 #
 # === 版本更新紀錄 ===
-# [2.6.3] 目前快捷鍵有嚴重問題,無法觸發"停止"
-# 錄製一次之後,也無法進行第二次的錄製
-#pyinstaller --noconsole --onedir --icon=..\umi_奶茶色.ico --add-data "..\umi_奶茶色.ico;." --add-data "TTF;TTF" --add-data "recorder.py;." --add-data "lang.py;." --add-data "script_io.py;." --add-data "about.py;." --add-data "mini.py;." --add-data "window_selector.py;." --add-data "script_parser.py;." --add-data "config_manager.py;." --add-data "hotkey_manager.py;." --add-data "script_editor_methods.py;." --add-data "script_manager.py;." --add-data "ui_components.py;." --add-data "visual_script_editor.py;." --add-data "update_manager.py;." ChroLens_Mimic.py
+# [2.6.4] - 測試自動更新功能
+#pyinstaller --noconsole --onedir --icon=..\umi_奶茶色.ico --add-data "..\umi_奶茶色.ico;." --add-data "TTF;TTF" --add-data "recorder.py;." --add-data "lang.py;." --add-data "script_io.py;." --add-data "about.py;." --add-data "mini.py;." --add-data "window_selector.py;." --add-data "script_parser.py;." --add-data "config_manager.py;." --add-data "hotkey_manager.py;." --add-data "script_editor_methods.py;." --add-data "script_manager.py;." --add-data "ui_components.py;." --add-data "visual_script_editor.py;." --add-data "update_manager.py;." --add-data "update_dialog.py;." ChroLens_Mimic.py
 
 VERSION = "2.6.3"
 
@@ -666,23 +665,48 @@ class RecorderApp(tb.Window):
         # 綁定右鍵點擊事件來取消視窗選擇
         self.target_label.bind("<Button-3>", self._clear_target_window)
 
-        # 錄製時間
-        self.time_label_time = tb.Label(log_title_frame, text="00:00:00", font=font_tuple(12, monospace=True), foreground="#888888")
-        self.time_label_time.pack(side="right", padx=0)
-        self.time_label_prefix = tb.Label(log_title_frame, text="錄製: ", font=font_tuple(12, monospace=True), foreground="#15D3BD")
-        self.time_label_prefix.pack(side="right", padx=0)
+        # 錄製時間（使用 Frame 包裹多個 Label 實現部分變色）
+        time_frame = tb.Frame(log_title_frame)
+        time_frame.pack(side="right", padx=0)
+        self.time_label_prefix = tb.Label(time_frame, text="錄製: ", font=font_tuple(12, monospace=True), foreground="#15D3BD")
+        self.time_label_prefix.pack(side="left", padx=0)
+        # 分段顯示：時:分:秒 (可獨立設置顏色)
+        self.time_label_h = tb.Label(time_frame, text="00", font=font_tuple(12, monospace=True), foreground="#888888")
+        self.time_label_h.pack(side="left", padx=0)
+        tb.Label(time_frame, text=":", font=font_tuple(12, monospace=True), foreground="#888888").pack(side="left", padx=0)
+        self.time_label_m = tb.Label(time_frame, text="00", font=font_tuple(12, monospace=True), foreground="#888888")
+        self.time_label_m.pack(side="left", padx=0)
+        tb.Label(time_frame, text=":", font=font_tuple(12, monospace=True), foreground="#888888").pack(side="left", padx=0)
+        self.time_label_s = tb.Label(time_frame, text="00", font=font_tuple(12, monospace=True), foreground="#888888")
+        self.time_label_s.pack(side="left", padx=0)
 
-        # 單次剩餘
-        self.countdown_label_time = tb.Label(log_title_frame, text="00:00:00", font=font_tuple(12, monospace=True), foreground="#888888")
-        self.countdown_label_time.pack(side="right", padx=0)
-        self.countdown_label_prefix = tb.Label(log_title_frame, text="單次: ", font=font_tuple(12, monospace=True), foreground="#DB0E59")
-        self.countdown_label_prefix.pack(side="right", padx=0)
+        # 單次剩餘（使用 Frame 包裹多個 Label 實現部分變色）
+        countdown_frame = tb.Frame(log_title_frame)
+        countdown_frame.pack(side="right", padx=0)
+        self.countdown_label_prefix = tb.Label(countdown_frame, text="單次: ", font=font_tuple(12, monospace=True), foreground="#DB0E59")
+        self.countdown_label_prefix.pack(side="left", padx=0)
+        self.countdown_label_h = tb.Label(countdown_frame, text="00", font=font_tuple(12, monospace=True), foreground="#888888")
+        self.countdown_label_h.pack(side="left", padx=0)
+        tb.Label(countdown_frame, text=":", font=font_tuple(12, monospace=True), foreground="#888888").pack(side="left", padx=0)
+        self.countdown_label_m = tb.Label(countdown_frame, text="00", font=font_tuple(12, monospace=True), foreground="#888888")
+        self.countdown_label_m.pack(side="left", padx=0)
+        tb.Label(countdown_frame, text=":", font=font_tuple(12, monospace=True), foreground="#888888").pack(side="left", padx=0)
+        self.countdown_label_s = tb.Label(countdown_frame, text="00", font=font_tuple(12, monospace=True), foreground="#888888")
+        self.countdown_label_s.pack(side="left", padx=0)
 
-        # 總運作
-        self.total_time_label_time = tb.Label(log_title_frame, text="00:00:00", font=font_tuple(12, monospace=True), foreground="#888888")
-        self.total_time_label_time.pack(side="right", padx=0)
-        self.total_time_label_prefix = tb.Label(log_title_frame, text="總運作: ", font=font_tuple(12, monospace=True), foreground="#FF95CA")
-        self.total_time_label_prefix.pack(side="right", padx=0)
+        # 總運作（使用 Frame 包裹多個 Label 實現部分變色）
+        total_frame = tb.Frame(log_title_frame)
+        total_frame.pack(side="right", padx=0)
+        self.total_time_label_prefix = tb.Label(total_frame, text="總運作: ", font=font_tuple(12, monospace=True), foreground="#FF95CA")
+        self.total_time_label_prefix.pack(side="left", padx=0)
+        self.total_time_label_h = tb.Label(total_frame, text="00", font=font_tuple(12, monospace=True), foreground="#888888")
+        self.total_time_label_h.pack(side="left", padx=0)
+        tb.Label(total_frame, text=":", font=font_tuple(12, monospace=True), foreground="#888888").pack(side="left", padx=0)
+        self.total_time_label_m = tb.Label(total_frame, text="00", font=font_tuple(12, monospace=True), foreground="#888888")
+        self.total_time_label_m.pack(side="left", padx=0)
+        tb.Label(total_frame, text=":", font=font_tuple(12, monospace=True), foreground="#888888").pack(side="left", padx=0)
+        self.total_time_label_s = tb.Label(total_frame, text="00", font=font_tuple(12, monospace=True), foreground="#888888")
+        self.total_time_label_s.pack(side="left", padx=0)
 
         # ====== row5 分頁區域 ======
         frm_page = tb.Frame(self, padding=(10, 0, 10, 10))
@@ -1164,69 +1188,36 @@ class RecorderApp(tb.Window):
             print(f"顯示 about 視窗失敗: {e}")
     
     def check_for_updates(self):
-        """檢查 GitHub 上的新版本（僅顯示版本資訊，不提供自動下載）"""
-        import urllib.request
-        import json
+        """檢查更新（使用新的更新系統）"""
+        try:
+            from update_manager import UpdateManager
+            from update_dialog import UpdateDialog, NoUpdateDialog
+        except Exception as e:
+            self.log(f"無法載入更新模組: {e}")
+            messagebox.showerror("錯誤", "更新系統模組載入失敗")
+            return
         
         def check_in_thread():
             try:
-                # GitHub API URL
-                api_url = 'https://api.github.com/repos/Lucienwooo/ChroLens_Mimic/releases/latest'
+                # 建立更新管理器
+                updater = UpdateManager(VERSION, logger=self.log)
                 
-                # 發送請求
-                req = urllib.request.Request(api_url)
-                req.add_header('User-Agent', 'ChroLens_Mimic')
-                
-                with urllib.request.urlopen(req, timeout=10) as response:
-                    data = json.loads(response.read().decode('utf-8'))
-                
-                latest_version = data.get('tag_name', '').lstrip('v')
-                release_notes = data.get('body', '無更新說明')
-                release_url = data.get('html_url', '')
+                # 檢查更新
+                update_info = updater.check_for_updates()
                 
                 def show_result():
-                    if not latest_version:
-                        messagebox.showerror("錯誤", "無法獲取版本資訊")
-                        return
-                    
-                    # 比較版本
-                    current_parts = VERSION.split('.')
-                    latest_parts = latest_version.split('.')
-                    
-                    has_update = False
-                    try:
-                        for i in range(max(len(current_parts), len(latest_parts))):
-                            c = int(current_parts[i]) if i < len(current_parts) else 0
-                            l = int(latest_parts[i]) if i < len(latest_parts) else 0
-                            if l > c:
-                                has_update = True
-                                break
-                            elif l < c:
-                                break
-                    except:
-                        pass
-                    
-                    if has_update:
-                        ellipsis = '...' if len(release_notes) > 300 else ''
-                        message = f"發現新版本！\n\n"
-                        message += f"目前版本：{VERSION}\n"
-                        message += f"最新版本：{latest_version}\n\n"
-                        message += f"更新內容：\n{release_notes[:300]}{ellipsis}\n\n"
-                        message += f"請前往 GitHub 下載新版本"
-                        
-                        result = messagebox.askyesno("發現新版本", message)
-                        if result:
-                            import webbrowser
-                            webbrowser.open(release_url)
+                    if update_info:
+                        # 有更新：顯示更新對話框
+                        UpdateDialog(self, updater, update_info)
                     else:
-                        messagebox.showinfo("已是最新版本", f"您使用的是最新版本 {VERSION}")
+                        # 無更新：顯示已是最新版本
+                        NoUpdateDialog(self, VERSION)
                 
                 self.after(0, show_result)
                 
-            except urllib.error.URLError as e:
-                self.after(0, lambda: messagebox.showerror("網路錯誤", f"無法連線到 GitHub：\n{str(e)}\n\n請檢查網路連線"))
             except Exception as e:
-                self.after(0, lambda: messagebox.showerror("錯誤", f"檢查更新失敗：\n{str(e)}"))
+                error_msg = str(e)
+                self.after(0, lambda msg=error_msg: messagebox.showerror("錯誤", f"檢查更新失敗：\n{msg}"))
         
         # 在背景執行緒中執行
         threading.Thread(target=check_in_thread, daemon=True).start()
@@ -1305,58 +1296,68 @@ class RecorderApp(tb.Window):
         self.log_text.configure(state="disabled")
 
     def update_time_label(self, seconds):
+        """更新錄製時間顯示（動態顏色：非零數字顯示 #FF95CA）"""
         h = int(seconds // 3600)
         m = int((seconds % 3600) // 60)
         s = int(seconds % 60)
-        time_str = f"{h:02d}:{m:02d}:{s:02d}"
-        if time_str == "00:00:00":
-            self.time_label_time.config(text=time_str, foreground="#888888")
-        else:
-            colored = []
-            for idx, part in enumerate(time_str.split(":")):
-                if part == "00" and idx < 2:
-                    colored.append(("#888888", part))
-                else:
-                    colored.append(("#15D3BD", part))
-            self.time_label_time.config(
-                text=":".join([p[1] for p in colored]),
-                foreground=colored[-1][0]
-            )
+        
+        # 設定顏色：非零數字顯示 #FF95CA，零顯示灰色 #888888
+        h_color = "#FF95CA" if h > 0 else "#888888"
+        m_color = "#FF95CA" if m > 0 or h > 0 else "#888888"  # 如果小時>0，分鐘也要亮
+        s_color = "#FF95CA" if s > 0 or m > 0 or h > 0 else "#888888"  # 如果分鐘>0，秒也要亮
+        
+        self.time_label_h.config(text=f"{h:02d}", foreground=h_color)
+        self.time_label_m.config(text=f"{m:02d}", foreground=m_color)
+        self.time_label_s.config(text=f"{s:02d}", foreground=s_color)
 
     def update_total_time_label(self, seconds):
+        """更新總運作時間顯示（動態顏色：非零數字顯示 #FF95CA）"""
         # 處理無限重複的情況
         if seconds == float('inf') or (isinstance(seconds, float) and (seconds != seconds or seconds > 1e10)):
             # NaN 或無限大，顯示 ∞
-            self.total_time_label_time.config(text="∞", foreground="#FF95CA")
+            self.total_time_label_h.config(text="∞", foreground="#FF95CA")
+            self.total_time_label_m.config(text="", foreground="#888888")
+            self.total_time_label_s.config(text="", foreground="#888888")
             return
         
         h = int(seconds // 3600)
         m = int((seconds % 3600) // 60)
         s = int(seconds % 60)
-        time_str = f"{h:02d}:{m:02d}:{s:02d}"
-        if time_str == "00:00:00":
-            self.total_time_label_time.config(text=time_str, foreground="#888888")
-        else:
-            self.total_time_label_time.config(text=time_str, foreground="#FF95CA")
+        
+        # 設定顏色：非零數字顯示 #FF95CA，零顯示灰色 #888888
+        h_color = "#FF95CA" if h > 0 else "#888888"
+        m_color = "#FF95CA" if m > 0 or h > 0 else "#888888"
+        s_color = "#FF95CA" if s > 0 or m > 0 or h > 0 else "#888888"
+        
+        self.total_time_label_h.config(text=f"{h:02d}", foreground=h_color)
+        self.total_time_label_m.config(text=f"{m:02d}", foreground=m_color)
+        self.total_time_label_s.config(text=f"{s:02d}", foreground=s_color)
 
     def update_countdown_label(self, seconds):
+        """更新單次剩餘時間顯示（動態顏色：非零數字顯示 #FF95CA）"""
         # 處理無限重複的情況
         if seconds == float('inf') or (isinstance(seconds, float) and (seconds != seconds or seconds > 1e10)):
             # NaN 或無限大，顯示 ∞
-            self.countdown_label_time.config(text="∞", foreground="#FF95CA")
+            self.countdown_label_h.config(text="∞", foreground="#FF95CA")
+            self.countdown_label_m.config(text="", foreground="#888888")
+            self.countdown_label_s.config(text="", foreground="#888888")
             return
         
         h = int(seconds // 3600)
         m = int((seconds % 3600) // 60)
         s = int(seconds % 60)
-        time_str = f"{h:02d}:{m:02d}:{s:02d}"
-        if time_str == "00:00:00":
-            self.countdown_label_time.config(text=time_str, foreground="#888888")
-        else:
-            self.countdown_label_time.config(text=time_str, foreground="#DB0E59")
+        
+        # 設定顏色：非零數字顯示 #FF95CA，零顯示灰色 #888888
+        h_color = "#FF95CA" if h > 0 else "#888888"
+        m_color = "#FF95CA" if m > 0 or h > 0 else "#888888"
+        s_color = "#FF95CA" if s > 0 or m > 0 or h > 0 else "#888888"
+        
+        self.countdown_label_h.config(text=f"{h:02d}", foreground=h_color)
+        self.countdown_label_m.config(text=f"{m:02d}", foreground=m_color)
+        self.countdown_label_s.config(text=f"{s:02d}", foreground=s_color)
 
     def _update_play_time(self):
-        """更新回放時間顯示（強化版 - 確保時間計算準確）"""
+        """更新回放時間顯示（強化版 - 使用實際時間確保準確倒數）"""
         if self.playing:
             # 檢查 core_recorder 是否仍在播放
             if not getattr(self.core_recorder, 'playing', False):
@@ -1381,32 +1382,45 @@ class RecorderApp(tb.Window):
                             pass
                 return
             
-            # 獲取當前事件索引（從 core_recorder）
-            try:
-                idx = getattr(self.core_recorder, "_current_play_index", 0)
-            except:
-                idx = 0
-            
-            # 計算已播放時間
-            if idx == 0 or not self.events:
-                elapsed = 0
+            # ✅ 修復：使用實際經過的時間而非事件索引
+            # 計算腳本的總長度（邏輯時間）
+            if self.events and len(self.events) > 0:
+                script_duration = self.events[-1]['time'] - self.events[0]['time']
             else:
-                # 防止 index 超出範圍
-                if idx > len(self.events):
-                    idx = len(self.events)
-                if idx > 0 and len(self.events) > 0:
-                    elapsed = self.events[min(idx-1, len(self.events)-1)]['time'] - self.events[0]['time']
-                else:
-                    elapsed = 0
+                script_duration = 0
+            
+            # 獲取當前循環計數
+            current_repeat = getattr(self.core_recorder, '_current_repeat_count', 0)
+            
+            # 檢測循環變化（開始新的循環）
+            if not hasattr(self, '_last_repeat_count'):
+                self._last_repeat_count = 0
+            
+            if current_repeat != self._last_repeat_count:
+                # 循環變化，重置循環起始時間
+                self._current_cycle_start_time = time.time()
+                self._last_repeat_count = current_repeat
+            
+            # 獲取單次回放的起始時間
+            if not hasattr(self, '_current_cycle_start_time') or self._current_cycle_start_time is None:
+                # 初始化當前循環起始時間
+                self._current_cycle_start_time = time.time()
+            
+            # 計算當前循環內的實際經過時間
+            elapsed_real = time.time() - self._current_cycle_start_time
+            
+            # 應用速度係數來計算邏輯時間
+            speed = getattr(self, 'speed', 1.0)
+            elapsed = elapsed_real * speed
+            
+            # 限制 elapsed 不超過腳本總長度（單次）
+            if script_duration > 0 and elapsed > script_duration:
+                elapsed = script_duration
                     
             self.update_time_label(elapsed)
             
-            # 計算單次剩餘時間
-            if self.events and len(self.events) > 0:
-                total = self.events[-1]['time'] - self.events[0]['time']
-                remain = max(0, total - elapsed)
-            else:
-                remain = 0
+            # 計算單次剩餘時間（邏輯時間）
+            remain = max(0, script_duration - elapsed)
             self.update_countdown_label(remain)
             
             # 計算總運作剩餘時間
@@ -1587,15 +1601,27 @@ class RecorderApp(tb.Window):
                 self.core_recorder._keyboard_recording = True
 
     def stop_record(self):
-        """停止錄製"""
+        """停止錄製（穩定版：雙重保險機制）"""
         if not self.recording:
             return
-        # 告訴 core_recorder 停止錄製，之後等待錄製執行緒真正結束再同步 events 與自動存檔
+        
+        # 告訴 core_recorder 停止錄製
         self.recording = False
         self.core_recorder.stop_record()
         self.log(f"[{format_time(time.time())}] 停止錄製（等待寫入事件...）。")
-        # 等待 core_recorder 的錄製執行緒結束，結束後會同步 events 並 auto_save
+        
+        # 等待 core_recorder 的錄製執行緒結束
         self._wait_record_thread_finish()
+        
+        # ✅ 穩定性增強：分階段重新註冊快捷鍵
+        try:
+            # 第一階段：立即重新註冊（100ms）
+            self.after(100, self._safe_reregister_hotkeys)
+            # 第二階段：延遲再次註冊（500ms，確保穩定）
+            self.after(500, self._safe_reregister_hotkeys)
+            self.log(f"[停止錄製] 已啟動雙重快捷鍵保護機制")
+        except Exception as e:
+            self.log(f"[警告] 重新註冊快捷鍵時發生錯誤: {e}")
 
     def play_record(self):
         """開始回放"""
@@ -1882,6 +1908,7 @@ class RecorderApp(tb.Window):
         self._total_play_time = total_time
 
         self._play_start_time = time.time()
+        self._current_cycle_start_time = time.time()  # ✅ 初始化當前循環起始時間
         self.update_total_time_label(self._total_play_time)
         self.playing = True
         self.paused = False
@@ -1912,16 +1939,16 @@ class RecorderApp(tb.Window):
             self.log("沒有可回放的事件，請先錄製或載入腳本。")
 
     def stop_all(self):
-        """停止所有動作 (修復版 - 參考 v2.5 簡單直接的實現)"""
+        """停止所有動作（全新實作 - 更穩健的處理）"""
         stopped = False
         
-        # ✅ 修復: 先設定狀態再執行停止
+        # ✅ 立即設定狀態
         if self.recording:
             self.recording = False
             stopped = True
             self.log(f"[{format_time(time.time())}] 停止錄製。")
             
-            # 停止 core_recorder (如果存在)
+            # 停止 core_recorder
             if hasattr(self, 'core_recorder'):
                 if hasattr(self.core_recorder, 'recording'):
                     self.core_recorder.recording = False
@@ -1930,7 +1957,11 @@ class RecorderApp(tb.Window):
                 if hasattr(self.core_recorder, 'events'):
                     self.events = self.core_recorder.events
             
+            # 等待錄製執行緒結束
             self._wait_record_thread_finish()
+            
+            # ✅ 錄製結束後重新註冊快捷鍵
+            self.after(200, self._safe_reregister_hotkeys)
         
         if self.playing:
             self.playing = False
@@ -1950,10 +1981,11 @@ class RecorderApp(tb.Window):
         if not stopped:
             self.log(f"[{format_time(time.time())}] 無進行中動作可停止。")
         
-        # ✅ 修復: 立即刷新顯示 (參考 v2.5)
+        # ✅ 立即刷新顯示
         self.update_time_label(0)
         self.update_countdown_label(0)
         self.update_total_time_label(0)
+        
         # 強制更新時間顯示
         try:
             self._update_play_time()
@@ -1961,86 +1993,68 @@ class RecorderApp(tb.Window):
         except Exception:
             pass
     
-    def _reregister_hotkeys(self):
-        """
-        重新註冊快捷鍵（修復快捷鍵失效問題）
-        
-        注意：使用 pynput 監聽器後，這個方法通常不需要調用，
-        因為監聽器是持續運行的，不會因為停止動作而失效。
-        保留此方法是為了向後相容。
-        """
-        # pynput 監聽器已經在持續運行，無需重新註冊
-        pass
+
 
     def force_quit(self):
         """
-        強制停止所有動作並關閉程式
+        強制停止所有動作並關閉程式（全新實作）
         
-        【優先級說明】
-        此方法的優先級高於所有其他操作：
-        1. 立即停止錄製和回放
-        2. 釋放所有資源和快捷鍵
-        3. 強制終止程式
+        【最高優先權保證】
+        此方法使用 suppress=True 註冊，確保：
+        1. 按下快捷鍵後立即執行，不被其他程式攔截
+        2. 優先於所有其他快捷鍵
+        3. 即使程式卡住也能觸發
         
-        使用情境：
-        - 程式無回應時的緊急停止
-        - 需要立即終止所有動作
+        【執行順序】
+        1. 立即停止所有錄製和回放
+        2. 釋放所有按鍵和 hooks
+        3. 清理快捷鍵註冊
+        4. 強制終止程式
         """
         try:
-            self.log("[系統] ⚠ 強制停止：收到強制關閉指令，開始清理資源...")
+            self.log("[系統] 🔴 強制停止：立即終止所有動作...")
         except:
             pass
 
-        # 【關鍵1】立即停止所有錄製與回放動作
+        # ✅ 步驟1：立即停止所有動作
         try:
-            # 強制設定所有狀態為 False
             self.recording = False
             self.playing = False
             self.paused = False
             
-            # 停止 core_recorder 的所有動作
+            # 停止 core_recorder
             if hasattr(self, 'core_recorder'):
                 try:
-                    if hasattr(self.core_recorder, 'recording'):
-                        self.core_recorder.recording = False
-                    if hasattr(self.core_recorder, 'playing'):
-                        self.core_recorder.playing = False
+                    self.core_recorder.recording = False
+                    self.core_recorder.playing = False
                     self.core_recorder.stop_record()
                     self.core_recorder.stop_play()
                 except:
                     pass
-            
-            # 呼叫 stop_all 確保清理完整
-            self.stop_all()
         except Exception as e:
             try:
-                self.log(f"[警告] 停止動作時發生錯誤: {e}")
+                self.log(f"[警告] 停止動作錯誤: {e}")
             except:
                 pass
 
-        # 釋放並移除所有快捷鍵註冊
+        # ✅ 步驟2：釋放所有按鍵（避免卡鍵）
         try:
-            # 停止 pynput 監聽器
-            if hasattr(self, '_pynput_listener') and self._pynput_listener:
-                try:
-                    self._pynput_listener.stop()
-                except:
-                    pass
+            self._release_all_modifiers()
+        except:
+            pass
+
+        # ✅ 步驟3：清理 keyboard hooks
+        try:
+            import keyboard
             
-            # 清除快捷鍵映射
-            if hasattr(self, '_hotkey_combinations'):
-                self._hotkey_combinations.clear()
-            if hasattr(self, '_script_hotkey_handlers'):
-                self._script_hotkey_handlers.clear()
+            # 清理快捷鍵
+            self._hotkey_handlers.clear()
+            self._script_hotkey_handlers.clear()
             
-            # 若有 hotkey_manager，請其解除註冊
+            # 嘗試 unhook all（force_quit 可以使用）
             try:
-                if hasattr(self, 'hotkey_manager') and self.hotkey_manager:
-                    try:
-                        self.hotkey_manager.unregister_all()
-                    except:
-                        pass
-            except Exception:
+                keyboard.unhook_all()
+            except:
                 pass
         except Exception:
             pass
@@ -2634,174 +2648,121 @@ class RecorderApp(tb.Window):
 
     # 不再需要 _make_hotkey_entry_handler
 
-    def _parse_hotkey_combo(self, hotkey_str):
+    def _safe_reregister_hotkeys(self):
         """
-        解析快捷鍵字串，轉換為 pynput 可用的按鍵組合
-        例如: "ctrl+alt+z" -> {Key.ctrl, Key.alt, 'z'}
+        安全地重新註冊快捷鍵（避免與錄製 hooks 衝突）
+        
+        【核心策略】
+        1. 不使用 unhook_all() - 會清除所有 hooks 包括快捷鍵
+        2. 直接重新註冊 - keyboard 模組會自動替換舊的 handler
+        3. 使用 try-except 確保穩定性
         """
-        from pynput.keyboard import Key, KeyCode
-        
-        parts = hotkey_str.lower().replace(" ", "").split("+")
-        keys = set()
-        
-        for part in parts:
-            # 處理特殊鍵
-            if part in ["ctrl", "control"]:
-                keys.add(Key.ctrl_l)
-            elif part == "alt":
-                keys.add(Key.alt_l)
-            elif part == "shift":
-                keys.add(Key.shift_l)
-            elif part == "win" or part == "cmd":
-                keys.add(Key.cmd)
-            # 處理功能鍵
-            elif part.startswith("f") and len(part) <= 3:
-                try:
-                    fn_num = int(part[1:])
-                    if 1 <= fn_num <= 12:
-                        keys.add(getattr(Key, f"f{fn_num}"))
-                except:
-                    pass
-            # 處理特殊符號
-            elif part == "`":
-                keys.add(KeyCode.from_char("`"))
-            # 處理一般字元
-            elif len(part) == 1:
-                keys.add(KeyCode.from_char(part))
-        
-        return keys
-
+        try:
+            self._register_hotkeys()
+            self._register_script_hotkeys()
+            self.log("[快捷鍵] 重新註冊完成")
+        except Exception as e:
+            self.log(f"[錯誤] 重新註冊快捷鍵失敗: {e}")
+    
     def _register_hotkeys(self):
         """
-        註冊系統快捷鍵（使用 pynput 模組）
+        註冊系統快捷鍵（穩定增強版 - 防止重複註冊）
         
-        【設計說明】
-        1. 使用 pynput 取代 keyboard 模組，解決 PyInstaller 打包後失效問題
-        2. 使用 self.after(0, callback) 確保所有回調在主執行緒執行
-        3. 按優先級順序註冊快捷鍵，force_quit 最優先
+        【設計原則】
+        1. 使用 keyboard.add_hotkey() - 簡單可靠
+        2. 先移除舊的 handler，再註冊新的（確保乾淨）
+        3. force_quit 使用 suppress=True 最高優先權
+        4. 其他使用 suppress=False 避免干擾系統
+        5. 所有快捷鍵使用 trigger_on_release=False 立即觸發
+        
+        【穩定性增強】
+        - 移除舊 handler 前先檢查是否存在
+        - 使用 try-except 保護每個註冊步驟
+        - 記錄詳細的註冊/移除日誌
         """
-        from pynput import keyboard as pynput_keyboard
+        import keyboard
         
-        # 停止舊的監聽器
-        if hasattr(self, '_pynput_listener') and self._pynput_listener:
+        # ✅ 穩定性增強：先安全移除所有舊的 handlers
+        for key, handler in list(self._hotkey_handlers.items()):
             try:
-                self._pynput_listener.stop()
-            except:
+                if handler is not None:
+                    keyboard.remove_hotkey(handler)
+            except Exception as ex:
+                # 忽略移除失敗（handler 可能已失效）
                 pass
         
-        # 當前按下的按鍵集合
-        self._current_keys = set()
+        # 清空舊的 handler 紀錄
+        self._hotkey_handlers.clear()
         
-        # 快捷鍵映射表
-        self._hotkey_combinations = {}
+        # 方法映射表
+        method_map = {
+            "start": self.start_record,
+            "pause": self.toggle_pause,
+            "stop": self.stop_all,
+            "play": self.play_record,
+            "mini": self.toggle_mini_mode,
+            "force_quit": self.force_quit
+        }
         
-        # 按優先級順序準備快捷鍵
-        priority_order = ["force_quit", "stop", "pause", "start", "play", "mini"]
-        sorted_keys = sorted(self.hotkey_map.keys(), 
-                            key=lambda k: priority_order.index(k) if k in priority_order else 999)
+        # ✅ 策略1：最先註冊 force_quit，使用 suppress=True
+        if "force_quit" in self.hotkey_map:
+            try:
+                hotkey = self.hotkey_map["force_quit"]
+                # 使用 suppress=True 確保絕對優先
+                handler = keyboard.add_hotkey(
+                    hotkey,
+                    self.force_quit,
+                    suppress=True,
+                    trigger_on_release=False
+                )
+                self._hotkey_handlers["force_quit"] = handler
+                if self._is_first_run:
+                    self.log(f"🔴 強制停止: {hotkey} (最高優先權)")
+            except Exception as ex:
+                self.log(f"✗ 強制停止註冊失敗: {ex}")
         
-        # 建立快捷鍵組合表
-        for key in sorted_keys:
-            hotkey = self.hotkey_map.get(key)
-            if not hotkey:
+        # ✅ 策略2：按重要性順序註冊其他快捷鍵
+        priority_order = ["stop", "pause", "start", "play", "mini"]
+        
+        for key in priority_order:
+            if key not in self.hotkey_map:
                 continue
             
             try:
-                combo = self._parse_hotkey_combo(hotkey)
-                if combo:
-                    # 定義回調函數（關鍵修復：F9 直接調用方法而非 invoke 按鈕）
-                    def make_callback(action_key):
-                        if action_key == "force_quit":
-                            return lambda: self.force_quit()
-                        elif action_key == "start":
-                            # F10: 直接調用開始錄製方法
-                            return lambda: self.after(0, self.start_record)
-                        elif action_key == "pause":
-                            # F11: 直接調用暫停方法
-                            return lambda: self.after(0, self.toggle_pause)
-                        elif action_key == "stop":
-                            # F9: 直接調用停止方法（修復同步問題的關鍵）
-                            # 不使用 btn_stop.invoke()，避免雙重 after 延遲
-                            # stop_all 內部已經優化為立即執行，無需額外 after
-                            return lambda: self.stop_all()
-                        elif action_key == "play":
-                            # F12: 直接調用回放方法
-                            return lambda: self.after(0, self.play_record)
-                        elif action_key == "mini":
-                            # Alt+`: 直接調用 MiniMode 切換方法
-                            return lambda: self.after(0, self.toggle_mini_mode)
-                        else:
-                            return lambda: None
-                    
-                    callback = make_callback(key)
-                    self._hotkey_combinations[frozenset(combo)] = {
-                        "callback": callback,
-                        "name": key,
-                        "hotkey": hotkey
-                    }
-                    
-                    if self._is_first_run:
-                        priority_mark = "🔴" if key == "force_quit" else ("🟡" if key == "stop" else "🟢")
-                        self.log(f"{priority_mark} 註冊快捷鍵: {hotkey} → {key}")
-            except Exception as ex:
-                self.log(f"✗ 快捷鍵 {hotkey} 註冊失敗: {ex}")
-        
-        # 定義按鍵處理函數
-        def on_press(key):
-            try:
-                # 標準化按鍵
-                if hasattr(key, 'vk'):
-                    normalized_key = key
-                elif hasattr(key, 'char') and key.char:
-                    normalized_key = pynput_keyboard.KeyCode.from_char(key.char.lower())
-                else:
-                    normalized_key = key
+                hotkey = self.hotkey_map[key]
+                method = method_map.get(key)
+                if not method:
+                    continue
                 
-                self._current_keys.add(normalized_key)
+                # 使用 suppress=False，不干擾其他程式
+                handler = keyboard.add_hotkey(
+                    hotkey,
+                    method,
+                    suppress=False,
+                    trigger_on_release=False
+                )
+                self._hotkey_handlers[key] = handler
                 
-                # 檢查是否匹配任何快捷鍵組合
-                for combo, info in self._hotkey_combinations.items():
-                    if self._current_keys >= combo:
-                        info["callback"]()
-                        # 清空當前按鍵，防止重複觸發
-                        self._current_keys.clear()
-                        return False  # 阻止按鍵傳遞（類似 suppress）
+                if self._is_first_run:
+                    priority_mark = "🟡" if key == "stop" else "🟢"
+                    self.log(f"{priority_mark} {key}: {hotkey}")
             except Exception as ex:
-                print(f"on_press error: {ex}")
-        
-        def on_release(key):
-            try:
-                # 標準化按鍵
-                if hasattr(key, 'vk'):
-                    normalized_key = key
-                elif hasattr(key, 'char') and key.char:
-                    normalized_key = pynput_keyboard.KeyCode.from_char(key.char.lower())
-                else:
-                    normalized_key = key
-                
-                # 移除釋放的按鍵
-                if normalized_key in self._current_keys:
-                    self._current_keys.discard(normalized_key)
-            except Exception as ex:
-                print(f"on_release error: {ex}")
-        
-        # 啟動新的監聽器
-        try:
-            self._pynput_listener = pynput_keyboard.Listener(
-                on_press=on_press,
-                on_release=on_release,
-                suppress=False
-            )
-            self._pynput_listener.start()
-        except Exception as ex:
-            self.log(f"✗ 快捷鍵監聽器啟動失敗: {ex}")
+                self.log(f"✗ 快捷鍵 {key} 註冊失敗: {ex}")
 
     def _register_script_hotkeys(self):
-        """註冊所有腳本的快捷鍵（使用 pynput 整合到主監聽器）"""
-        # 清除舊的腳本快捷鍵映射
+        """註冊所有腳本的快捷鍵（使用 keyboard 模組）"""
+        import keyboard
+        
+        # 移除舊的腳本快捷鍵
+        for script, info in self._script_hotkey_handlers.items():
+            try:
+                if "handler" in info:
+                    keyboard.remove_hotkey(info["handler"])
+            except Exception as ex:
+                self.log(f"移除腳本快捷鍵時發生錯誤: {ex}")
         self._script_hotkey_handlers.clear()
 
-        # 掃描所有腳本並建立快捷鍵映射
+        # 掃描所有腳本並註冊快捷鍵
         if not os.path.exists(self.script_dir):
             return
         
@@ -2820,26 +2781,20 @@ class RecorderApp(tb.Window):
                     hotkey = data["script_hotkey"]
                 
                 if hotkey:
-                    # 解析快捷鍵組合
-                    combo = self._parse_hotkey_combo(hotkey)
-                    if combo:
-                        # 為每個腳本創建回調
-                        from functools import partial
-                        callback = partial(self._play_script_by_hotkey, script)
-                        
-                        # 添加到快捷鍵組合表
-                        self._hotkey_combinations[frozenset(combo)] = {
-                            "callback": lambda s=script: self.after(0, lambda: self._play_script_by_hotkey(s)),
-                            "name": f"script:{script}",
-                            "hotkey": hotkey
-                        }
-                        
-                        self._script_hotkey_handlers[script] = {
-                            "script": script,
-                            "hotkey": hotkey,
-                            "combo": combo
-                        }
-                        self.log(f"已註冊腳本快捷鍵: {hotkey} → {script}")
+                    # 使用 lambda 捕獲當前的 script 值
+                    handler = keyboard.add_hotkey(
+                        hotkey,
+                        lambda s=script: self._play_script_by_hotkey(s),
+                        suppress=False,
+                        trigger_on_release=False
+                    )
+                    
+                    self._script_hotkey_handlers[script] = {
+                        "script": script,
+                        "hotkey": hotkey,
+                        "handler": handler
+                    }
+                    self.log(f"已註冊腳本快捷鍵: {hotkey} → {script}")
             except Exception as ex:
                 self.log(f"註冊腳本快捷鍵失敗 ({script}): {ex}")
 

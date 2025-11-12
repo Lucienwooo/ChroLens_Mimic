@@ -1,5 +1,15 @@
 ![ChroLens_Mimic](./pic/clm2.6.png)
 
+<!-- Microsoft Clarity Analytics -->
+<script type="text/javascript">
+    (function(c,l,a,r,i,t,y){
+        c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};
+        t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;
+        y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
+    })(window, document, "clarity", "script", "u4so97z7de");
+</script>
+<!-- End Microsoft Clarity Analytics -->
+
 ## 功能介紹：</br>
 1.巨集錄製工具：可以錄製鍵盤和滑鼠的所有操作，並將其儲存為巨集。</br>
 2.設定重複的次數或是指定的時間範圍進行重複</br>
