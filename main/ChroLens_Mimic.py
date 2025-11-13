@@ -30,10 +30,11 @@
 # 4. 舊版本會自動備份至 backup\版本號\ 資料夾
 #
 # === 版本更新紀錄 ===
-# [2.6.4] - 測試自動更新功能
+# [2.6.5] - 修復錄製時快捷鍵失效問題（F9 停止鍵）、參考 v2.5 穩定實現
+# [2.6.4] - 快捷鍵系統優化、打包系統完善、更新UI改進、備份機制優化
 #pyinstaller --noconsole --onedir --icon=..\umi_奶茶色.ico --add-data "..\umi_奶茶色.ico;." --add-data "TTF;TTF" --add-data "recorder.py;." --add-data "lang.py;." --add-data "script_io.py;." --add-data "about.py;." --add-data "mini.py;." --add-data "window_selector.py;." --add-data "script_parser.py;." --add-data "config_manager.py;." --add-data "hotkey_manager.py;." --add-data "script_editor_methods.py;." --add-data "script_manager.py;." --add-data "ui_components.py;." --add-data "visual_script_editor.py;." --add-data "update_manager.py;." --add-data "update_dialog.py;." ChroLens_Mimic.py
 
-VERSION = "2.6.3"
+VERSION = "2.6.5"
 
 import ttkbootstrap as tb
 from ttkbootstrap.constants import *
@@ -2666,21 +2667,39 @@ class RecorderApp(tb.Window):
     
     def _register_hotkeys(self):
         """
-        註冊系統快捷鍵（穩定增強版 - 防止重複註冊）
+        註冊系統快捷鍵（穩定版 - 參考 v2.5 實現）
+        
+        【重要修復 v2.6.5】
+        - 使用 v2.5 穩定的 getattr() 方式獲取方法引用
+        - 所有快捷鍵使用相同的註冊方式（無特殊優先權）
+        - 錄製過程中不取消註冊，確保停止鍵始終有效
+        - 修復了 F9 停止快捷鍵在錄製時失效的問題
         
         【設計原則】
         1. 使用 keyboard.add_hotkey() - 簡單可靠
         2. 先移除舊的 handler，再註冊新的（確保乾淨）
-        3. force_quit 使用 suppress=True 最高優先權
-        4. 其他使用 suppress=False 避免干擾系統
-        5. 所有快捷鍵使用 trigger_on_release=False 立即觸發
+        3. 所有快捷鍵使用 suppress=False 避免干擾系統
+        4. 所有快捷鍵使用 trigger_on_release=False 立即觸發
         
         【穩定性增強】
         - 移除舊 handler 前先檢查是否存在
         - 使用 try-except 保護每個註冊步驟
         - 記錄詳細的註冊/移除日誌
+        
+        【PyInstaller 兼容性】
+        - 確保 keyboard 模組以管理員權限運行
+        - 添加詳細的錯誤處理和日誌
         """
-        import keyboard
+        try:
+            import keyboard
+        except ImportError as e:
+            self.log(f"[錯誤] 無法載入 keyboard 模組: {e}")
+            self.log("[提示] 請確保已安裝 keyboard 模組: pip install keyboard")
+            return
+        except Exception as e:
+            self.log(f"[錯誤] keyboard 模組初始化失敗: {e}")
+            self.log("[提示] 可能需要以管理員權限運行程式")
+            return
         
         # ✅ 穩定性增強：先安全移除所有舊的 handlers
         for key, handler in list(self._hotkey_handlers.items()):
@@ -2694,64 +2713,71 @@ class RecorderApp(tb.Window):
         # 清空舊的 handler 紀錄
         self._hotkey_handlers.clear()
         
-        # 方法映射表
-        method_map = {
-            "start": self.start_record,
-            "pause": self.toggle_pause,
-            "stop": self.stop_all,
-            "play": self.play_record,
-            "mini": self.toggle_mini_mode,
-            "force_quit": self.force_quit
+        # 方法映射表（使用 v2.5 風格的 getattr）
+        method_name_map = {
+            "start": "start_record",
+            "pause": "toggle_pause",
+            "stop": "stop_all",
+            "play": "play_record",
+            "mini": "toggle_mini_mode",
+            "force_quit": "force_quit"
         }
         
-        # ✅ 策略1：最先註冊 force_quit，使用 suppress=True
-        if "force_quit" in self.hotkey_map:
-            try:
-                hotkey = self.hotkey_map["force_quit"]
-                # 使用 suppress=True 確保絕對優先
-                handler = keyboard.add_hotkey(
-                    hotkey,
-                    self.force_quit,
-                    suppress=True,
-                    trigger_on_release=False
-                )
-                self._hotkey_handlers["force_quit"] = handler
-                if self._is_first_run:
-                    self.log(f"🔴 強制停止: {hotkey} (最高優先權)")
-            except Exception as ex:
-                self.log(f"✗ 強制停止註冊失敗: {ex}")
+        registered_count = 0
+        failed_count = 0
         
-        # ✅ 策略2：按重要性順序註冊其他快捷鍵
-        priority_order = ["stop", "pause", "start", "play", "mini"]
-        
-        for key in priority_order:
-            if key not in self.hotkey_map:
+        # ✅ v2.5 風格：直接註冊所有快捷鍵
+        for key, hotkey in self.hotkey_map.items():
+            method_name = method_name_map.get(key)
+            if not method_name:
                 continue
             
             try:
-                hotkey = self.hotkey_map[key]
-                method = method_map.get(key)
-                if not method:
-                    continue
+                # 使用 getattr 獲取方法引用（v2.5 風格）
+                method = getattr(self, method_name)
                 
-                # 使用 suppress=False，不干擾其他程式
+                # 註冊快捷鍵（與 v2.5 相同的參數）
                 handler = keyboard.add_hotkey(
                     hotkey,
                     method,
-                    suppress=False,
+                    suppress=False,  # 不攔截原本的功能
                     trigger_on_release=False
                 )
                 self._hotkey_handlers[key] = handler
+                registered_count += 1
                 
                 if self._is_first_run:
-                    priority_mark = "🟡" if key == "stop" else "🟢"
-                    self.log(f"{priority_mark} {key}: {hotkey}")
+                    self.log(f"已註冊快捷鍵: {hotkey} → {key}")
             except Exception as ex:
-                self.log(f"✗ 快捷鍵 {key} 註冊失敗: {ex}")
+                failed_count += 1
+                self.log(f"快捷鍵 {hotkey} 註冊失敗: {ex}")
+                # 僅在開發模式顯示詳細錯誤
+                if "--debug" in sys.argv:
+                    import traceback
+                    self.log(f"詳細錯誤: {traceback.format_exc()}")
+        
+        # 總結註冊結果
+        if self._is_first_run and (registered_count > 0 or failed_count > 0):
+            self.log(f"[快捷鍵] 註冊完成: 成功 {registered_count}/{registered_count + failed_count}")
+            if failed_count > 0:
+                self.log(f"[提示] 若快捷鍵無法使用，請嘗試以管理員權限運行程式")
 
     def _register_script_hotkeys(self):
-        """註冊所有腳本的快捷鍵（使用 keyboard 模組）"""
-        import keyboard
+        """
+        註冊所有腳本的快捷鍵（使用 keyboard 模組）
+        
+        【PyInstaller 兼容性增強】
+        - 添加 keyboard 模組載入檢查
+        - 詳細的錯誤處理和日誌
+        """
+        try:
+            import keyboard
+        except ImportError as e:
+            self.log(f"[錯誤] 無法載入 keyboard 模組用於腳本快捷鍵: {e}")
+            return
+        except Exception as e:
+            self.log(f"[錯誤] keyboard 模組初始化失敗: {e}")
+            return
         
         # 移除舊的腳本快捷鍵
         for script, info in self._script_hotkey_handlers.items():
@@ -2759,7 +2785,8 @@ class RecorderApp(tb.Window):
                 if "handler" in info:
                     keyboard.remove_hotkey(info["handler"])
             except Exception as ex:
-                self.log(f"移除腳本快捷鍵時發生錯誤: {ex}")
+                # 忽略移除失敗
+                pass
         self._script_hotkey_handlers.clear()
 
         # 掃描所有腳本並註冊快捷鍵
@@ -2767,6 +2794,9 @@ class RecorderApp(tb.Window):
             return
         
         scripts = [f for f in os.listdir(self.script_dir) if f.endswith('.json')]
+        registered_scripts = 0
+        failed_scripts = 0
+        
         for script in scripts:
             path = os.path.join(self.script_dir, script)
             try:
@@ -2781,22 +2811,31 @@ class RecorderApp(tb.Window):
                     hotkey = data["script_hotkey"]
                 
                 if hotkey:
-                    # 使用 lambda 捕獲當前的 script 值
-                    handler = keyboard.add_hotkey(
-                        hotkey,
-                        lambda s=script: self._play_script_by_hotkey(s),
-                        suppress=False,
-                        trigger_on_release=False
-                    )
-                    
-                    self._script_hotkey_handlers[script] = {
-                        "script": script,
-                        "hotkey": hotkey,
-                        "handler": handler
-                    }
-                    self.log(f"已註冊腳本快捷鍵: {hotkey} → {script}")
+                    try:
+                        # 使用 lambda 捕獲當前的 script 值
+                        handler = keyboard.add_hotkey(
+                            hotkey,
+                            lambda s=script: self._play_script_by_hotkey(s),
+                            suppress=False,
+                            trigger_on_release=False
+                        )
+                        
+                        self._script_hotkey_handlers[script] = {
+                            "script": script,
+                            "hotkey": hotkey,
+                            "handler": handler
+                        }
+                        registered_scripts += 1
+                        self.log(f"已註冊腳本快捷鍵: {hotkey} → {script}")
+                    except Exception as ex:
+                        failed_scripts += 1
+                        self.log(f"註冊腳本快捷鍵失敗 ({script}): {ex}")
             except Exception as ex:
-                self.log(f"註冊腳本快捷鍵失敗 ({script}): {ex}")
+                self.log(f"讀取腳本檔案失敗 ({script}): {ex}")
+        
+        # 總結註冊結果
+        if registered_scripts > 0 or failed_scripts > 0:
+            self.log(f"[腳本快捷鍵] 註冊完成: 成功 {registered_scripts}, 失敗 {failed_scripts}")
 
     def _play_script_by_hotkey(self, script):
         """透過快捷鍵觸發腳本回放（使用腳本儲存的參數）"""

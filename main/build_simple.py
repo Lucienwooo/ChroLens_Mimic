@@ -45,7 +45,7 @@ class SimpleBuilder:
                         return version
         except Exception as e:
             print(f"警告: 無法讀取版本號: {e}")
-            return "unknown"
+            return "2.6.5"
     
     def clean(self):
         """清理舊檔案（如果失敗則跳過）"""
@@ -97,31 +97,76 @@ class SimpleBuilder:
         if self.icon_file.exists():
             cmd.append(f'--icon={self.icon_file}')
         
-        # 添加數據文件
-        ttf_dir = self.project_dir / "TTF"
-        if ttf_dir.exists():
-            cmd.append(f'--add-data={ttf_dir};TTF')
+        # 添加數據文件（完整列表）
+        data_files = [
+            ('TTF', 'TTF'),  # 字體目錄
+            ('recorder.py', '.'),
+            ('lang.py', '.'),
+            ('script_io.py', '.'),
+            ('about.py', '.'),
+            ('mini.py', '.'),
+            ('window_selector.py', '.'),
+            ('script_parser.py', '.'),
+            ('config_manager.py', '.'),
+            ('hotkey_manager.py', '.'),
+            ('script_editor_methods.py', '.'),
+            ('script_manager.py', '.'),
+            ('ui_components.py', '.'),
+            ('visual_script_editor.py', '.'),
+            ('update_manager.py', '.'),
+            ('update_dialog.py', '.'),
+            ('update_system.py', '.'),
+        ]
         
-        # 添加更新系統模組
-        update_system_file = self.project_dir / "update_system.py"
-        if update_system_file.exists():
-            cmd.append(f'--add-data={update_system_file};.')
+        for src, dest in data_files:
+            src_path = self.project_dir / src
+            if src_path.exists():
+                cmd.append(f'--add-data={src_path};{dest}')
+                print(f"  - 添加數據: {src}")
         
-        # 隱藏控制台模組（特別注意 pynput 相關）
+        # 添加圖示（如果在主目錄有的話）
+        icon_in_main = self.project_dir / "umi_奶茶色.ico"
+        if icon_in_main.exists():
+            cmd.append(f'--add-data={icon_in_main};.')
+        
+        # 隱藏控制台模組（完整的依賴列表）
         hidden_imports = [
             # 快捷鍵與輸入控制（打包後必需）
             'pynput', 'pynput.keyboard', 'pynput.mouse', 
             'pynput.keyboard._win32', 'pynput.mouse._win32',
-            'keyboard', 'mouse', 'pyautogui',
-            # Windows API
-            'win32gui', 'win32con', 'win32api', 'pywintypes',
+            'pynput.keyboard._base', 'pynput.mouse._base',
+            'keyboard', 'keyboard._winkeyboard', 'keyboard._canonical_names',
+            'mouse', 'mouse._winmouse',
+            'pyautogui', 'pyautogui._pyautogui_win',
+            # Windows API（完整列表）
+            'win32gui', 'win32con', 'win32api', 'win32process',
+            'win32event', 'win32security', 'pywintypes',
+            'pythoncom', 'ctypes', 'ctypes.wintypes',
             # GUI 與圖像
-            'PIL', 'ttkbootstrap',
-            # 其他模組
-            'update_system'
+            'PIL', 'PIL._tkinter_finder', 'ttkbootstrap', 'tkinter',
+            'tkinter.filedialog', 'tkinter.messagebox', 'tkinter.scrolledtext',
+            # JSON 與配置
+            'json', 'configparser',
+            # 網路與更新
+            'urllib', 'urllib.request', 'urllib.parse',
+            'requests', 'zipfile', 'tempfile',
+            # 其他必需模組
+            'threading', 'queue', 'collections',
+            'datetime', 'time', 'os', 'sys', 'pathlib',
+            # 自訂模組
+            'update_manager', 'update_dialog', 'update_system',
+            'config_manager', 'script_manager', 'hotkey_manager',
+            'recorder', 'script_parser', 'script_editor_methods',
+            'ui_components', 'visual_script_editor', 'window_selector',
+            'script_io', 'lang', 'about', 'mini'
         ]
         for module in hidden_imports:
             cmd.append(f'--hidden-import={module}')
+        
+        # 注意：--win-private-assemblies 在 PyInstaller v6.0+ 已被移除
+        # 如果使用舊版本 PyInstaller (<6.0)，可以取消註釋下面兩行
+        # cmd.append('--win-private-assemblies')
+        # cmd.append('--win-no-prefer-redirects')
         
         # 主文件
         cmd.append(str(self.main_file))
