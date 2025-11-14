@@ -2078,7 +2078,7 @@ class RecorderApp(tb.Window):
                 pass
     
     def _release_all_modifiers(self):
-        """釋放所有修飾鍵以防止卡住"""
+        """釋放所有修飾鍵以防止卡住（v2.6.5 修復版 - 不移除快捷鍵）"""
         try:
             import keyboard
             # 釋放常見的修飾鍵與常用按鍵，盡量避免卡鍵
@@ -2094,20 +2094,11 @@ class RecorderApp(tb.Window):
                 except:
                     pass
 
-            # 另外嘗試解除所有 hotkeys/hook
-            try:
-                if hasattr(keyboard, 'unhook_all_hotkeys'):
-                    keyboard.unhook_all_hotkeys()
-            except:
-                pass
+            # ✅ v2.6.5 修復：不再呼叫 unhook_all/unhook_all_hotkeys
+            # 這些會移除系統快捷鍵 (F9/F10 等)，導致 3-5 次後失效
+            # 只需釋放按鍵本身即可，快捷鍵保持註冊狀態
 
-            try:
-                if hasattr(keyboard, 'unhook_all'):
-                    keyboard.unhook_all()
-            except:
-                pass
-
-            self.log("[系統] 已嘗試釋放常見按鍵並解除快捷鍵註冊")
+            self.log("[系統] 已釋放常見按鍵")
         except Exception as e:
             self.log(f"[警告] 釋放修飾鍵時發生錯誤: {e}")
 
