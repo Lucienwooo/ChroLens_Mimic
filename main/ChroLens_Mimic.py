@@ -1602,7 +1602,7 @@ class RecorderApp(tb.Window):
                 self.core_recorder._keyboard_recording = True
 
     def stop_record(self):
-        """停止錄製（穩定版：雙重保險機制）"""
+        """停止錄製（簡化版 - v2.1 風格）"""
         if not self.recording:
             return
         
@@ -1614,15 +1614,7 @@ class RecorderApp(tb.Window):
         # 等待 core_recorder 的錄製執行緒結束
         self._wait_record_thread_finish()
         
-        # ✅ 穩定性增強：分階段重新註冊快捷鍵
-        try:
-            # 第一階段：立即重新註冊（100ms）
-            self.after(100, self._safe_reregister_hotkeys)
-            # 第二階段：延遲再次註冊（500ms，確保穩定）
-            self.after(500, self._safe_reregister_hotkeys)
-            self.log(f"[停止錄製] 已啟動雙重快捷鍵保護機制")
-        except Exception as e:
-            self.log(f"[警告] 重新註冊快捷鍵時發生錯誤: {e}")
+        # ✅ v2.1 風格：不重新註冊快捷鍵，保持始終有效
 
     def play_record(self):
         """開始回放"""
@@ -1961,8 +1953,7 @@ class RecorderApp(tb.Window):
             # 等待錄製執行緒結束
             self._wait_record_thread_finish()
             
-            # ✅ 錄製結束後重新註冊快捷鍵
-            self.after(200, self._safe_reregister_hotkeys)
+            # ✅ v2.1 風格：不重新註冊快捷鍵
         
         if self.playing:
             self.playing = False
@@ -2649,72 +2640,38 @@ class RecorderApp(tb.Window):
 
     # 不再需要 _make_hotkey_entry_handler
 
-    def _safe_reregister_hotkeys(self):
-        """
-        安全地重新註冊快捷鍵（避免與錄製 hooks 衝突）
-        
-        【核心策略】
-        1. 不使用 unhook_all() - 會清除所有 hooks 包括快捷鍵
-        2. 直接重新註冊 - keyboard 模組會自動替換舊的 handler
-        3. 使用 try-except 確保穩定性
-        """
-        try:
-            self._register_hotkeys()
-            self._register_script_hotkeys()
-            self.log("[快捷鍵] 重新註冊完成")
-        except Exception as e:
-            self.log(f"[錯誤] 重新註冊快捷鍵失敗: {e}")
-    
     def _register_hotkeys(self):
         """
-        註冊系統快捷鍵（穩定版 - 參考 v2.5 實現）
+        註冊系統快捷鍵（v2.1 極簡穩定版 - 完全重寫）
         
-        【重要修復 v2.6.5】
-        - 使用 v2.5 穩定的 getattr() 方式獲取方法引用
-        - 所有快捷鍵使用相同的註冊方式（無特殊優先權）
-        - 錄製過程中不取消註冊，確保停止鍵始終有效
-        - 修復了 F9 停止快捷鍵在錄製時失效的問題
+        【v2.6.5 根本性修復】
+        - 參考 v2.1/v2.5 最穩定且經過驗證的實現
+        - 移除所有不必要的複雜邏輯
+        - 不使用 suppress 參數（v2.1 沒有使用）
+        - 不使用 trigger_on_release 參數（v2.1 沒有使用）
+        - 每次註冊前徹底清除舊 handler
+        - 快捷鍵一經註冊就保持活躍，不在錄製/回放時重新註冊
         
-        【設計原則】
-        1. 使用 keyboard.add_hotkey() - 簡單可靠
-        2. 先移除舊的 handler，再註冊新的（確保乾淨）
-        3. 所有快捷鍵使用 suppress=False 避免干擾系統
-        4. 所有快捷鍵使用 trigger_on_release=False 立即觸發
-        
-        【穩定性增強】
-        - 移除舊 handler 前先檢查是否存在
-        - 使用 try-except 保護每個註冊步驟
-        - 記錄詳細的註冊/移除日誌
-        
-        【PyInstaller 兼容性】
-        - 確保 keyboard 模組以管理員權限運行
-        - 添加詳細的錯誤處理和日誌
+        【關鍵改進】
+        - 修復了重複註冊導致的 handler 洩漏
+        - 修復了 3-5 次後快捷鍵失效的問題
         """
         try:
             import keyboard
-        except ImportError as e:
-            self.log(f"[錯誤] 無法載入 keyboard 模組: {e}")
-            self.log("[提示] 請確保已安裝 keyboard 模組: pip install keyboard")
-            return
         except Exception as e:
-            self.log(f"[錯誤] keyboard 模組初始化失敗: {e}")
-            self.log("[提示] 可能需要以管理員權限運行程式")
+            self.log(f"[錯誤] keyboard 模組載入失敗: {e}")
             return
         
-        # ✅ 穩定性增強：先安全移除所有舊的 handlers
-        for key, handler in list(self._hotkey_handlers.items()):
+        # ✅ 徹底清除所有舊 handler（v2.1 風格）
+        for handler in self._hotkey_handlers.values():
             try:
-                if handler is not None:
-                    keyboard.remove_hotkey(handler)
-            except Exception as ex:
-                # 忽略移除失敗（handler 可能已失效）
+                keyboard.remove_hotkey(handler)
+            except Exception:
                 pass
-        
-        # 清空舊的 handler 紀錄
         self._hotkey_handlers.clear()
         
-        # 方法映射表（使用 v2.5 風格的 getattr）
-        method_name_map = {
+        # ✅ v2.1 風格：簡單的方法映射
+        method_map = {
             "start": "start_record",
             "pause": "toggle_pause",
             "stop": "stop_all",
@@ -2723,44 +2680,20 @@ class RecorderApp(tb.Window):
             "force_quit": "force_quit"
         }
         
-        registered_count = 0
-        failed_count = 0
-        
-        # ✅ v2.5 風格：直接註冊所有快捷鍵
+        # ✅ v2.1 風格：直接註冊，無多餘參數
         for key, hotkey in self.hotkey_map.items():
-            method_name = method_name_map.get(key)
-            if not method_name:
-                continue
-            
             try:
-                # 使用 getattr 獲取方法引用（v2.5 風格）
-                method = getattr(self, method_name)
-                
-                # 註冊快捷鍵（與 v2.5 相同的參數）
-                handler = keyboard.add_hotkey(
-                    hotkey,
-                    method,
-                    suppress=False,  # 不攔截原本的功能
-                    trigger_on_release=False
-                )
+                method_name = method_map.get(key)
+                if not method_name:
+                    continue
+                # 使用 getattr 獲取方法（v2.1 風格）
+                handler = keyboard.add_hotkey(hotkey, getattr(self, method_name))
                 self._hotkey_handlers[key] = handler
-                registered_count += 1
                 
                 if self._is_first_run:
                     self.log(f"已註冊快捷鍵: {hotkey} → {key}")
             except Exception as ex:
-                failed_count += 1
                 self.log(f"快捷鍵 {hotkey} 註冊失敗: {ex}")
-                # 僅在開發模式顯示詳細錯誤
-                if "--debug" in sys.argv:
-                    import traceback
-                    self.log(f"詳細錯誤: {traceback.format_exc()}")
-        
-        # 總結註冊結果
-        if self._is_first_run and (registered_count > 0 or failed_count > 0):
-            self.log(f"[快捷鍵] 註冊完成: 成功 {registered_count}/{registered_count + failed_count}")
-            if failed_count > 0:
-                self.log(f"[提示] 若快捷鍵無法使用，請嘗試以管理員權限運行程式")
 
     def _register_script_hotkeys(self):
         """
