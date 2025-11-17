@@ -67,9 +67,17 @@ except Exception as e:
     print(f"無法匯入 CoreRecorder: {e}")
 
 try:
-    from visual_script_editor import VisualScriptEditor
+    # 使用文字指令編輯器
+    from text_script_editor import TextCommandEditor as VisualScriptEditor
+    print("✅ 已載入文字指令編輯器 (可直接編輯文字指令)")
 except Exception as e:
-    print(f"無法匯入 VisualScriptEditor: {e}")
+    try:
+        # 備用：舊版圖形化編輯器
+        from visual_script_editor import VisualScriptEditor
+        print("⚠️ 使用舊版圖形化編輯器")
+    except Exception as e2:
+        print(f"❌ 無法匯入編輯器: {e}, {e2}")
+        VisualScriptEditor = None
 try:
     from lang import LANG_MAP
 except Exception as e:
@@ -718,10 +726,12 @@ class RecorderApp(tb.Window):
 
         # 左側選單
         lang_map = LANG_MAP.get(saved_lang, LANG_MAP["繁體中文"])
-        self.page_menu = tk.Listbox(frm_page, width=18, font=("Microsoft JhengHei", 11), height=5)
+        self.page_menu = tk.Listbox(frm_page, width=18, font=("Microsoft JhengHei", 11), height=7)
         self.page_menu.insert(0, lang_map["1.日誌顯示"])
         self.page_menu.insert(1, lang_map["2.腳本設定"])
         self.page_menu.insert(2, lang_map["3.整體設定"])
+        self.page_menu.insert(3, "4.自動戰鬥")
+        self.page_menu.insert(4, "5.圖片管理")
         self.page_menu.grid(row=0, column=0, sticky="ns", padx=(0, 8), pady=4)
         self.page_menu.bind("<<ListboxSelect>>", self.on_page_selected)
 
@@ -1223,6 +1233,24 @@ class RecorderApp(tb.Window):
         # 在背景執行緒中執行
         threading.Thread(target=check_in_thread, daemon=True).start()
 
+    def open_image_manager(self):
+        """打開圖片管理視窗"""
+        try:
+            from image_manager import ImageManager
+            ImageManager(self)
+        except Exception as e:
+            self.log(f"開啟圖片管理視窗失敗: {e}")
+            messagebox.showerror("錯誤", f"開啟圖片管理視窗失敗:\n{e}")
+
+    def open_combat_control(self):
+        """打開自動戰鬥控制視窗"""
+        try:
+            from combat_manager import CombatControlWindow
+            CombatControlWindow(self)
+        except Exception as e:
+            self.log(f"開啟自動戰鬥視窗失敗: {e}")
+            messagebox.showerror("錯誤", f"開啟自動戰鬥視窗失敗:\n{e}")
+
 
     def change_language(self, event=None):
         lang = self.language_display_var.get()
@@ -1286,6 +1314,8 @@ class RecorderApp(tb.Window):
             self.page_menu.insert(0, lang_map["1.日誌顯示"])
             self.page_menu.insert(1, lang_map["2.腳本設定"])
             self.page_menu.insert(2, lang_map["3.整體設定"])
+            self.page_menu.insert(3, "4.自動戰鬥")
+            self.page_menu.insert(4, "5.圖片管理")
         self.user_config["language"] = lang
         self.save_config()
         self.update_idletasks()
@@ -2167,7 +2197,18 @@ class RecorderApp(tb.Window):
 
     def set_events_json(self, json_str):
         try:
-            self.events = json.loads(json_str)
+            data = json.loads(json_str)
+            
+            # 處理兩種格式：
+            # 1. 完整格式: {"events": [...], "settings": {...}}
+            # 2. 簡化格式: [...] (直接是事件列表)
+            if isinstance(data, dict) and "events" in data:
+                self.events = data["events"]
+            elif isinstance(data, list):
+                self.events = data
+            else:
+                raise ValueError("不支援的 JSON 格式")
+            
             self.log(f"[{format_time(time.time())}] 已從 JSON 載入 {len(self.events)} 筆事件。")
         except Exception as e:
             self.log(f"[{format_time(time.time())}] JSON 載入失敗: {e}")
@@ -3004,6 +3045,16 @@ class RecorderApp(tb.Window):
             self.refresh_script_listbox()
         elif idx == 2:
             self.global_setting_frame.place(x=0, y=0, anchor="nw")  # 靠左上角
+        elif idx == 3:
+            # 4.自動戰鬥
+            self.open_combat_control()
+            # 切回上一個頁面
+            self.after(100, lambda: self.page_menu.selection_clear(0, tk.END))
+        elif idx == 4:
+            # 5.圖片管理
+            self.open_image_manager()
+            # 切回上一個頁面
+            self.after(100, lambda: self.page_menu.selection_clear(0, tk.END))
 
     def on_script_treeview_select(self, event=None):
         """處理腳本 Treeview 選擇事件"""
@@ -3267,8 +3318,17 @@ class RecorderApp(tb.Window):
 
 
     def open_visual_editor(self):
-        """開啟視覺化拖放式編輯器"""
-        # 檢查是否已經有視覺化編輯器視窗開啟
+        """開啟文字指令編輯器"""
+        # 獲取當前選中的腳本
+        script_path = None
+        current_script = self.script_var.get()
+        if current_script:
+            script_path = os.path.join(self.script_dir, f"{current_script}.json")
+            if not os.path.exists(script_path):
+                self.log(f"[警告] 找不到腳本檔案: {current_script}.json")
+                script_path = None
+        
+        # 檢查是否已經有編輯器視窗開啟
         if hasattr(self, 'visual_editor_window') and self.visual_editor_window and self.visual_editor_window.winfo_exists():
             # 如果已存在，將焦點切到該視窗
             self.visual_editor_window.focus_force()
@@ -3276,13 +3336,12 @@ class RecorderApp(tb.Window):
         else:
             try:
                 # 建立新視窗並儲存引用
-                self.visual_editor_window = VisualScriptEditor(self)
-                self.log("[資訊] 已開啟視覺化腳本編輯器")
+                self.visual_editor_window = VisualScriptEditor(self, script_path)
+                self.log("[資訊] 已開啟文字指令編輯器")
             except Exception as e:
-                self.log(f"[錯誤] 無法開啟視覺化編輯器：{e}")
+                self.log(f"[錯誤] 無法開啟編輯器：{e}")
                 import traceback
                 self.log(f"錯誤詳情: {traceback.format_exc()}")
-        pass
 
     def open_schedule_settings(self):
         """開啟排程設定視窗"""
