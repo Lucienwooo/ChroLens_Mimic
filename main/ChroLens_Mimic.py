@@ -461,10 +461,14 @@ class RecorderApp(tb.Window):
         self.icon_tip_label.place(x=0, y=0)
         Tooltip(self.icon_tip_label, f"{self.title()}_By_Lucien")
 
+        # ✅ 設定響應式佈局 (Responsive Layout / Adaptive Window)
         # 設定最小視窗尺寸並允許彈性調整
         self.minsize(1000, 550)  # 增加最小寬度以容納新功能
         self.geometry("1050x550")  # 增加初始寬度
         self.resizable(True, True)  # 允許調整大小
+        
+        # ✅ 啟用內容自動適應
+        self.update_idletasks()  # 更新所有待處理的 GUI 事件
         
         self.recording = False
         self.playing = False

@@ -10,6 +10,14 @@ import threading
 from auto_combat_system import AutoCombatSystem
 from image_recognition import ImageRecognition
 
+# ✅ 導入響應式佈局模組
+try:
+    from responsive_layout import make_window_responsive
+except ImportError:
+    def make_window_responsive(window, *args, **kwargs):
+        window.resizable(True, True)
+        return window
+
 class CombatControlWindow(tb.Toplevel):
     """自動戰鬥控制視窗"""
     
@@ -19,6 +27,13 @@ class CombatControlWindow(tb.Toplevel):
         self.parent = parent
         self.title("自動戰鬥控制 - ChroLens Mimic")
         self.geometry("700x800")
+        
+        # 設定為模態視窗並保持在最上層
+        self.transient(parent)
+        self.grab_set()
+        
+        # ✅ 啟用響應式佈局 (Responsive Layout)
+        make_window_responsive(self, min_width=700, min_height=800, max_screen_ratio=0.9)
         
         # 設定視窗置中
         self.update_idletasks()
@@ -89,6 +104,8 @@ class CombatControlWindow(tb.Toplevel):
                  bootstyle=DANGER, width=12).pack(side="left", padx=2)
         tb.Button(btn_frame, text="🖼️ 圖片管理", command=self.open_image_manager, 
                  bootstyle=INFO, width=12).pack(side="left", padx=2)
+        tb.Button(btn_frame, text="📝 腳本編輯器", command=self.open_action_editor, 
+                 bootstyle=WARNING, width=12).pack(side="left", padx=2)
         
         # ==================== 攻擊設定區 ====================
         attack_frame = tb.LabelFrame(self, text="攻擊設定", bootstyle=INFO, padding=10)
@@ -268,6 +285,16 @@ class CombatControlWindow(tb.Toplevel):
         except Exception as e:
             self.log(f"開啟圖片管理失敗: {e}")
             messagebox.showerror("錯誤", f"開啟圖片管理失敗:\n{e}")
+    
+    def open_action_editor(self):
+        """打開戰鬥動作編輯器"""
+        try:
+            from combat_action_editor import CombatActionEditor
+            CombatActionEditor(self)
+            self.log("📝 已開啟戰鬥腳本編輯器")
+        except Exception as e:
+            self.log(f"開啟腳本編輯器失敗: {e}")
+            messagebox.showerror("錯誤", f"開啟腳本編輯器失敗:\n{e}")
     
     def start_combat(self):
         """開始戰鬥"""

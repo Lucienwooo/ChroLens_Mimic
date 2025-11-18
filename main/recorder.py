@@ -415,6 +415,13 @@ class CoreRecorder:
         """開始回放錄製的事件"""
         if self.playing or not self.events:
             return False
+        
+        # ✅ 修復：確保所有錄製相關的監聽器都已關閉
+        self._ensure_recording_stopped()
+        
+        # ✅ 修復：清空所有可能殘留的按鍵狀態
+        self._pressed_keys.clear()
+        
         self.playing = True
         self.paused = False
         self._play_thread = threading.Thread(
@@ -434,15 +441,29 @@ class CoreRecorder:
         if was_playing:
             self.logger(f"[{time.ctime()}] 已停止回放")
             
-            # 釋放可能卡住的修飾鍵
+            # ✅ 修復：釋放可能卡住的修飾鍵（強化版）
             try:
                 import keyboard
-                modifiers = ['ctrl', 'shift', 'alt', 'win']
+                # 釋放常見修飾鍵
+                modifiers = ['ctrl', 'shift', 'alt', 'win', 'left ctrl', 'right ctrl', 
+                           'left shift', 'right shift', 'left alt', 'right alt']
                 for mod in modifiers:
                     try:
                         keyboard.release(mod)
                     except:
                         pass
+                
+                # ✅ 修復：額外確保通過 Windows API 釋放修飾鍵
+                try:
+                    import ctypes
+                    VK_CONTROL = 0x11
+                    VK_SHIFT = 0x10
+                    VK_MENU = 0x12  # Alt
+                    
+                    for vk in [VK_CONTROL, VK_SHIFT, VK_MENU]:
+                        ctypes.windll.user32.keybd_event(vk, 0, 0x0002, 0)  # KEYEVENTF_KEYUP
+                except:
+                    pass
             except:
                 pass
         
@@ -455,6 +476,9 @@ class CoreRecorder:
     def _play_loop(self, speed, repeat, on_event):
         """回放主循環（強化版 - 支援無限重複，修復點擊其他視窗導致停止的問題）"""
         try:
+            # ✅ 修復：再次確認沒有錄製在進行
+            self._ensure_recording_stopped()
+            
             # 初始化循環計數器
             self._current_repeat_count = 0
             
@@ -479,6 +503,11 @@ class CoreRecorder:
         finally:
             self.playing = False
             self._current_repeat_count = 0  # ✅ 重置循環計數
+            # ✅ 修復：回放結束後確保所有按鍵都被釋放
+            try:
+                self._release_pressed_keys()
+            except:
+                pass
             
     def _execute_single_round(self, speed, on_event):
         """執行單次回放循環"""
@@ -1024,13 +1053,19 @@ class CoreRecorder:
                     pass  # 視窗可能已關閉，使用原始座標
             
             try:
+                # ✅ 修復：確保座標在有效範圍內（防止超出螢幕）
+                screen_width = ctypes.windll.user32.GetSystemMetrics(0)
+                screen_height = ctypes.windll.user32.GetSystemMetrics(1)
+                x = max(0, min(screen_width - 1, int(x)))
+                y = max(0, min(screen_height - 1, int(y)))
+                
                 if event['event'] == 'move':
                     # 滑鼠移動（使用硬體級別的 SetCursorPos 確保精確）
-                    ctypes.windll.user32.SetCursorPos(int(x), int(y))
+                    ctypes.windll.user32.SetCursorPos(x, y)
                     
                 elif event['event'] in ('down', 'up'):
                     # 點擊事件：先移動到正確位置
-                    ctypes.windll.user32.SetCursorPos(int(x), int(y))
+                    ctypes.windll.user32.SetCursorPos(x, y)
                     time.sleep(0.001)  # 1ms 短暫延遲確保座標更新
                     
                     button = event.get('button', 'left')
@@ -1038,7 +1073,7 @@ class CoreRecorder:
                     
                 elif event['event'] == 'wheel':
                     # 滾輪事件：先移動到正確位置
-                    ctypes.windll.user32.SetCursorPos(int(x), int(y))
+                    ctypes.windll.user32.SetCursorPos(x, y)
                     time.sleep(0.001)
                     
                     delta = event.get('delta', 0)
@@ -1115,6 +1150,34 @@ class CoreRecorder:
             self.logger("[recorder] 已釋放遺留的按鍵")
         except Exception as ex:
             self.logger(f"[recorder] 釋放遺留按鍵失敗: {ex}")
+    
+    def _ensure_recording_stopped(self):
+        """✅ 新增：確保所有錄製相關的監聽器都已完全停止"""
+        try:
+            # 停止鍵盤錄製
+            if self._keyboard_recording:
+                try:
+                    keyboard.stop_recording()
+                    self._keyboard_recording = False
+                except:
+                    pass
+            
+            # 停止滑鼠監聽器
+            if self._mouse_listener is not None:
+                try:
+                    if hasattr(self._mouse_listener, 'stop'):
+                        self._mouse_listener.stop()
+                    self._mouse_listener = None
+                    self._recording_mouse = False
+                except:
+                    pass
+            
+            # 清除錄製狀態
+            self.recording = False
+            
+            self.logger("[recorder] 已確保所有錄製監聽器停止")
+        except Exception as ex:
+            self.logger(f"[recorder] 停止監聽器時發生錯誤: {ex}")
 
     def join_threads(self, timeout=1.0):
         """嘗試 join 內部的 record/play thread，回傳是否成功 join"""

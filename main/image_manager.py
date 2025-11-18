@@ -9,6 +9,34 @@ from tkinter import ttk, filedialog, messagebox
 import os
 from PIL import Image, ImageTk
 import threading
+import sys
+import io
+
+# ✅ 導入響應式佈局模組
+try:
+    from responsive_layout import make_window_responsive, adjust_window_to_content
+except ImportError:
+    # 如果模組不存在，提供簡單的 fallback
+    def make_window_responsive(window, *args, **kwargs):
+        window.resizable(True, True)
+        return window
+    def adjust_window_to_content(window, *args, **kwargs):
+        window.update_idletasks()
+
+# ✅ 導入螢幕截圖模組
+try:
+    from screen_capture import capture_screen_region
+except ImportError:
+    capture_screen_region = None
+
+# ✅ 導入 ddddocr (驗證碼識別專用庫)
+try:
+    import ddddocr
+    DDDDOCR_AVAILABLE = True
+    print("✅ ddddocr 已載入 (驗證碼識別增強)")
+except ImportError:
+    DDDDOCR_AVAILABLE = False
+    print("⚠️ ddddocr 未安裝,使用 Tesseract 作為備用方案")
 
 
 class ImageManager(tk.Toplevel):
@@ -29,12 +57,33 @@ class ImageManager(tk.Toplevel):
         self.selected_image = None
         self.image_list = []
         
+        # ✅ 初始化 ddddocr 引擎 (如果可用)
+        self.ddddocr_engine = None
+        if DDDDOCR_AVAILABLE:
+            try:
+                self.ddddocr_engine = ddddocr.DdddOcr(show_ad=False)
+                print("✅ ddddocr 引擎初始化成功")
+            except Exception as e:
+                print(f"⚠️ ddddocr 初始化失敗: {e}")
+        
+        # 設定為模態視窗並保持在最上層
+        self.transient(parent)
+        self.grab_set()
+        
+        # ✅ 啟用響應式佈局 (Responsive Layout / Adaptive Window)
+        # 這個功能會讓視窗根據內容自動調整大小
+        make_window_responsive(self, min_width=800, min_height=600, max_screen_ratio=0.9)
+        
         self._create_ui()
         self._load_images()
         
         # 置頂顯示
         self.lift()
         self.focus_force()
+        
+        # 確保視窗完全顯示後再置頂
+        self.after(100, self.lift)
+        self.after(100, self.focus_force)
     
     def _create_ui(self):
         """創建UI"""
@@ -156,6 +205,82 @@ class ImageManager(tk.Toplevel):
         )
         self.info_label.pack(fill="x")
         
+        # ✨ 驗證碼識別區
+        engine_status = "ddddocr ✨" if self.ddddocr_engine else "Tesseract"
+        captcha_frame = tk.LabelFrame(
+            info_frame,
+            text=f"🔤 驗證碼識別 ({engine_status})",
+            font=("Microsoft JhengHei", 10, "bold")
+        )
+        captcha_frame.pack(fill="x", padx=10, pady=(5, 10))
+        
+        # 驗證碼文字框（可複製）
+        captcha_text_frame = tk.Frame(captcha_frame)
+        captcha_text_frame.pack(fill="x", padx=10, pady=(10, 5))
+        
+        tk.Label(
+            captcha_text_frame,
+            text="識別結果:",
+            font=("Microsoft JhengHei", 9)
+        ).pack(side="left")
+        
+        self.captcha_result_var = tk.StringVar(value="")
+        self.captcha_entry = tk.Entry(
+            captcha_text_frame,
+            textvariable=self.captcha_result_var,
+            font=("Consolas", 14, "bold"),  # 增大字體
+            fg="#00FF00",  # 綠色字體 (在黑底上更清楚)
+            bg="#000000",  # 黑色背景
+            state="readonly",
+            readonlybackground="#000000",  # readonly 狀態也是黑色背景
+            disabledforeground="#00FF00",  # disabled 狀態的字體顏色
+            insertbackground="#00FF00",  # 游標顏色
+            selectbackground="#333333",  # 選取時的背景
+            selectforeground="#00FF00",  # 選取時的字體
+            relief="sunken",  # 凹陷邊框效果
+            bd=2,  # 邊框寬度
+            justify="center"
+        )
+        self.captcha_entry.pack(side="left", fill="x", expand=True, padx=10)
+        
+        # 複製按鈕
+        tk.Button(
+            captcha_text_frame,
+            text="📋",
+            command=self._copy_captcha,
+            font=("Microsoft JhengHei", 9),
+            width=3,
+            bg="#E3F2FD"
+        ).pack(side="left")
+        
+        # 識別按鈕框架
+        recognize_btn_frame = tk.Frame(captcha_frame)
+        recognize_btn_frame.pack(pady=(5, 10), padx=10, fill="x")
+        
+        # 識別檔案按鈕
+        tk.Button(
+            recognize_btn_frame,
+            text="🔍 識別選定圖片",
+            command=self._recognize_captcha,
+            bg="#4CAF50",
+            fg="white",
+            font=("Microsoft JhengHei", 9, "bold"),
+            padx=15,
+            pady=5
+        ).pack(side="left", padx=5, expand=True, fill="x")
+        
+        # 螢幕截圖識別按鈕
+        tk.Button(
+            recognize_btn_frame,
+            text="📸 截圖識別",
+            command=self._capture_and_recognize,
+            bg="#FF9800",
+            fg="white",
+            font=("Microsoft JhengHei", 9, "bold"),
+            padx=15,
+            pady=5
+        ).pack(side="left", padx=5, expand=True, fill="x")
+        
         # 操作按鈕區
         button_frame = tk.Frame(right_frame)
         button_frame.pack(fill="x")
@@ -242,17 +367,34 @@ class ImageManager(tk.Toplevel):
         self._show_info(self.selected_image)
     
     def _show_preview(self, image_path):
-        """顯示圖片預覽"""
+        """顯示圖片預覽 - 支援響應式佈局 (Responsive Layout)"""
         try:
             image = Image.open(image_path)
+            original_width, original_height = image.size
             
-            # 縮放以適應預覽區域
-            max_size = (400, 300)
+            # ✅ 動態計算適合的預覽尺寸
+            # 根據圖片大小決定預覽區域大小
+            if original_width > 800 or original_height > 600:
+                # 大圖片：使用較大的預覽區域
+                max_size = (700, 525)
+            elif original_width > 400 or original_height > 300:
+                # 中等圖片：使用中等預覽區域
+                max_size = (500, 375)
+            else:
+                # 小圖片：使用標準預覽區域
+                max_size = (400, 300)
+            
+            # 縮放圖片
             image.thumbnail(max_size, Image.Resampling.LANCZOS)
+            preview_width, preview_height = image.size
             
             photo = ImageTk.PhotoImage(image)
             self.preview_label.config(image=photo, text="")
             self.preview_label.image = photo  # 保持引用
+            
+            # ✅ 使用響應式佈局自動調整視窗
+            # 這會確保所有內容都可見，不會被擠出視窗外
+            self.after(100, lambda: adjust_window_to_content(self, padding=100))
             
         except Exception as e:
             self.preview_label.config(
@@ -459,6 +601,497 @@ class ImageManager(tk.Toplevel):
                 messagebox.showinfo("成功", "圖片已刪除!")
             except Exception as e:
                 messagebox.showerror("錯誤", f"刪除圖片失敗:\n{e}")
+    
+    def _copy_captcha(self):
+        """複製驗證碼到剪貼簿"""
+        result = self.captcha_result_var.get()
+        if result:
+            self.clipboard_clear()
+            self.clipboard_append(result)
+            self.status_label.config(
+                text=f"✅ 已複製驗證碼: {result}",
+                bg="#e8f5e9",
+                fg="#2e7d32"
+            )
+        else:
+            messagebox.showwarning("警告", "沒有可複製的驗證碼")
+    
+    def _capture_and_recognize(self):
+        """螢幕截圖並識別驗證碼"""
+        if capture_screen_region is None:
+            messagebox.showerror("錯誤", "螢幕截圖模組未載入")
+            return
+        
+        # ✅ 臨時解除 transient 和 grab，才能隱藏視窗
+        if self.parent:
+            self.transient("")  # 解除 transient
+        self.grab_release()  # 解除 grab
+        
+        # 隱藏視窗以便截圖
+        self.withdraw()  # 使用 withdraw 而非 iconify
+        self.update()
+        
+        # 短暫延遲確保視窗完全隱藏
+        self.after(200, self._start_screen_capture)
+    
+    def _start_screen_capture(self):
+        """啟動螢幕截圖"""
+        def on_capture_complete(image):
+            """截圖完成回調"""
+            # 還原視窗並重新設定為模態
+            self.deiconify()  # 顯示視窗
+            if self.parent:
+                self.transient(self.parent)  # 重新設定 transient
+            self.grab_set()  # 重新設定 grab
+            self.lift()  # 提升到最上層
+            self.focus_force()  # 強制取得焦點
+            self.update()
+            
+            # 執行 OCR 識別
+            self._recognize_image_data(image)
+        
+        # 啟動區域選擇
+        try:
+            capture_screen_region(on_capture_complete)
+        except Exception as e:
+            # 發生錯誤時也要還原視窗設定
+            self.deiconify()
+            if self.parent:
+                self.transient(self.parent)
+            self.grab_set()
+            self.lift()
+            self.focus_force()
+            messagebox.showerror("錯誤", f"截圖失敗:\n{e}")
+    
+    def _recognize_captcha(self):
+        """識別當前圖片中的驗證碼"""
+        if not self.selected_image:
+            messagebox.showwarning("警告", "請先選擇一個圖片")
+            return
+        
+        # 使用檔案路徑識別
+        self._recognize_image_data(self.selected_image)
+    
+    def _recognize_image_data(self, image_source):
+        """
+        識別圖片中的驗證碼 (通用方法)
+        
+        Args:
+            image_source: 圖片來源,可以是:
+                         - str: 檔案路徑
+                         - PIL.Image: PIL 圖片物件
+        """
+        # 清空結果
+        self.captcha_result_var.set("")
+        
+        self.status_label.config(
+            text="🔍 正在識別驗證碼...",
+            bg="#fff3e0",
+            fg="#e65100"
+        )
+        self.update()
+        
+        # 在背景執行識別
+        def run_recognition():
+            try:
+                import cv2
+                import numpy as np
+                
+                # 檢查是否已安裝 pytesseract
+                try:
+                    import pytesseract
+                    
+                    # ✅ 自動設定 Tesseract 路徑並加入系統 PATH
+                    import os
+                    possible_paths = [
+                        r'C:\Program Files\Tesseract-OCR\tesseract.exe',
+                        r'C:\Program Files (x86)\Tesseract-OCR\tesseract.exe',
+                        r'C:\Tesseract-OCR\tesseract.exe',
+                        os.path.expanduser(r'~\AppData\Local\Tesseract-OCR\tesseract.exe'),
+                        os.path.expanduser(r'~\AppData\Local\Programs\Tesseract-OCR\tesseract.exe'),
+                    ]
+                    
+                    # 尋找有效的 Tesseract 路徑
+                    tesseract_found = False
+                    tesseract_dir = None
+                    
+                    for path in possible_paths:
+                        if os.path.exists(path):
+                            pytesseract.pytesseract.tesseract_cmd = path
+                            tesseract_dir = os.path.dirname(path)
+                            tesseract_found = True
+                            break
+                    
+                    if not tesseract_found:
+                        # 嘗試使用系統 PATH 中的 tesseract
+                        import shutil
+                        tesseract_path = shutil.which('tesseract')
+                        if tesseract_path:
+                            tesseract_dir = os.path.dirname(tesseract_path)
+                            tesseract_found = True
+                        else:
+                            raise FileNotFoundError("找不到 Tesseract 執行檔")
+                    
+                    # ✅ 將 Tesseract 目錄加入 PATH (解決 DLL 缺失問題)
+                    if tesseract_dir and tesseract_dir not in os.environ['PATH']:
+                        os.environ['PATH'] = tesseract_dir + os.pathsep + os.environ['PATH']
+                    
+                    use_ocr = True
+                except ImportError:
+                    use_ocr = False
+                except FileNotFoundError:
+                    use_ocr = False
+                
+                # 載入圖片 (支援檔案路徑或 PIL Image)
+                if isinstance(image_source, str):
+                    # 檔案路徑
+                    image = cv2.imread(image_source)
+                    if image is None:
+                        # 嘗試使用 imdecode 處理中文路徑
+                        with open(image_source, 'rb') as f:
+                            image_data = f.read()
+                        image = cv2.imdecode(np.frombuffer(image_data, np.uint8), cv2.IMREAD_COLOR)
+                elif isinstance(image_source, Image.Image):
+                    # PIL Image -> numpy array -> OpenCV
+                    img_array = np.array(image_source)
+                    # RGB -> BGR (OpenCV 格式)
+                    if len(img_array.shape) == 3 and img_array.shape[2] == 3:
+                        image = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
+                    else:
+                        image = img_array
+                else:
+                    raise Exception("不支援的圖片格式")
+                
+                if image is None:
+                    raise Exception("無法載入圖片")
+                
+                # ====== 優先使用 ddddocr (最佳效果) ======
+                if self.ddddocr_engine:
+                    try:
+                        # 將圖片轉為 bytes
+                        if isinstance(image_source, str):
+                            with open(image_source, 'rb') as f:
+                                image_bytes = f.read()
+                        elif isinstance(image_source, Image.Image):
+                            # PIL Image -> bytes
+                            import io
+                            buffer = io.BytesIO()
+                            image_source.save(buffer, format='PNG')
+                            image_bytes = buffer.getvalue()
+                        else:
+                            # OpenCV image -> bytes
+                            is_success, buffer = cv2.imencode(".png", image)
+                            if is_success:
+                                image_bytes = buffer.tobytes()
+                            else:
+                                raise Exception("無法編碼圖片")
+                        
+                        # ddddocr 識別
+                        result = self.ddddocr_engine.classification(image_bytes)
+                        
+                        if result and len(result) >= 3:
+                            # 清理結果 (只保留英文和數字)
+                            cleaned_result = ''.join(filter(str.isalnum, result))
+                            
+                            if cleaned_result:
+                                # ✅ 使用 after() 在主線程中更新 UI
+                                self.after(0, lambda: self.captcha_result_var.set(cleaned_result))
+                                self.after(0, lambda: self.status_label.config(
+                                    text=f"✅ ddddocr 識別成功: {cleaned_result}",
+                                    bg="#e8f5e9",
+                                    fg="#2e7d32"
+                                ))
+                                print(f"🎯 ddddocr: {cleaned_result}")
+                                return  # 成功識別,直接返回
+                    except Exception as e:
+                        print(f"⚠️ ddddocr 識別失敗: {e}, 切換到 Tesseract")
+                
+                # ====== 備用方案: Tesseract 多策略識別 ======
+                if use_ocr:
+                    # ====== 多策略識別 (提高成功率) ======
+                    all_results = []
+                    
+                    # 策略 1: 超強放大 + 多次降噪 (針對 76N8 類型)
+                    try:
+                        if len(image.shape) == 3:
+                            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+                        else:
+                            gray = image
+                        
+                        # 超強放大 6 倍
+                        scale = 600
+                        enlarged = cv2.resize(gray, None, fx=scale/100, fy=scale/100, interpolation=cv2.INTER_CUBIC)
+                        
+                        # 多重降噪
+                        denoised1 = cv2.fastNlMeansDenoising(enlarged, None, h=15, templateWindowSize=7, searchWindowSize=21)
+                        
+                        # 形態學梯度增強邊緣
+                        kernel_edge = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+                        gradient = cv2.morphologyEx(denoised1, cv2.MORPH_GRADIENT, kernel_edge)
+                        
+                        # Otsu 二值化
+                        blurred = cv2.GaussianBlur(denoised1, (5, 5), 0)
+                        _, binary = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+                        
+                        # 連續開閉運算
+                        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
+                        opened = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel, iterations=2)
+                        closed = cv2.morphologyEx(opened, cv2.MORPH_CLOSE, kernel, iterations=1)
+                        
+                        # 智能反色
+                        if cv2.mean(closed)[0] > 127:
+                            cleaned = cv2.bitwise_not(closed)
+                        else:
+                            cleaned = closed
+                        
+                        # 再次銳化
+                        kernel_sharp = np.array([[-1,-1,-1],[-1,9,-1],[-1,-1,-1]])
+                        sharpened = cv2.filter2D(cleaned, -1, kernel_sharp)
+                        
+                        # 多 PSM 嘗試
+                        for psm in [6, 7, 8, 11, 13]:
+                            config = f'--psm {psm} --oem 3 -c tessedit_char_whitelist=0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
+                            result = pytesseract.image_to_string(sharpened, config=config).strip()
+                            if result:
+                                all_results.append((''.join(filter(str.isalnum, result)), f'策略1-PSM{psm}'))
+                    except:
+                        pass
+                    
+                    # 策略 2: 雙邊濾波 + CLAHE 對比度增強 (針對噪點背景)
+                    try:
+                        gray2 = gray.copy() if 'gray' in locals() else (cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if len(image.shape) == 3 else image)
+                        enlarged2 = cv2.resize(gray2, None, fx=5, fy=5, interpolation=cv2.INTER_CUBIC)
+                        
+                        # 雙邊濾波保留邊緣
+                        bilateral = cv2.bilateralFilter(enlarged2, 9, 75, 75)
+                        
+                        # CLAHE 增強對比度
+                        clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8,8))
+                        enhanced = clahe.apply(bilateral)
+                        
+                        # 自適應二值化
+                        blurred = cv2.GaussianBlur(enhanced, (3, 3), 0)
+                        adaptive = cv2.adaptiveThreshold(blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 15, 3)
+                        
+                        # 形態學處理
+                        kernel2 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2, 2))
+                        closed = cv2.morphologyEx(adaptive, cv2.MORPH_CLOSE, kernel2, iterations=1)
+                        opened = cv2.morphologyEx(closed, cv2.MORPH_OPEN, kernel2, iterations=1)
+                        
+                        # 反色
+                        if cv2.mean(opened)[0] > 127:
+                            cleaned2 = cv2.bitwise_not(opened)
+                        else:
+                            cleaned2 = opened
+                        
+                        for psm in [6, 7, 8, 11]:
+                            config = f'--psm {psm} --oem 3 -c tessedit_char_whitelist=0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
+                            result = pytesseract.image_to_string(cleaned2, config=config).strip()
+                            if result:
+                                all_results.append((''.join(filter(str.isalnum, result)), f'策略2-PSM{psm}'))
+                    except:
+                        pass
+                    
+                    # 策略 3: 頂帽變換 + 多閾值融合 (去除背景紋理)
+                    try:
+                        gray3 = gray.copy() if 'gray' in locals() else (cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if len(image.shape) == 3 else image)
+                        enlarged3 = cv2.resize(gray3, None, fx=5, fy=5, interpolation=cv2.INTER_CUBIC)
+                        
+                        # 頂帽變換去除背景
+                        kernel_tophat = cv2.getStructuringElement(cv2.MORPH_RECT, (9, 9))
+                        tophat = cv2.morphologyEx(enlarged3, cv2.MORPH_TOPHAT, kernel_tophat)
+                        blackhat = cv2.morphologyEx(enlarged3, cv2.MORPH_BLACKHAT, kernel_tophat)
+                        processed = cv2.add(enlarged3, tophat)
+                        processed = cv2.subtract(processed, blackhat)
+                        
+                        # 嘗試多個固定閾值並融合
+                        for thresh_val in [110, 127, 145, 90]:
+                            _, fixed_binary = cv2.threshold(processed, thresh_val, 255, cv2.THRESH_BINARY)
+                            
+                            # 強力降噪
+                            denoised = cv2.fastNlMeansDenoising(fixed_binary, None, 15, 7, 21)
+                            
+                            # 反色
+                            if cv2.mean(denoised)[0] > 127:
+                                denoised = cv2.bitwise_not(denoised)
+                            
+                            # 只用最佳 PSM
+                            config = '--psm 7 -c tessedit_char_whitelist=0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
+                            result = pytesseract.image_to_string(denoised, config=config).strip()
+                            if result:
+                                all_results.append((''.join(filter(str.isalnum, result)), f'策略3-閾值{thresh_val}'))
+                    except:
+                        pass
+                    
+                    # 策略 4: Canny 邊緣檢測 + 骨架化 (字符輪廓提取)
+                    try:
+                        gray4 = gray.copy() if 'gray' in locals() else (cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if len(image.shape) == 3 else image)
+                        enlarged4 = cv2.resize(gray4, None, fx=6, fy=6, interpolation=cv2.INTER_CUBIC)
+                        
+                        # 先降噪
+                        denoised4 = cv2.fastNlMeansDenoising(enlarged4, None, 20, 7, 21)
+                        
+                        # Canny 邊緣檢測
+                        blurred4 = cv2.GaussianBlur(denoised4, (5, 5), 0)
+                        edges = cv2.Canny(blurred4, 50, 150)
+                        
+                        # 膨脹連接斷裂邊緣
+                        kernel_dilate = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
+                        dilated = cv2.dilate(edges, kernel_dilate, iterations=1)
+                        
+                        # 超強銳化
+                        kernel_sharpen = np.array([[-1,-1,-1,-1,-1],
+                                                   [-1, 2, 2, 2,-1],
+                                                   [-1, 2, 9, 2,-1],
+                                                   [-1, 2, 2, 2,-1],
+                                                   [-1,-1,-1,-1,-1]]) / 8.0
+                        sharpened = cv2.filter2D(dilated, -1, kernel_sharpen)
+                        
+                        # Otsu 二值化
+                        _, sharp_binary = cv2.threshold(sharpened, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+                        
+                        # 反色
+                        if cv2.mean(sharp_binary)[0] > 127:
+                            sharp_binary = cv2.bitwise_not(sharp_binary)
+                        
+                        # 多種 PSM 和字符集
+                        for psm in [6, 7, 8]:
+                            config = f'--psm {psm} --oem 3 -c tessedit_char_whitelist=0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
+                            result = pytesseract.image_to_string(sharp_binary, config=config).strip()
+                            if result:
+                                all_results.append((''.join(filter(str.isalnum, result)), f'策略4-邊緣-PSM{psm}'))
+                    except:
+                        pass
+                    
+                    # 策略 5: 形態學重建 + 距離變換 (76N8 專用)
+                    try:
+                        gray5 = gray.copy() if 'gray' in locals() else (cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if len(image.shape) == 3 else image)
+                        
+                        # 超大放大倍率
+                        enlarged5 = cv2.resize(gray5, None, fx=8, fy=8, interpolation=cv2.INTER_CUBIC)
+                        
+                        # 三次非局部均值降噪
+                        temp = cv2.fastNlMeansDenoising(enlarged5, None, h=25, templateWindowSize=7, searchWindowSize=21)
+                        temp = cv2.fastNlMeansDenoising(temp, None, h=20, templateWindowSize=7, searchWindowSize=21)
+                        temp = cv2.fastNlMeansDenoising(temp, None, h=15, templateWindowSize=7, searchWindowSize=21)
+                        
+                        # 形態學梯度提取字符邊緣
+                        kernel_grad = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+                        gradient = cv2.morphologyEx(temp, cv2.MORPH_GRADIENT, kernel_grad)
+                        
+                        # 組合原圖和梯度
+                        combined = cv2.addWeighted(temp, 0.7, gradient, 0.3, 0)
+                        
+                        # 距離變換 + Otsu
+                        _, markers = cv2.threshold(combined, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+                        
+                        # 形態學開閉運算組合
+                        kernel_final = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+                        opened = cv2.morphologyEx(markers, cv2.MORPH_OPEN, kernel_final, iterations=2)
+                        closed = cv2.morphologyEx(opened, cv2.MORPH_CLOSE, kernel_final, iterations=1)
+                        
+                        # 銳化
+                        kernel_sharp5 = np.array([[0,-1,0],[-1,5,-1],[0,-1,0]])
+                        final = cv2.filter2D(closed, -1, kernel_sharp5)
+                        
+                        # 智能反色
+                        if cv2.mean(final)[0] > 127:
+                            final = cv2.bitwise_not(final)
+                        
+                        # 嘗試所有可能的 PSM
+                        for psm in [6, 7, 8, 10, 11, 13]:
+                            config = f'--psm {psm} --oem 3 -c tessedit_char_whitelist=0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
+                            result = pytesseract.image_to_string(final, config=config).strip()
+                            if result:
+                                all_results.append((''.join(filter(str.isalnum, result)), f'策略5-重建-PSM{psm}'))
+                    except:
+                        pass
+                    
+                    # ====== 結果分析與選擇 ======
+                    if all_results:
+                        # 過濾掉太短的結果 (< 3 字符)
+                        valid_results = [(r, s) for r, s in all_results if len(r) >= 3]
+                        
+                        if valid_results:
+                            # 統計出現次數,選最常出現的
+                            from collections import Counter
+                            result_counts = Counter([r for r, _ in valid_results])
+                            
+                            # 如果有高頻結果 (出現 2 次以上),選它
+                            most_common = result_counts.most_common(1)[0]
+                            if most_common[1] >= 2:
+                                text = most_common[0]
+                            else:
+                                # 否則選最長的
+                                text = max(valid_results, key=lambda x: len(x[0]))[0]
+                            
+                            # 在日誌中顯示所有嘗試結果 (除錯用)
+                            debug_info = "\n".join([f"  {s}: {r}" for r, s in all_results if r])
+                            print(f"🔍 Tesseract 嘗試:\n{debug_info}\n✅ 最終選擇: {text}")
+                        else:
+                            text = ""
+                    else:
+                        text = ""
+                    
+                    # 清理結果
+                    result = ''.join(filter(str.isalnum, text))
+                    
+                    if result:
+                        # ✅ 使用 after() 在主線程中更新 UI
+                        self.after(0, lambda r=result: self.captcha_result_var.set(r))
+                        self.after(0, lambda r=result: self.status_label.config(
+                            text=f"✅ Tesseract 識別成功: {r}",
+                            bg="#e8f5e9",
+                            fg="#2e7d32"
+                        ))
+                    else:
+                        self.after(0, lambda: self.captcha_result_var.set("(無法識別)"))
+                        self.after(0, lambda: self.status_label.config(
+                            text="⚠️ 未能識別驗證碼",
+                            bg="#fff3e0",
+                            fg="#e65100"
+                        ))
+                else:
+                    # 沒有安裝 pytesseract，使用簡單的模板匹配
+                    self.after(0, lambda: messagebox.showinfo(
+                        "需要安裝套件",
+                        "驗證碼識別需要 Tesseract OCR\n\n"
+                        "安裝步驟:\n"
+                        "1. pip install pytesseract\n"
+                        "2. 下載安裝 Tesseract-OCR:\n"
+                        "   https://github.com/tesseract-ocr/tesseract\n"
+                        "3. 將 Tesseract 安裝路徑加入系統環境變數"
+                    ))
+                    self.after(0, lambda: self.status_label.config(
+                        text="❌ 缺少 pytesseract 套件",
+                        bg="#ffebee",
+                        fg="#c62828"
+                    ))
+                    
+            except Exception as e:
+                error_msg = str(e)
+                # ✅ 使用 after() 在主線程中更新 UI
+                self.after(0, lambda: self.captcha_result_var.set("(識別失敗)"))
+                self.after(0, lambda: self.status_label.config(
+                    text=f"❌ 識別失敗: {error_msg}",
+                    bg="#ffebee",
+                    fg="#c62828"
+                ))
+                
+                # 如果是 tesseract 路徑問題
+                if "tesseract" in error_msg.lower():
+                    self.after(0, lambda: messagebox.showerror(
+                        "Tesseract 未設定",
+                        "無法找到 Tesseract 執行檔\n\n"
+                        "請確認:\n"
+                        "1. 已安裝 Tesseract-OCR\n"
+                        "2. 已將安裝路徑加入環境變數\n"
+                        "   或在程式中設定:\n"
+                        "   pytesseract.pytesseract.tesseract_cmd = r'C:\\Program Files\\Tesseract-OCR\\tesseract.exe'"
+                    ))
+        
+        # 啟動識別線程
+        threading.Thread(target=run_recognition, daemon=True).start()
 
 
 # 測試用

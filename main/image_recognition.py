@@ -100,62 +100,72 @@ class ImageRecognition:
         :param multi_scale: 是否嘗試多尺度匹配(提高辨識率)
         :return: (x, y, width, height) 或 None
         """
-        # 修正檔案路徑
+        # 1. 驗證檔案路徑
+        print(f"[1/4] 驗證檔案路徑...")
         template_path = os.path.normpath(template_path)
         
         if not os.path.exists(template_path):
-            print(f"✗ 圖片不存在: {template_path}")
+            print(f"  ✗ 圖片不存在: {template_path}")
             return None
+        print(f"  ✓ 檔案存在")
         
-        # 載入模板圖片 (支援中文路徑)
+        # 2. 載入模板圖片
+        print(f"[2/4] 載入模板圖片 (支援中文路徑)...")
         template = self._load_template(template_path)
         if template is None:
+            print(f"  ✗ 載入失敗")
             return None
         
-        print(f"✓ 模板載入成功: {os.path.basename(template_path)}")
+        print(f"  ✓ 模板載入成功: {os.path.basename(template_path)} (尺寸: {template.shape[1]}x{template.shape[0]})")
         
-        # 截取螢幕
+        # 3. 截取螢幕
+        print(f"[3/4] 截取螢幕畫面...")
         try:
             if region:
                 screenshot = pyautogui.screenshot(region=region)
+                print(f"  ✓ 已截取區域: {region}")
             else:
                 screenshot = pyautogui.screenshot()
+                print(f"  ✓ 已截取全螢幕")
             
             # 轉換為OpenCV格式 (PIL -> numpy -> BGR)
             screenshot_np = np.array(screenshot)
             screenshot_bgr = cv2.cvtColor(screenshot_np, cv2.COLOR_RGB2BGR)
             
         except Exception as e:
-            print(f"✗ 截圖失敗: {e}")
+            print(f"  ✗ 截圖失敗: {e}")
             return None
         
+        # 4. 開始圖片匹配
+        print(f"[4/4] 開始圖片匹配...")
+        
         # 策略1: 標準信心度 + 灰階
-        print(f"🔍 策略1: 標準識別 (信心度 {self.confidence}, 灰階={grayscale})")
+        print(f"  → 策略1: 標準識別 (信心度 {self.confidence}, 灰階={grayscale})")
         result = self._match_template_cv2(screenshot_bgr, template, self.confidence, grayscale)
         if result:
-            print(f"✓ 標準識別成功!")
+            print(f"  ✓ 標準識別成功! 位置: ({result[0]}, {result[1]})")
             return result
         
         # 策略2: 降低信心度 (多尺度)
         if multi_scale:
-            for conf in [self.confidence - 0.05, self.confidence - 0.1, self.confidence - 0.15, self.min_confidence]:
+            for idx, conf in enumerate([self.confidence - 0.05, self.confidence - 0.1, self.confidence - 0.15, self.min_confidence], 2):
                 if conf < self.min_confidence:
                     break
-                print(f"🔍 策略2: 降低信心度 (信心度 {conf:.2f})")
+                print(f"  → 策略{idx}: 降低信心度 (信心度 {conf:.2f})")
                 result = self._match_template_cv2(screenshot_bgr, template, conf, grayscale)
                 if result:
-                    print(f"✓ 降低信心度識別成功 (信心度 {conf:.2f})")
+                    print(f"  ✓ 降低信心度識別成功! 位置: ({result[0]}, {result[1]})")
                     return result
         
         # 策略3: 彩色模式 (如果原本用灰階)
         if grayscale:
-            print(f"🔍 策略3: 彩色模式")
+            print(f"  → 策略3: 彩色模式")
             result = self._match_template_cv2(screenshot_bgr, template, self.min_confidence, False)
             if result:
-                print(f"✓ 彩色模式識別成功")
+                print(f"  ✓ 彩色模式識別成功! 位置: ({result[0]}, {result[1]})")
                 return result
         
-        print(f"✗ 所有策略均未找到圖片")
+        print(f"  ✗ 所有策略均未找到圖片")
         return None
     
     def find_all_images(self,
