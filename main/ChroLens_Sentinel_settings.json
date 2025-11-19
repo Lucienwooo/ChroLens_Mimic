@@ -1,0 +1,11 @@
+{
+  "interval": "60",
+  "files": [
+    "MSBuild.exe",
+    "RegAsm.exe",
+    "RegSvcs.exe",
+    "AddInUtil.exe",
+    "aspnet_compiler.exe"
+  ],
+  "count": 5
+}
