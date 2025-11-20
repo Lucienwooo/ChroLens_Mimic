@@ -13,7 +13,17 @@ import time
 import os
 import json
 from datetime import datetime
-from adaptive_navigation_system import AdaptiveNavigationSystem
+from screenshot_selector import capture_screen_region
+
+# 使用 try-except 導入 AdaptiveNavigationSystem，避免因缺少 cv2 導致整個模組無法載入
+try:
+    from adaptive_navigation_system import AdaptiveNavigationSystem
+    HAS_ADAPTIVE_NAV = True
+except ImportError as e:
+    print(f"⚠️ 無法載入自適應導航系統: {e}")
+    print("⚠️ 自動戰鬥系統將以基礎模式運行（不含影像辨識功能）")
+    HAS_ADAPTIVE_NAV = False
+    AdaptiveNavigationSystem = None
 
 
 class SmartAutoCombatUI:
@@ -192,7 +202,15 @@ class SmartAutoCombatUI:
         
         tb.Button(
             char_input_frame,
-            text="📁 選擇",
+            text="📸 截圖",
+            command=lambda: self._capture_template('character'),
+            bootstyle="info-outline",
+            width=8
+        ).pack(side="right", padx=(5, 0))
+        
+        tb.Button(
+            char_input_frame,
+            text="📁 檔案",
             command=lambda: self._select_image('character'),
             bootstyle="secondary-outline",
             width=8
@@ -208,13 +226,25 @@ class SmartAutoCombatUI:
         self.enemy_list_frame = tb.Frame(enemy_frame)
         self.enemy_list_frame.pack(fill="x", pady=5)
         
+        # 添加按鈕
+        enemy_btn_frame = tb.Frame(enemy_frame)
+        enemy_btn_frame.pack(anchor="w", pady=5)
+        
         tb.Button(
-            enemy_frame,
-            text="➕ 添加敵人模板",
+            enemy_btn_frame,
+            text="📸 截圖添加",
+            command=lambda: self._capture_template('enemy'),
+            bootstyle="info-outline",
+            width=12
+        ).pack(side="left", padx=(0, 5))
+        
+        tb.Button(
+            enemy_btn_frame,
+            text="📁 檔案添加",
             command=self._add_enemy_template,
             bootstyle="success-outline",
-            width=20
-        ).pack(anchor="w")
+            width=12
+        ).pack(side="left")
         
         self._refresh_enemy_list()
         
@@ -512,9 +542,14 @@ class SmartAutoCombatUI:
         
         self._log(f"嘗試鎖定視窗: {window_title}", "info")
         
+        # 檢查是否有導航系統
+        if not HAS_ADAPTIVE_NAV:
+            self._log("❌ 自適應導航系統未載入（缺少 cv2 模組）", "error")
+            messagebox.showerror("錯誤", "自適應導航系統未載入\n\n請安裝 OpenCV:\npip install opencv-python")
+            return
+        
         # 創建臨時系統測試
         try:
-            from adaptive_navigation_system import AdaptiveNavigationSystem
             temp_nav = AdaptiveNavigationSystem()
             success = temp_nav.lock_game_window(window_title)
             
@@ -528,8 +563,53 @@ class SmartAutoCombatUI:
             self._log(f"❌ 錯誤: {e}", "error")
             messagebox.showerror("錯誤", str(e))
     
+    def _capture_template(self, template_type):
+        """截圖捕獲模板"""
+        self._log(f"請在螢幕上框選{'角色' if template_type == 'character' else '敵人'}區域...", "info")
+        
+        def on_capture(image):
+            """截圖完成回調"""
+            try:
+                # 創建 templates 目錄
+                templates_dir = os.path.join(os.path.dirname(__file__), 'templates')
+                if not os.path.exists(templates_dir):
+                    os.makedirs(templates_dir)
+                
+                if template_type == 'character':
+                    # 保存角色模板
+                    filename = os.path.join(templates_dir, 'character_template.png')
+                    image.save(filename)
+                    self.char_template_var.set(filename)
+                    self.config['character_template'] = filename
+                    self._log(f"✅ 已設定角色模板 (尺寸: {image.width}×{image.height})", "success")
+                    
+                elif template_type == 'enemy':
+                    # 請求輸入敵人名稱
+                    name = tk.simpledialog.askstring(
+                        "敵人名稱",
+                        "請輸入敵人名稱:",
+                        parent=self.root
+                    )
+                    
+                    if name:
+                        # 保存敵人模板
+                        filename = os.path.join(templates_dir, f'enemy_{name}.png')
+                        image.save(filename)
+                        self.config['enemy_templates'][name] = filename
+                        self._refresh_enemy_list()
+                        self._log(f"✅ 已添加敵人模板: {name} (尺寸: {image.width}×{image.height})", "success")
+                    else:
+                        self._log("⚠️ 已取消添加敵人模板", "warning")
+                        
+            except Exception as e:
+                self._log(f"❌ 保存模板失敗: {e}", "error")
+                messagebox.showerror("錯誤", f"保存模板失敗:\n{e}")
+        
+        # 啟動截圖選擇器
+        capture_screen_region(on_capture)
+    
     def _select_image(self, img_type):
-        """選擇圖片"""
+        """選擇圖片檔案"""
         filename = filedialog.askopenfilename(
             title=f"選擇{'角色' if img_type == 'character' else '敵人'}圖片",
             filetypes=[("圖片檔案", "*.png *.jpg *.jpeg *.bmp"), ("所有檔案", "*.*")]
@@ -781,8 +861,15 @@ class SmartAutoCombatUI:
             # 創建導航系統
             self._log("初始化導航系統...", "info")
             
+            # 檢查是否有導航系統
+            if not HAS_ADAPTIVE_NAV:
+                self._log("❌ 自適應導航系統未載入（缺少 cv2 模組）", "error")
+                messagebox.showerror("錯誤", "自適應導航系統未載入\n\n請安裝 OpenCV:\npip install opencv-python")
+                self.root.after(0, self._stop_combat)
+                return
+            
             config = {
-                'recognition_confidence': 0.75,
+                'screen_scale': 1.0,
                 'move_test_duration': 0.3,
                 'move_keys': self.config['move_keys'],
                 'exploration_priority': self.config['exploration']['priority']

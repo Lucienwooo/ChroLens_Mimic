@@ -449,7 +449,13 @@ class RecorderApp(tb.Window):
 
         self.title(f"ChroLens_Mimic_{VERSION}")
         # 設定視窗圖示
-        set_window_icon(self)
+        try:
+            icon_path = get_icon_path()
+            if os.path.exists(icon_path):
+                # 使用 wm_iconbitmap 方法 (更相容 ttkbootstrap)
+                self.wm_iconbitmap(icon_path)
+        except Exception as e:
+            print(f"設定視窗圖示失敗: {e}")
         # 關閉視窗時使用強制關閉清理函式
         try:
             self.protocol("WM_DELETE_WINDOW", self.force_quit)
@@ -459,7 +465,8 @@ class RecorderApp(tb.Window):
         # 在左上角建立一個小label作為icon區域的懸浮觸發點
         self.icon_tip_label = tk.Label(self, width=2, height=1, bg=self.cget("background"))
         self.icon_tip_label.place(x=0, y=0)
-        Tooltip(self.icon_tip_label, f"{self.title()}_By_Lucien")
+        window_title = self.title()
+        Tooltip(self.icon_tip_label, f"{window_title}_By_Lucien")
 
         # ✅ 設定響應式佈局 (Responsive Layout / Adaptive Window)
         # 設定最小視窗尺寸並允許彈性調整
@@ -1250,8 +1257,8 @@ class RecorderApp(tb.Window):
         """打開智能自動戰鬥視窗"""
         try:
             from auto_combat_system import SmartAutoCombatUI
-            # 創建新視窗
-            combat_window = tb.Toplevel(self.root)
+            # 創建新視窗 (self 是主視窗)
+            combat_window = tk.Toplevel(self)
             combat_window.withdraw()  # 先隱藏
             
             # 創建智能戰鬥介面
