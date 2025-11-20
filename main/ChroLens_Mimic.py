@@ -1247,13 +1247,22 @@ class RecorderApp(tb.Window):
             messagebox.showerror("錯誤", f"開啟圖片管理視窗失敗:\n{e}")
 
     def open_combat_control(self):
-        """打開自動戰鬥控制視窗"""
+        """打開智能自動戰鬥視窗"""
         try:
-            from combat_manager import CombatControlWindow
-            CombatControlWindow(self)
+            from auto_combat_system import SmartAutoCombatUI
+            # 創建新視窗
+            combat_window = tb.Toplevel(self.root)
+            combat_window.withdraw()  # 先隱藏
+            
+            # 創建智能戰鬥介面
+            app = SmartAutoCombatUI(parent_window=combat_window)
+            combat_window.deiconify()  # 顯示
+            
         except Exception as e:
-            self.log(f"開啟自動戰鬥視窗失敗: {e}")
-            messagebox.showerror("錯誤", f"開啟自動戰鬥視窗失敗:\n{e}")
+            self.log(f"開啟智能戰鬥視窗失敗: {e}")
+            messagebox.showerror("錯誤", f"開啟智能戰鬥視窗失敗:\n{e}")
+            import traceback
+            print(traceback.format_exc())
 
 
     def change_language(self, event=None):

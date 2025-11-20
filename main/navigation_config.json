@@ -1,0 +1,143 @@
+{
+  "說明": "ChroLens 自適應導航系統配置檔案",
+  "version": "1.0",
+  
+  "遊戲設定": {
+    "window_title": "MapleStory",
+    "說明": "遊戲視窗標題,用於鎖定視窗"
+  },
+  
+  "識別設定": {
+    "character_template": "images/character.png",
+    "說明_character": "角色識別模板圖片路徑",
+    
+    "enemy_templates": {
+      "蝸牛": "images/snail.png",
+      "菇菇": "images/mushroom.png",
+      "綠水靈": "images/slime.png"
+    },
+    "說明_enemies": "敵人識別模板,格式: 敵人名稱: 圖片路徑",
+    
+    "recognition_confidence": 0.75,
+    "說明_confidence": "圖片識別信心度,0.0-1.0,越高越嚴格",
+    
+    "multi_scale_search": true,
+    "scale_range": [0.8, 1.2, 0.1],
+    "說明_scale": "多尺度搜尋設定: [最小縮放, 最大縮放, 步進]"
+  },
+  
+  "按鍵設定": {
+    "move_keys": {
+      "left": "left",
+      "right": "right",
+      "up": "up",
+      "down": "down",
+      "jump": "alt",
+      "attack": "ctrl",
+      "skill1": "a",
+      "skill2": "s",
+      "skill3": "d",
+      "skill4": "f",
+      "hp_potion": "pageup",
+      "mp_potion": "pagedown"
+    },
+    "說明": "遊戲按鍵配置,根據你的遊戲設定調整"
+  },
+  
+  "移動測試設定": {
+    "move_test_duration": 0.3,
+    "說明_duration": "每次移動測試持續時間(秒),建議0.2-0.5",
+    
+    "movement_threshold": 10,
+    "說明_threshold": "畫面變化閾值,用於判斷移動是否成功,建議5-20",
+    
+    "position_similarity_threshold": 20,
+    "說明_position": "位置相似度閾值(像素),用於判斷是否在同一位置"
+  },
+  
+  "探索設定": {
+    "exploration_priority": ["right", "left", "up", "down"],
+    "說明_priority": "探索方向優先級,按順序嘗試",
+    
+    "revisit_threshold": 3,
+    "說明_revisit": "重複訪問同一位置幾次後降低優先級",
+    
+    "exploration_timeout": 300,
+    "說明_timeout": "探索超時時間(秒),超過後自動停止"
+  },
+  
+  "戰鬥設定": {
+    "auto_attack": true,
+    "說明_auto": "是否自動攻擊敵人",
+    
+    "attack_range": 100,
+    "說明_range": "攻擊範圍(像素),超過此距離會先移動靠近",
+    
+    "priority_enemies": ["菇菇", "綠水靈", "蝸牛"],
+    "說明_priority": "優先攻擊的敵人類型,按優先級排序",
+    
+    "skill_cooldowns": {
+      "a": 5.0,
+      "s": 8.0,
+      "d": 15.0,
+      "f": 30.0
+    },
+    "說明_cooldown": "技能冷卻時間(秒),格式: 按鍵: 冷卻時間",
+    
+    "use_potions": true,
+    "hp_potion_threshold": 0.5,
+    "mp_potion_threshold": 0.3,
+    "說明_potion": "藥水使用設定: 是否使用/HP閾值/MP閾值"
+  },
+  
+  "安全設定": {
+    "stuck_detection": true,
+    "說明_stuck": "是否啟用卡住偵測",
+    
+    "stuck_threshold": 5,
+    "說明_stuck_threshold": "連續幾次無法移動視為卡住",
+    
+    "emergency_escape": true,
+    "說明_escape": "卡住時是否自動脫困",
+    
+    "max_death_count": 3,
+    "說明_death": "最大死亡次數,達到後自動停止"
+  },
+  
+  "性能設定": {
+    "screenshot_interval": 0.1,
+    "說明_interval": "截圖最小間隔(秒),避免過度截圖",
+    
+    "cache_screenshots": true,
+    "說明_cache": "是否快取截圖以提升性能",
+    
+    "max_cache_size": 10,
+    "說明_cache_size": "最大快取數量"
+  },
+  
+  "進階設定": {
+    "hp_detection_region": {
+      "說明": "血量偵測區域,相對於遊戲視窗的座標",
+      "x_offset": 20,
+      "y_offset": 20,
+      "width": 150,
+      "height": 20
+    },
+    
+    "mp_detection_region": {
+      "說明": "魔力偵測區域",
+      "x_offset": 20,
+      "y_offset": 45,
+      "width": 150,
+      "height": 20
+    },
+    
+    "minimap_region": {
+      "說明": "小地圖區域(預留功能)",
+      "x_offset_from_right": 200,
+      "y_offset": 20,
+      "width": 180,
+      "height": 180
+    }
+  }
+}
