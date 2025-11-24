@@ -177,8 +177,16 @@ class SmartAutoCombatUI:
         window_input_frame.pack(fill="x", pady=5)
         
         self.window_title_var = tb.StringVar(value=self.config['window_title'])
-        window_entry = tb.Entry(window_input_frame, textvariable=self.window_title_var, width=30)
+        window_entry = tb.Entry(window_input_frame, textvariable=self.window_title_var, width=30, state="readonly")
         window_entry.pack(side="left", fill="x", expand=True)
+        
+        tb.Button(
+            window_input_frame,
+            text="🎯 選擇視窗",
+            command=self._select_window,
+            bootstyle="success-outline",
+            width=12
+        ).pack(side="right", padx=(5, 0))
         
         tb.Button(
             window_input_frame,
@@ -532,6 +540,22 @@ class SmartAutoCombatUI:
         self._log("系統初始化完成", "info")
     
     # ==================== 功能實現 ====================
+    
+    def _select_window(self):
+        """使用視窗選擇器選擇遊戲視窗"""
+        try:
+            from window_selector import WindowSelectorDialog
+            
+            def on_selected(hwnd, title):
+                if hwnd and title:
+                    self.window_title_var.set(title)
+                    self._log(f"✓ 已選擇視窗: {title}", "success")
+                    self.config['window_title'] = title
+            
+            WindowSelectorDialog(self.root, on_selected)
+        except Exception as e:
+            self._log(f"❌ 視窗選擇器錯誤: {e}", "error")
+            messagebox.showerror("錯誤", f"無法開啟視窗選擇器\n\n{str(e)}")
     
     def _test_window_lock(self):
         """測試視窗鎖定"""

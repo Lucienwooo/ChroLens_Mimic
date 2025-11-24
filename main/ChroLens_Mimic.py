@@ -470,8 +470,8 @@ class RecorderApp(tb.Window):
 
         # ✅ 設定響應式佈局 (Responsive Layout / Adaptive Window)
         # 設定最小視窗尺寸並允許彈性調整
-        self.minsize(1000, 550)  # 增加最小寬度以容納新功能
-        self.geometry("1050x550")  # 增加初始寬度
+        self.minsize(1100, 600)  # 增加最小寬度以容納新功能
+        self.geometry("1150x620")  # 增加初始寬度和高度
         self.resizable(True, True)  # 允許調整大小
         
         # ✅ 啟用內容自動適應
@@ -833,6 +833,10 @@ class RecorderApp(tb.Window):
         # e) 排程按鈕：設定腳本定時執行
         self.schedule_btn = tb.Button(self.script_right_frame, text="排程", width=16, bootstyle=INFO, command=self.open_schedule_settings)
         self.schedule_btn.pack(anchor="w", pady=4)
+        
+        # f) 合併腳本按鈕：將多個腳本合併為一個
+        self.merge_btn = tb.Button(self.script_right_frame, text=lang_map["合併腳本"], width=16, bootstyle=SUCCESS, command=self.merge_scripts)
+        self.merge_btn.pack(anchor="w", pady=4)
 
         # 初始化清單
         self.refresh_script_listbox()
@@ -1304,6 +1308,8 @@ class RecorderApp(tb.Window):
         # 腳本設定區按鈕
         if hasattr(self, 'rename_btn'):
             self.rename_btn.config(text=lang_map["重新命名"])
+        if hasattr(self, 'merge_btn'):
+            self.merge_btn.config(text=lang_map["合併腳本"])
         if hasattr(self, 'select_target_btn'):
             self.select_target_btn.config(text=lang_map["選擇視窗"])
         if hasattr(self, 'mouse_mode_check'):
@@ -1707,8 +1713,9 @@ class RecorderApp(tb.Window):
                         # 創建詳細的對話框
                         dialog = tk.Toplevel(self)
                         dialog.title("視窗狀態檢測")
-                        dialog.geometry("600x500")
+                        dialog.geometry("650x550")
                         dialog.resizable(True, True)
+                        dialog.minsize(550, 450)  # 設定最小尺寸
                         dialog.grab_set()
                         dialog.transient(self)
                         set_window_icon(dialog)
@@ -1971,6 +1978,8 @@ class RecorderApp(tb.Window):
         success = self.core_recorder.play(
             speed=self.speed,
             repeat=repeat,
+            repeat_time_limit=self._repeat_time_limit,
+            repeat_interval=repeat_interval_sec,
             on_event=on_event
         )
 
@@ -2531,6 +2540,256 @@ class RecorderApp(tb.Window):
             self.log(f"[{format_time(time.time())}] 更名失敗: {e}")
         self.rename_var.set("")  # 更名後清空輸入框
 
+    def merge_scripts(self):
+        """開啟腳本合併對話框，允許將多個腳本按順序合併為一個新腳本"""
+        lang = self.language_var.get()
+        lang_map = LANG_MAP.get(lang, LANG_MAP["繁體中文"])
+        
+        # 創建合併對話框
+        merge_win = tb.Toplevel(self)
+        merge_win.title(lang_map.get("合併腳本", "合併腳本"))
+        merge_win.geometry("750x650")  # 增加寬度以顯示更長的腳本名稱
+        merge_win.resizable(True, True)  # 啟用響應式
+        merge_win.minsize(650, 550)  # 設定最小尺寸
+        
+        # 說明標籤
+        info_frame = tb.Frame(merge_win, padding=10)
+        info_frame.pack(fill="x")
+        info_label = tb.Label(
+            info_frame, 
+            text="📋 選擇要合併的腳本，按順序執行（腳本A → 腳本B → ...）",
+            font=("Microsoft YaHei UI", 10),
+            wraplength=700
+        )
+        info_label.pack()
+        
+        # 主要內容區（上部：列表區）
+        main_content = tb.Frame(merge_win)
+        main_content.pack(fill="both", expand=True, padx=10, pady=5)
+        
+        # 可用腳本列表（左側）
+        left_frame = tb.LabelFrame(main_content, text=lang_map.get("所有Script", "所有腳本"), padding=10)
+        left_frame.pack(side="left", fill="both", expand=True, padx=(0, 5))
+        
+        available_list = tk.Listbox(left_frame, height=22, selectmode=tk.EXTENDED, font=("Microsoft YaHei UI", 10))
+        available_list.pack(fill="both", expand=True)
+        
+        # 獲取所有腳本
+        scripts = [f for f in os.listdir(self.script_dir) if f.endswith('.json')]
+        for script in scripts:
+            display_name = os.path.splitext(script)[0]
+            available_list.insert(tk.END, display_name)
+        
+        # 中間控制按鈕
+        middle_frame = tb.Frame(main_content, padding=5)
+        middle_frame.pack(side="left", fill="y")
+        
+        def add_to_merge():
+            selected_indices = available_list.curselection()
+            for idx in selected_indices:
+                script_name = available_list.get(idx)
+                # 避免重複添加
+                if script_name not in merge_list.get(0, tk.END):
+                    merge_list.insert(tk.END, script_name)
+        
+        def remove_from_merge():
+            selected_indices = list(merge_list.curselection())
+            for idx in reversed(selected_indices):
+                merge_list.delete(idx)
+        
+        def move_up():
+            selected_indices = merge_list.curselection()
+            if not selected_indices or selected_indices[0] == 0:
+                return
+            for idx in selected_indices:
+                if idx > 0:
+                    item = merge_list.get(idx)
+                    merge_list.delete(idx)
+                    merge_list.insert(idx - 1, item)
+                    merge_list.selection_set(idx - 1)
+        
+        def move_down():
+            selected_indices = merge_list.curselection()
+            if not selected_indices or selected_indices[-1] == merge_list.size() - 1:
+                return
+            for idx in reversed(selected_indices):
+                if idx < merge_list.size() - 1:
+                    item = merge_list.get(idx)
+                    merge_list.delete(idx)
+                    merge_list.insert(idx + 1, item)
+                    merge_list.selection_set(idx + 1)
+        
+        add_btn = tb.Button(middle_frame, text="➡ " + lang_map.get("加入", "加入"), command=add_to_merge, width=10, bootstyle=SUCCESS)
+        add_btn.pack(pady=5)
+        
+        remove_btn = tb.Button(middle_frame, text="⬅ " + lang_map.get("移除", "移除"), command=remove_from_merge, width=10, bootstyle=DANGER)
+        remove_btn.pack(pady=5)
+        
+        tb.Label(middle_frame, text="").pack(pady=10)  # 間隔
+        
+        up_btn = tb.Button(middle_frame, text="⬆ 上移", command=move_up, width=10, bootstyle=INFO)
+        up_btn.pack(pady=5)
+        
+        down_btn = tb.Button(middle_frame, text="⬇ 下移", command=move_down, width=10, bootstyle=INFO)
+        down_btn.pack(pady=5)
+        
+        # 合併列表（右側）
+        right_frame = tb.LabelFrame(main_content, text="待合併腳本（執行順序）", padding=10)
+        right_frame.pack(side="left", fill="both", expand=True, padx=(5, 0))
+        
+        merge_list = tk.Listbox(right_frame, height=22, selectmode=tk.EXTENDED, font=("Microsoft YaHei UI", 10))
+        merge_list.pack(fill="both", expand=True)
+        
+        # 底部操作區（移到最下方，使用 Grid 佈局水平排列）
+        bottom_frame = tb.Frame(merge_win, padding=15)
+        bottom_frame.pack(fill="x", padx=10, pady=(5, 10))
+        
+        # 使用 Grid 佈局讓所有控制項水平排列
+        tb.Label(bottom_frame, text=lang_map.get("新Script名稱：", "新腳本名稱："), 
+                font=("Microsoft YaHei UI", 10)).grid(row=0, column=0, sticky="w", padx=(0, 8))
+        
+        new_name_var = tk.StringVar(value="merged_script")
+        new_name_entry = tb.Entry(bottom_frame, textvariable=new_name_var, width=20, font=("Microsoft YaHei UI", 10))
+        new_name_entry.grid(row=0, column=1, sticky="ew", padx=(0, 20))
+        
+        tb.Label(bottom_frame, text="腳本間延遲(秒):", 
+                font=("Microsoft YaHei UI", 10)).grid(row=0, column=2, sticky="w", padx=(0, 8))
+        
+        interval_var = tk.StringVar(value="0")
+        interval_entry = tb.Entry(bottom_frame, textvariable=interval_var, width=8, font=("Microsoft YaHei UI", 10))
+        interval_entry.grid(row=0, column=3, sticky="w", padx=(0, 20))
+        Tooltip(interval_entry, "設定每個腳本執行完畢後的等待時間（秒）")
+        
+        # 執行按鈕（移到右側）
+        button_frame = tb.Frame(bottom_frame)
+        button_frame.grid(row=0, column=4, sticky="e", padx=(20, 0))
+        
+        # 讓名稱輸入框可以擴展
+        bottom_frame.columnconfigure(1, weight=1)
+        
+        def do_merge():
+            """執行腳本合併"""
+            script_names = list(merge_list.get(0, tk.END))
+            if len(script_names) < 2:
+                messagebox.showwarning("提示", "請至少選擇2個腳本進行合併")
+                return
+            
+            new_name = new_name_var.get().strip()
+            if not new_name:
+                messagebox.showwarning("提示", "請輸入新腳本名稱")
+                return
+            
+            # 確保新名稱有 .json 副檔名
+            if not new_name.endswith('.json'):
+                new_name += '.json'
+            
+            new_path = os.path.join(self.script_dir, new_name)
+            if os.path.exists(new_path):
+                if not messagebox.askyesno("確認", f"腳本 {new_name} 已存在，是否覆蓋？"):
+                    return
+            
+            try:
+                # 解析間隔時間
+                try:
+                    interval_seconds = float(interval_var.get())
+                except:
+                    interval_seconds = 0.0
+                
+                # 合併腳本事件
+                merged_events = []
+                time_offset = 0.0  # 累計時間偏移
+                
+                for i, script_name in enumerate(script_names):
+                    script_path = os.path.join(self.script_dir, script_name + '.json')
+                    if not os.path.exists(script_path):
+                        self.log(f"[警告] 找不到腳本：{script_name}")
+                        continue
+                    
+                    # 載入腳本
+                    data = sio_load_script(script_path)
+                    events = data.get("events", [])
+                    
+                    if not events:
+                        continue
+                    
+                    # 計算這個腳本的基準時間
+                    script_base_time = events[0]['time'] if events else 0
+                    
+                    # 調整所有事件的時間（加上累計偏移）
+                    for event in events:
+                        new_event = event.copy()
+                        # 先將時間相對於腳本開始時間，再加上累計偏移
+                        new_event['time'] = (event['time'] - script_base_time) + time_offset
+                        merged_events.append(new_event)
+                    
+                    # 更新時間偏移（這個腳本的總長度 + 間隔時間）
+                    if events:
+                        script_duration = events[-1]['time'] - script_base_time
+                        time_offset += script_duration + interval_seconds
+                    
+                    self.log(f"✓ 已合併腳本：{script_name} ({len(events)} 個事件)")
+                
+                if not merged_events:
+                    messagebox.showerror("錯誤", "沒有可合併的事件")
+                    return
+                
+                # 儲存合併後的腳本（使用第一個腳本的設定）
+                first_script_path = os.path.join(self.script_dir, script_names[0] + '.json')
+                first_data = sio_load_script(first_script_path)
+                settings = first_data.get("settings", {})
+                
+                merged_data = {
+                    "events": merged_events,
+                    "settings": settings
+                }
+                
+                with open(new_path, "w", encoding="utf-8") as f:
+                    json.dump(merged_data, f, ensure_ascii=False, indent=2)
+                
+                self.log(f"🎉 腳本合併成功！")
+                self.log(f"   新腳本：{new_name}")
+                self.log(f"   包含 {len(merged_events)} 個事件")
+                self.log(f"   合併了 {len(script_names)} 個腳本")
+                
+                # 刷新腳本列表
+                self.refresh_script_list()
+                self.refresh_script_listbox()
+                
+                # 關閉對話框
+                merge_win.destroy()
+                
+                # 詢問是否載入新腳本
+                if messagebox.askyesno("提示", "是否載入新合併的腳本？"):
+                    # 載入新腳本
+                    self.events = merged_events
+                    self.script_settings = settings
+                    self.script_var.set(os.path.splitext(new_name)[0])
+                    with open(LAST_SCRIPT_FILE, "w", encoding="utf-8") as f:
+                        f.write(new_name)
+                
+            except Exception as e:
+                messagebox.showerror("錯誤", f"合併失敗：{e}")
+                import traceback
+                self.log(f"合併錯誤詳情: {traceback.format_exc()}")
+        
+        merge_execute_btn = tb.Button(
+            button_frame, 
+            text=lang_map.get("合併並儲存", "合併並儲存"), 
+            command=do_merge, 
+            bootstyle=SUCCESS,
+            width=15
+        )
+        merge_execute_btn.pack(side="left", padx=(0, 5))
+        
+        cancel_btn = tb.Button(
+            button_frame, 
+            text=lang_map.get("取消", "取消"), 
+            command=merge_win.destroy, 
+            bootstyle=SECONDARY,
+            width=10
+        )
+        cancel_btn.pack(side="left")
+
     def open_scripts_dir(self):
         path = os.path.abspath(self.script_dir)  # 修正
         os.startfile(path)
@@ -2538,9 +2797,9 @@ class RecorderApp(tb.Window):
     def open_hotkey_settings(self):
         win = tb.Toplevel(self)
         win.title("Hotkey")
-        win.geometry("350x430")  # 增大尺寸以容納強制停止欄位
+        win.geometry("400x450")  # 增大尺寸以容納強制停止欄位
         win.resizable(True, True)  # 允許調整大小
-        win.minsize(300, 360)  # 設置最小尺寸
+        win.minsize(350, 400)  # 設置最小尺寸
         # 設定視窗圖示
         set_window_icon(win)
         
@@ -3395,8 +3654,9 @@ class RecorderApp(tb.Window):
         # 創建排程設定視窗
         schedule_win = tk.Toplevel(self)
         schedule_win.title(f"設定排程 - {script_name}")
-        schedule_win.geometry("450x320")  # 增加高度避免按鈕被遮住
+        schedule_win.geometry("500x350")  # 增加尺寸避免按鈕被遮住
         schedule_win.resizable(True, True)  # 允許調整大小
+        schedule_win.minsize(450, 320)  # 設定最小尺寸
         schedule_win.grab_set()
         schedule_win.transient(self)
         set_window_icon(schedule_win)  # 設定視窗圖示

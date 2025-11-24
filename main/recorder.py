@@ -411,8 +411,16 @@ class CoreRecorder:
             import traceback
             self.logger(f"詳細錯誤: {traceback.format_exc()}")
 
-    def play(self, speed=1.0, repeat=1, on_event=None):
-        """開始回放錄製的事件"""
+    def play(self, speed=1.0, repeat=1, repeat_time_limit=None, repeat_interval=0, on_event=None):
+        """開始回放錄製的事件
+        
+        Args:
+            speed: 播放速度倍率
+            repeat: 重複次數（-1 表示無限重複）
+            repeat_time_limit: 總運作時間限制（秒），優先於 repeat
+            repeat_interval: 每次重複之間的間隔（秒）
+            on_event: 事件回調函數
+        """
         if self.playing or not self.events:
             return False
         
@@ -426,7 +434,7 @@ class CoreRecorder:
         self.paused = False
         self._play_thread = threading.Thread(
             target=self._play_loop,
-            args=(speed, repeat, on_event),
+            args=(speed, repeat, repeat_time_limit, repeat_interval, on_event),
             daemon=True
         )
         self._play_thread.start()
@@ -473,36 +481,92 @@ class CoreRecorder:
         except Exception:
             pass
 
-    def _play_loop(self, speed, repeat, on_event):
-        """回放主循環（強化版 - 支援無限重複，修復點擊其他視窗導致停止的問題）"""
+    def _play_loop(self, speed, repeat, repeat_time_limit, repeat_interval, on_event):
+        """回放主循環（強化版 - 支援時間限制優先，修復點擊其他視窗導致停止的問題）
+        
+        優先順序：重複時間 > 重複次數
+        - 如果設定了 repeat_time_limit，則在時間內無限重複
+        - 否則按照 repeat 次數執行
+        """
         try:
             # ✅ 修復：再次確認沒有錄製在進行
             self._ensure_recording_stopped()
             
-            # 初始化循環計數器
+            # 初始化循環計數器和時間記錄
             self._current_repeat_count = 0
+            play_start_time = time.time()
             
-            # repeat = -1 表示無限重複
-            if repeat == -1:
+            # ✅ 核心修復：時間限制優先於次數限制
+            if repeat_time_limit and repeat_time_limit > 0:
+                # 時間限制模式：在時間內無限重複
+                self.logger(f"[時間限制模式] 將在 {repeat_time_limit:.1f} 秒內重複執行")
+                r = 0
+                while self.playing:
+                    # 檢查是否超過時間限制
+                    elapsed = time.time() - play_start_time
+                    if elapsed >= repeat_time_limit:
+                        self.logger(f"[時間限制] 已達到設定時間 {repeat_time_limit:.1f} 秒，停止執行")
+                        break
+                    
+                    if not self.playing:
+                        break
+                    
+                    self._current_repeat_count = r
+                    self._execute_single_round(speed, on_event)
+                    r += 1
+                    
+                    # 執行間隔等待（同樣要檢查時間限制）
+                    if repeat_interval > 0 and self.playing:
+                        interval_start = time.time()
+                        while time.time() - interval_start < repeat_interval:
+                            if not self.playing:
+                                break
+                            # 再次檢查總時間限制
+                            if time.time() - play_start_time >= repeat_time_limit:
+                                self.logger(f"[時間限制] 間隔等待中達到時間限制，停止執行")
+                                self.playing = False
+                                break
+                            time.sleep(0.1)
+            elif repeat == -1:
+                # 無限重複模式（無時間限制）
+                self.logger("[無限重複模式] 將持續執行直到手動停止")
                 r = 0
                 while self.playing:
                     if not self.playing:
                         break
-                    self._current_repeat_count = r  # ✅ 更新循環計數
+                    self._current_repeat_count = r
                     self._execute_single_round(speed, on_event)
                     r += 1
+                    
+                    # 執行間隔等待
+                    if repeat_interval > 0 and self.playing:
+                        interval_start = time.time()
+                        while time.time() - interval_start < repeat_interval:
+                            if not self.playing:
+                                break
+                            time.sleep(0.1)
             else:
+                # 次數限制模式
+                self.logger(f"[次數限制模式] 將執行 {repeat} 次")
                 for r in range(max(1, repeat)):
                     if not self.playing:
                         break
-                    self._current_repeat_count = r  # ✅ 更新循環計數
+                    self._current_repeat_count = r
                     self._execute_single_round(speed, on_event)
+                    
+                    # 執行間隔等待（最後一次不需要等待）
+                    if repeat_interval > 0 and r < repeat - 1 and self.playing:
+                        interval_start = time.time()
+                        while time.time() - interval_start < repeat_interval:
+                            if not self.playing:
+                                break
+                            time.sleep(0.1)
                     
         except Exception as ex:
             self.logger(f"回放循環錯誤: {ex}")
         finally:
             self.playing = False
-            self._current_repeat_count = 0  # ✅ 重置循環計數
+            self._current_repeat_count = 0
             # ✅ 修復：回放結束後確保所有按鍵都被釋放
             try:
                 self._release_pressed_keys()
