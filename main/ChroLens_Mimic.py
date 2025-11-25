@@ -411,6 +411,12 @@ class RecorderApp(tb.Window):
         self._hotkey_handlers = {}
         # 用來儲存腳本快捷鍵的 handler id
         self._script_hotkey_handlers = {}
+        # 全域快捷鍵監聽狀態
+        self._hotkey_bindings = {}
+        self._pressed_hotkey_tokens = set()
+        self._active_hotkeys = set()
+        self._hotkey_listener = None
+        self._hotkey_lock = threading.RLock()
         # MiniMode 管理器（由 mini.py 提供）
         self.mini_window = None
         self.mini_mode_on = False  # ✅ 修復: 初始化 mini_mode_on
@@ -2112,6 +2118,10 @@ class RecorderApp(tb.Window):
             # 清理快捷鍵
             self._hotkey_handlers.clear()
             self._script_hotkey_handlers.clear()
+            try:
+                self._stop_hotkey_listener()
+            except Exception:
+                pass
             
             # 嘗試 unhook all（force_quit 可以使用）
             try:
@@ -2980,37 +2990,154 @@ class RecorderApp(tb.Window):
 
     # 不再需要 _make_hotkey_entry_handler
 
+    def _ensure_hotkey_listener(self):
+        """確保全域快捷鍵監聽器正在執行（使用 pynput）。"""
+        with self._hotkey_lock:
+            listener = getattr(self, "_hotkey_listener", None)
+            if listener and getattr(listener, "is_alive", lambda: False)():
+                return
+            try:
+                self._hotkey_listener = pynput_keyboard.Listener(
+                    on_press=self._on_global_hotkey_press,
+                    on_release=self._on_global_hotkey_release
+                )
+                self._hotkey_listener.daemon = True
+                self._hotkey_listener.start()
+                self.log("全域快捷鍵監聽已啟動。")
+            except Exception as ex:
+                self._hotkey_listener = None
+                self.log(f"[錯誤] 無法啟動全域快捷鍵監聽器: {ex}")
+
+    def _stop_hotkey_listener(self):
+        """停止全域快捷鍵監聽器（程式結束時呼叫）。"""
+        with self._hotkey_lock:
+            listener = getattr(self, "_hotkey_listener", None)
+            if listener:
+                try:
+                    listener.stop()
+                except Exception:
+                    pass
+            self._hotkey_listener = None
+
+    def _normalize_hotkey_token(self, token):
+        """將 hotkey 字串中的單一鍵轉換成標準 token。"""
+        if not token:
+            return ""
+        token = token.strip().lower()
+        replacements = {
+            "control": "ctrl",
+            "ctrl": "ctrl",
+            "shift": "shift",
+            "alt": "alt",
+            "option": "alt",
+            "win": "win",
+            "windows": "win",
+            "cmd": "win",
+            "command": "win",
+            "return": "enter",
+        }
+        if token in replacements:
+            return replacements[token]
+        return token
+
+    def _parse_hotkey_tokens(self, hotkey_str):
+        """將設定中的快捷鍵字串解析為 token 集合。"""
+        if not hotkey_str:
+            return None
+        parts = [p for p in hotkey_str.replace(" ", "").split("+") if p]
+        tokens = [self._normalize_hotkey_token(part) for part in parts]
+        tokens = [tok for tok in tokens if tok]
+        if not tokens:
+            return None
+        return frozenset(tokens)
+
+    def _key_event_to_token(self, key_event):
+        """將 pynput keyboard 事件轉換為 token。"""
+        special_map = {
+            Key.alt_l: "alt",
+            Key.alt_r: "alt",
+            Key.alt: "alt",
+            Key.ctrl_l: "ctrl",
+            Key.ctrl_r: "ctrl",
+            Key.ctrl: "ctrl",
+            Key.shift_l: "shift",
+            Key.shift_r: "shift",
+            Key.shift: "shift",
+            Key.cmd: "win",
+            Key.cmd_l: "win",
+            Key.cmd_r: "win",
+            Key.enter: "enter",
+            Key.space: "space",
+            Key.tab: "tab",
+            Key.backspace: "backspace",
+            Key.esc: "esc",
+            Key.delete: "delete",
+            Key.home: "home",
+            Key.end: "end",
+            Key.page_up: "pageup",
+            Key.page_down: "pagedown",
+            Key.insert: "insert",
+            Key.left: "left",
+            Key.right: "right",
+            Key.up: "up",
+            Key.down: "down",
+        }
+        if isinstance(key_event, Key):
+            if key_event in special_map:
+                return special_map[key_event]
+            name = getattr(key_event, "name", "")
+            if name and name.startswith("f") and name[1:].isdigit():
+                return name.lower()
+            return None
+        if isinstance(key_event, KeyCode):
+            if key_event.char:
+                return key_event.char.lower()
+            vk = getattr(key_event, "vk", None)
+            if vk and 112 <= vk <= 123:  # F1-F12
+                return f"f{vk - 111}"
+        return None
+
+    def _on_global_hotkey_press(self, key_event):
+        """處理全域快捷鍵按下事件。"""
+        token = self._key_event_to_token(key_event)
+        if not token:
+            return
+        callbacks = []
+        with self._hotkey_lock:
+            self._pressed_hotkey_tokens.add(token)
+            for combo, binding in self._hotkey_bindings.items():
+                if combo.issubset(self._pressed_hotkey_tokens) and combo not in self._active_hotkeys:
+                    self._active_hotkeys.add(combo)
+                    callbacks.append(binding.get("callback"))
+        for cb in callbacks:
+            if callable(cb):
+                try:
+                    self.after(0, cb)
+                except Exception:
+                    pass
+
+    def _on_global_hotkey_release(self, key_event):
+        """處理全域快捷鍵放開事件。"""
+        token = self._key_event_to_token(key_event)
+        if not token:
+            return
+        with self._hotkey_lock:
+            self._pressed_hotkey_tokens.discard(token)
+            combos_to_remove = [combo for combo in self._active_hotkeys if token in combo]
+            for combo in combos_to_remove:
+                self._active_hotkeys.discard(combo)
+
     def _register_hotkeys(self):
         """
-        註冊系統快捷鍵（v2.1 極簡穩定版 - 完全重寫）
-        
-        【v2.6.5 根本性修復】
-        - 參考 v2.1/v2.5 最穩定且經過驗證的實現
-        - 移除所有不必要的複雜邏輯
-        - 不使用 suppress 參數（v2.1 沒有使用）
-        - 不使用 trigger_on_release 參數（v2.1 沒有使用）
-        - 每次註冊前徹底清除舊 handler
-        - 快捷鍵一經註冊就保持活躍，不在錄製/回放時重新註冊
+        註冊系統快捷鍵（v2.6.6 - 使用 pynput 全域監聽，避免 keyboard 模組衝突）
         
         【關鍵改進】
-        - 修復了重複註冊導致的 handler 洩漏
-        - 修復了 3-5 次後快捷鍵失效的問題
+        - 改為統一的 pynput 監聽器，不再依賴 keyboard.add_hotkey
+        - 錄製期間快捷鍵維持有效，避免被 keyboard.start_recording() 影響
+        - 熱鍵回調會轉送到 Tk 主緒以確保執行緒安全
         """
-        try:
-            import keyboard
-        except Exception as e:
-            self.log(f"[錯誤] keyboard 模組載入失敗: {e}")
-            return
-        
-        # ✅ 徹底清除所有舊 handler（v2.1 風格）
-        for handler in self._hotkey_handlers.values():
-            try:
-                keyboard.remove_hotkey(handler)
-            except Exception:
-                pass
+        self._hotkey_bindings.clear()
         self._hotkey_handlers.clear()
-        
-        # ✅ v2.1 風格：簡單的方法映射
         method_map = {
             "start": "start_record",
             "pause": "toggle_pause",
@@ -3020,20 +3147,33 @@ class RecorderApp(tb.Window):
             "force_quit": "force_quit"
         }
         
-        # ✅ v2.1 風格：直接註冊，無多餘參數
         for key, hotkey in self.hotkey_map.items():
-            try:
-                method_name = method_map.get(key)
-                if not method_name:
-                    continue
-                # 使用 getattr 獲取方法（v2.1 風格）
-                handler = keyboard.add_hotkey(hotkey, getattr(self, method_name))
-                self._hotkey_handlers[key] = handler
-                
-                if self._is_first_run:
-                    self.log(f"已註冊快捷鍵: {hotkey} → {key}")
-            except Exception as ex:
-                self.log(f"快捷鍵 {hotkey} 註冊失敗: {ex}")
+            method_name = method_map.get(key)
+            if not method_name:
+                continue
+            tokens = self._parse_hotkey_tokens(hotkey)
+            if not tokens:
+                continue
+            callback = getattr(self, method_name, None)
+            if not callable(callback):
+                continue
+            self._hotkey_bindings[tokens] = {
+                "name": key,
+                "hotkey": hotkey,
+                "callback": callback
+            }
+            self._hotkey_handlers[key] = {
+                "tokens": tokens,
+                "hotkey": hotkey
+            }
+            if self._is_first_run:
+                self.log(f"已設定快捷鍵: {hotkey} → {key}")
+        
+        if not self._hotkey_bindings:
+            self.log("未找到可註冊的系統快捷鍵。")
+            return
+        
+        self._ensure_hotkey_listener()
 
     def _register_script_hotkeys(self):
         """

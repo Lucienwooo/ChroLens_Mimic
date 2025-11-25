@@ -211,15 +211,10 @@ class CoreRecorder:
             keyboard._recording = None
         if hasattr(keyboard, '_recorded_events'):
             keyboard._recorded_events = []
-        if hasattr(keyboard, '_hooked_events'):
-            try:
-                keyboard._hooked_events.clear()
-            except Exception:
-                keyboard._hooked_events = []
         # 釋放被標記仍按下的鍵，避免影響下一輪錄製
         try:
-            if hasattr(keyboard, '_listener') and hasattr(keyboard._listener, 'stopped') and keyboard._listener.stopped.is_set():
-                keyboard._listener = None
+            if hasattr(self, '_release_pressed_keys'):
+                self._release_pressed_keys()
         except Exception:
             pass
 
