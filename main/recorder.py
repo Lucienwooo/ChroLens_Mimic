@@ -115,6 +115,13 @@ class CoreRecorder:
         """開始錄製"""
         if self.recording:
             return
+        
+        # ✅ 根本性修復：錄製前重置 keyboard 狀態（不移除全局快捷鍵）
+        try:
+            self._reset_keyboard_state()
+        except Exception as e:
+            self.logger(f"[警告] 清理 keyboard 狀態時發生錯誤: {e}")
+        
         self.recording = True
         self.paused = False
         self.events = []
@@ -193,6 +200,28 @@ class CoreRecorder:
                 pass
         
         self.logger(f"[停止錄製] 錄製已完全停止，可以開始下一次錄製")
+
+    def _reset_keyboard_state(self):
+        """
+        清理 keyboard 模組內部狀態，但保留既有的全局快捷鍵。
+        v2.6.5 之後改為僅重置錄製相關旗標，避免 F9/F10 快捷鍵被移除。
+        """
+        # 重置錄製相關的內部變數，避免 keyboard 以為仍在錄製
+        if hasattr(keyboard, '_recording'):
+            keyboard._recording = None
+        if hasattr(keyboard, '_recorded_events'):
+            keyboard._recorded_events = []
+        if hasattr(keyboard, '_hooked_events'):
+            try:
+                keyboard._hooked_events.clear()
+            except Exception:
+                keyboard._hooked_events = []
+        # 釋放被標記仍按下的鍵，避免影響下一輪錄製
+        try:
+            if hasattr(keyboard, '_listener') and hasattr(keyboard._listener, 'stopped') and keyboard._listener.stopped.is_set():
+                keyboard._listener = None
+        except Exception:
+            pass
 
     def toggle_pause(self):
         """切換暫停狀態（改善版）"""

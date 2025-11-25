@@ -2002,15 +2002,23 @@ class RecorderApp(tb.Window):
             
             # 停止 core_recorder
             if hasattr(self, 'core_recorder'):
-                if hasattr(self.core_recorder, 'recording'):
+                try:
+                    if hasattr(self.core_recorder, 'recording'):
+                        self.core_recorder.recording = False
+                    if hasattr(self.core_recorder, 'stop_record'):
+                        self.core_recorder.stop_record()
+                    if hasattr(self.core_recorder, 'events'):
+                        self.events = self.core_recorder.events
+                except Exception as e:
+                    self.log(f"[警告] 停止 core_recorder 時發生錯誤: {e}")
+                    # ✅ 強制重置狀態
                     self.core_recorder.recording = False
-                if hasattr(self.core_recorder, 'stop_record'):
-                    self.core_recorder.stop_record()
-                if hasattr(self.core_recorder, 'events'):
-                    self.events = self.core_recorder.events
             
             # 等待錄製執行緒結束
-            self._wait_record_thread_finish()
+            try:
+                self._wait_record_thread_finish()
+            except Exception as e:
+                self.log(f"[警告] 等待錄製結束時發生錯誤: {e}")
             
             # ✅ v2.1 風格：不重新註冊快捷鍵
         
@@ -2021,13 +2029,16 @@ class RecorderApp(tb.Window):
             
             # 停止 core_recorder 播放
             if hasattr(self, 'core_recorder') and hasattr(self.core_recorder, 'stop_play'):
-                self.core_recorder.stop_play()
+                try:
+                    self.core_recorder.stop_play()
+                except Exception as e:
+                    self.log(f"[警告] 停止回放時發生錯誤: {e}")
             
             # 釋放所有可能卡住的修飾鍵
             try:
                 self._release_all_modifiers()
-            except Exception:
-                pass
+            except Exception as e:
+                self.log(f"[警告] 釋放修飾鍵時發生錯誤: {e}")
         
         if not stopped:
             self.log(f"[{format_time(time.time())}] 無進行中動作可停止。")
@@ -2548,9 +2559,9 @@ class RecorderApp(tb.Window):
         # 創建合併對話框
         merge_win = tb.Toplevel(self)
         merge_win.title(lang_map.get("合併腳本", "合併腳本"))
-        merge_win.geometry("750x650")  # 增加寬度以顯示更長的腳本名稱
+        merge_win.geometry("750x550")  # 調整高度以避免按鈕被遮住
         merge_win.resizable(True, True)  # 啟用響應式
-        merge_win.minsize(650, 550)  # 設定最小尺寸
+        merge_win.minsize(650, 500)  # 設定最小尺寸
         
         # 說明標籤
         info_frame = tb.Frame(merge_win, padding=10)
@@ -2571,7 +2582,7 @@ class RecorderApp(tb.Window):
         left_frame = tb.LabelFrame(main_content, text=lang_map.get("所有Script", "所有腳本"), padding=10)
         left_frame.pack(side="left", fill="both", expand=True, padx=(0, 5))
         
-        available_list = tk.Listbox(left_frame, height=22, selectmode=tk.EXTENDED, font=("Microsoft YaHei UI", 10))
+        available_list = tk.Listbox(left_frame, height=12, selectmode=tk.EXTENDED, font=("Microsoft YaHei UI", 10))
         available_list.pack(fill="both", expand=True)
         
         # 獲取所有腳本
@@ -2637,7 +2648,7 @@ class RecorderApp(tb.Window):
         right_frame = tb.LabelFrame(main_content, text="待合併腳本（執行順序）", padding=10)
         right_frame.pack(side="left", fill="both", expand=True, padx=(5, 0))
         
-        merge_list = tk.Listbox(right_frame, height=22, selectmode=tk.EXTENDED, font=("Microsoft YaHei UI", 10))
+        merge_list = tk.Listbox(right_frame, height=12, selectmode=tk.EXTENDED, font=("Microsoft YaHei UI", 10))
         merge_list.pack(fill="both", expand=True)
         
         # 底部操作區（移到最下方，使用 Grid 佈局水平排列）
@@ -2698,6 +2709,7 @@ class RecorderApp(tb.Window):
                 # 合併腳本事件
                 merged_events = []
                 time_offset = 0.0  # 累計時間偏移
+                first_script_settings = None  # 保存第一個腳本的完整設定
                 
                 for i, script_name in enumerate(script_names):
                     script_path = os.path.join(self.script_dir, script_name + '.json')
@@ -2708,6 +2720,11 @@ class RecorderApp(tb.Window):
                     # 載入腳本
                     data = sio_load_script(script_path)
                     events = data.get("events", [])
+                    
+                    # 第一個腳本：保存完整的設定參數
+                    if i == 0:
+                        first_script_settings = data.get("settings", {}).copy()
+                        self.log(f"✓ 使用腳本A的參數設定：{script_name}")
                     
                     if not events:
                         continue
@@ -2726,6 +2743,7 @@ class RecorderApp(tb.Window):
                     if events:
                         script_duration = events[-1]['time'] - script_base_time
                         time_offset += script_duration + interval_seconds
+                        self.log(f"  腳本長度: {script_duration:.2f}秒")
                     
                     self.log(f"✓ 已合併腳本：{script_name} ({len(events)} 個事件)")
                 
@@ -2733,14 +2751,23 @@ class RecorderApp(tb.Window):
                     messagebox.showerror("錯誤", "沒有可合併的事件")
                     return
                 
-                # 儲存合併後的腳本（使用第一個腳本的設定）
-                first_script_path = os.path.join(self.script_dir, script_names[0] + '.json')
-                first_data = sio_load_script(first_script_path)
-                settings = first_data.get("settings", {})
+                # 計算合併後的實際總時間（錄製時間、單次時間、總運作時間）
+                if merged_events:
+                    merged_duration = merged_events[-1]['time'] - merged_events[0]['time']
+                else:
+                    merged_duration = 0.0
+                
+                # 使用第一個腳本的完整設定參數
+                if first_script_settings is None:
+                    first_script_settings = {}
+                
+                # 更新時間相關參數以反映合併後的實際長度
+                first_script_settings['recorded_duration'] = merged_duration
+                first_script_settings['single_duration'] = merged_duration
                 
                 merged_data = {
                     "events": merged_events,
-                    "settings": settings
+                    "settings": first_script_settings
                 }
                 
                 with open(new_path, "w", encoding="utf-8") as f:
@@ -2750,6 +2777,8 @@ class RecorderApp(tb.Window):
                 self.log(f"   新腳本：{new_name}")
                 self.log(f"   包含 {len(merged_events)} 個事件")
                 self.log(f"   合併了 {len(script_names)} 個腳本")
+                self.log(f"   腳本總長度：{merged_duration:.2f}秒")
+                self.log(f"   參數設定：完整沿用腳本A ({script_names[0]})")
                 
                 # 刷新腳本列表
                 self.refresh_script_list()
@@ -2762,7 +2791,7 @@ class RecorderApp(tb.Window):
                 if messagebox.askyesno("提示", "是否載入新合併的腳本？"):
                     # 載入新腳本
                     self.events = merged_events
-                    self.script_settings = settings
+                    self.script_settings = first_script_settings
                     self.script_var.set(os.path.splitext(new_name)[0])
                     with open(LAST_SCRIPT_FILE, "w", encoding="utf-8") as f:
                         f.write(new_name)
