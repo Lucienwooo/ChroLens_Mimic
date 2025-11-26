@@ -949,6 +949,16 @@ class RecorderApp(tb.Window):
         # 初始化 core_recorder（需要在 self.log 可用之後）
         self.core_recorder = CoreRecorder(logger=self.log)
         
+        # ✅ 優先啟動 HotkeyListener（確保快捷鍵在錄製時也能工作）
+        if self.hotkey_listener and HOTKEY_LISTENER_AVAILABLE:
+            try:
+                if not self.hotkey_listener.is_alive():
+                    self.hotkey_listener.start()
+                    self.log("✅ 獨立快捷鍵監聽器已啟動（不受錄製影響）")
+            except Exception as e:
+                self.log(f"⚠️ HotkeyListener 啟動失敗: {e}")
+                self.hotkey_listener = None
+        
         # 使用 centralized HotkeyManager 註冊所有熱鍵（若存在）
         if hasattr(self, 'hotkey_manager') and self.hotkey_manager:
             self.after(1600, self.hotkey_manager.register_all)
@@ -2130,6 +2140,14 @@ class RecorderApp(tb.Window):
             # 清理快捷鍵
             self._hotkey_handlers.clear()
             self._script_hotkey_handlers.clear()
+            
+            # ✅ 清理 HotkeyListener
+            try:
+                if self.hotkey_listener:
+                    self.hotkey_listener.stop()
+            except Exception:
+                pass
+            
             try:
                 self._stop_hotkey_listener()
             except Exception:
@@ -3037,18 +3055,28 @@ class RecorderApp(tb.Window):
                     callback = getattr(self, method_name, None)
                     if not callable(callback):
                         continue
-                    def wrapped_callback(cb=callback):
-                        try:
-                            self.after(0, cb)
-                        except Exception as cb_ex:
-                            self.log(f"[快捷鍵] 執行 {key} 失敗: {cb_ex}")
-                    priority = "high" if key == "force_quit" else "normal"
+                    
+                    # ✅ 修復：使用閉包捕獲當前的 callback，並在主線程中執行
+                    def make_wrapped_callback(cb, method_key):
+                        def wrapped():
+                            try:
+                                # 在主線程中執行回調
+                                self.after(0, cb)
+                            except Exception as cb_ex:
+                                self.log(f"[快捷鍵] 執行 {method_key} 失敗: {cb_ex}")
+                        return wrapped
+                    
+                    wrapped_callback = make_wrapped_callback(callback, key)
+                    priority = "high" if key in ["stop", "force_quit"] else "normal"
                     suppress = key == "force_quit"
                     self.hotkey_listener.register(hotkey, wrapped_callback, priority=priority, suppress=suppress)
                     if self._is_first_run:
                         self.log(f"已透過 HotkeyListener 註冊: {hotkey} → {key}")
+                
+                # 確保監聽器已啟動
                 if not self.hotkey_listener.is_alive():
                     self.hotkey_listener.start()
+                    self.log("✅ HotkeyListener 已啟動（獨立於錄製系統）")
                 return
             except Exception as listener_ex:
                 self.log(f"[警告] HotkeyListener 註冊失敗，改用 keyboard 模組: {listener_ex}")
