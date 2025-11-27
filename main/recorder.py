@@ -8,6 +8,10 @@ import pynput  # 加入這行
 import win32gui  # 新增：用於視窗檢測
 import win32api
 import win32con
+import os
+import cv2
+import numpy as np
+from PIL import ImageGrab
 
 class CoreRecorder:
     """錄製和回放的核心類別"""
@@ -31,6 +35,10 @@ class CoreRecorder:
         self._mouse_mode = False  # 新增：滑鼠模式（是否控制真實滑鼠）
         self._mouse_listener = None
         self._pressed_keys = set()
+        
+        # 圖片辨識相關
+        self._image_cache = {}  # 快取已載入的圖片 {display_name: (image_array, image_path)}
+        self._images_dir = None  # 圖片目錄路徑
 
     def set_target_window(self, hwnd):
         """設定目標視窗，只錄製/回放該視窗內的操作"""
@@ -112,15 +120,12 @@ class CoreRecorder:
         return key_map.get(key_name.lower(), 0)
 
     def start_record(self):
-        """開始錄製"""
+        """開始錄製（v2.6.5 - 參考2.5簡化機制）"""
         if self.recording:
             return
         
-        # ✅ 根本性修復：錄製前重置 keyboard 狀態（不移除全局快捷鍵）
-        try:
-            self._reset_keyboard_state()
-        except Exception as e:
-            self.logger(f"[警告] 清理 keyboard 狀態時發生錯誤: {e}")
+        # ✅ 2.5 風格：不需要重置 keyboard 狀態
+        # keyboard.add_hotkey 不受 keyboard.start_recording 影響
         
         self.recording = True
         self.paused = False
@@ -1106,7 +1111,7 @@ class CoreRecorder:
             self._execute_event(event)
 
     def _execute_event(self, event):
-        """執行單一事件（滑鼠模式 - 強化版）"""
+        """執行單一事件（滑鼠模式 - 強化版，添加即時日誌）"""
         if event['type'] == 'keyboard':
             # 鍵盤事件執行
             try:
@@ -1116,6 +1121,8 @@ class CoreRecorder:
                         self._pressed_keys.add(event['name'])
                     except Exception:
                         pass
+                    # ✅ 2.5 風格：即時輸出鍵盤事件
+                    self.logger(f"[鍵盤] {event['event']} {event['name']}")
                 elif event['event'] == 'up':
                     keyboard.release(event['name'])
                     try:
@@ -1123,6 +1130,8 @@ class CoreRecorder:
                             self._pressed_keys.discard(event['name'])
                     except Exception:
                         pass
+                    # ✅ 2.5 風格：即時輸出鍵盤事件
+                    self.logger(f"[鍵盤] {event['event']} {event['name']}")
             except Exception as e:
                 self.logger(f"鍵盤事件執行失敗: {e}")
                 
@@ -1150,6 +1159,7 @@ class CoreRecorder:
                 if event['event'] == 'move':
                     # 滑鼠移動（使用硬體級別的 SetCursorPos 確保精確）
                     ctypes.windll.user32.SetCursorPos(x, y)
+                    # 移動事件太頻繁，不輸出日誌
                     
                 elif event['event'] in ('down', 'up'):
                     # 點擊事件：先移動到正確位置
@@ -1158,6 +1168,8 @@ class CoreRecorder:
                     
                     button = event.get('button', 'left')
                     self._mouse_event_enhanced(event['event'], button=button)
+                    # ✅ 2.5 風格：即時輸出滑鼠點擊事件
+                    self.logger(f"[滑鼠] {event['event']} {button} at ({x}, {y})")
                     
                 elif event['event'] == 'wheel':
                     # 滾輪事件：先移動到正確位置
@@ -1166,6 +1178,8 @@ class CoreRecorder:
                     
                     delta = event.get('delta', 0)
                     self._mouse_event_enhanced('wheel', delta=delta)
+                    # ✅ 2.5 風格：即時輸出滾輪事件
+                    self.logger(f"[滑鼠] wheel {delta} at ({x}, {y})")
                     
             except Exception as e:
                 self.logger(f"滑鼠事件執行失敗: {e}")
@@ -1286,3 +1300,187 @@ class CoreRecorder:
         except Exception:
             ok = False
         return ok
+    
+    # ==================== 圖片辨識功能 ====================
+    
+    def set_images_directory(self, images_dir):
+        """設定圖片目錄"""
+        self._images_dir = images_dir
+        self.logger(f"[圖片辨識] 圖片目錄：{images_dir}")
+    
+    def find_image_on_screen(self, image_name_or_path, threshold=0.8, region=None):
+        """在螢幕上尋找圖片
+        
+        Args:
+            image_name_or_path: 圖片顯示名稱或完整路徑
+            threshold: 匹配閾值 (0-1)，越高越精確
+            region: 搜尋區域 (x1, y1, x2, y2)，None表示全螢幕
+            
+        Returns:
+            (center_x, center_y) 如果找到，否則 None
+        """
+        try:
+            # 載入目標圖片
+            template = self._load_image(image_name_or_path)
+            if template is None:
+                self.logger(f"[圖片辨識] 無法載入圖片：{image_name_or_path}")
+                return None
+            
+            # 截取螢幕
+            if region:
+                screenshot = ImageGrab.grab(bbox=region)
+            else:
+                screenshot = ImageGrab.grab()
+            
+            # 轉換為OpenCV格式
+            screen_cv = cv2.cvtColor(np.array(screenshot), cv2.COLOR_RGB2BGR)
+            
+            # 模板匹配
+            result = cv2.matchTemplate(screen_cv, template, cv2.TM_CCOEFF_NORMED)
+            min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
+            
+            self.logger(f"[圖片辨識] 匹配度：{max_val:.3f} (閾值：{threshold})")
+            
+            if max_val >= threshold:
+                # 計算中心點座標
+                h, w = template.shape[:2]
+                center_x = max_loc[0] + w // 2
+                center_y = max_loc[1] + h // 2
+                
+                # 如果有指定region，需要加上偏移
+                if region:
+                    center_x += region[0]
+                    center_y += region[1]
+                
+                self.logger(f"[圖片辨識] ✅ 找到圖片於 ({center_x}, {center_y})")
+                return (center_x, center_y)
+            else:
+                self.logger(f"[圖片辨識] ❌ 未找到圖片（匹配度不足）")
+                return None
+                
+        except Exception as e:
+            self.logger(f"[圖片辨識] 錯誤：{e}")
+            import traceback
+            traceback.print_exc()
+            return None
+    
+    def _load_image(self, image_name_or_path):
+        """載入圖片（支援快取）
+        
+        Args:
+            image_name_or_path: 圖片顯示名稱或完整路徑
+            
+        Returns:
+            OpenCV格式的圖片陣列，或None
+        """
+        # 檢查快取
+        if image_name_or_path in self._image_cache:
+            return self._image_cache[image_name_or_path][0]
+        
+        # 判斷是否為完整路徑
+        if os.path.isfile(image_name_or_path):
+            image_path = image_name_or_path
+        else:
+            # 從圖片目錄中尋找
+            if not self._images_dir or not os.path.exists(self._images_dir):
+                self.logger(f"[圖片辨識] 圖片目錄不存在：{self._images_dir}")
+                return None
+            
+            # 嘗試尋找匹配的檔案
+            image_path = None
+            for filename in os.listdir(self._images_dir):
+                if filename.endswith(('.png', '.jpg', '.jpeg', '.bmp')):
+                    # 檢查檔名或顯示名稱是否匹配
+                    if image_name_or_path in filename or filename.startswith(image_name_or_path):
+                        image_path = os.path.join(self._images_dir, filename)
+                        break
+            
+            if not image_path:
+                self.logger(f"[圖片辨識] 找不到圖片：{image_name_or_path}")
+                return None
+        
+        # 載入圖片
+        try:
+            image = cv2.imread(image_path)
+            if image is None:
+                self.logger(f"[圖片辨識] 無法讀取圖片：{image_path}")
+                return None
+            
+            # 加入快取
+            self._image_cache[image_name_or_path] = (image, image_path)
+            self.logger(f"[圖片辨識] 已載入圖片：{os.path.basename(image_path)}")
+            
+            return image
+        except Exception as e:
+            self.logger(f"[圖片辨識] 載入圖片失敗：{e}")
+            return None
+    
+    def clear_image_cache(self):
+        """清除圖片快取"""
+        self._image_cache.clear()
+        self.logger("[圖片辨識] 已清除圖片快取")
+    
+    def execute_image_action(self, action_type, target_name, button="left", **kwargs):
+        """執行圖片辨識相關動作
+        
+        Args:
+            action_type: 動作類型 ("move_to", "click", "wait_for")
+            target_name: 目標圖片名稱
+            button: 滑鼠按鍵 ("left", "right", "middle")
+            **kwargs: 其他參數（threshold, region, timeout等）
+            
+        Returns:
+            True 如果成功，False 如果失敗
+        """
+        threshold = kwargs.get('threshold', 0.8)
+        region = kwargs.get('region', None)
+        timeout = kwargs.get('timeout', 5.0)
+        
+        if action_type == "move_to":
+            # 移動滑鼠到圖片位置
+            pos = self.find_image_on_screen(target_name, threshold, region)
+            if pos:
+                mouse.move(pos[0], pos[1])
+                self.logger(f"[圖片辨識] 已移動滑鼠至 {target_name}")
+                return True
+            else:
+                self.logger(f"[圖片辨識] 移動失敗：找不到 {target_name}")
+                return False
+        
+        elif action_type == "click":
+            # 點擊圖片位置
+            pos = self.find_image_on_screen(target_name, threshold, region)
+            if pos:
+                # 移動並點擊
+                mouse.move(pos[0], pos[1])
+                time.sleep(0.05)
+                
+                if button == "left":
+                    mouse.click()
+                elif button == "right":
+                    mouse.right_click()
+                elif button == "middle":
+                    mouse.click(button='middle')
+                
+                self.logger(f"[圖片辨識] 已{button}鍵點擊 {target_name}")
+                return True
+            else:
+                self.logger(f"[圖片辨識] 點擊失敗：找不到 {target_name}")
+                return False
+        
+        elif action_type == "wait_for":
+            # 等待圖片出現
+            start_time = time.time()
+            while time.time() - start_time < timeout:
+                pos = self.find_image_on_screen(target_name, threshold, region)
+                if pos:
+                    self.logger(f"[圖片辨識] 已找到 {target_name}")
+                    return True
+                time.sleep(0.5)
+            
+            self.logger(f"[圖片辨識] 等待超時：{target_name} 未出現")
+            return False
+        
+        else:
+            self.logger(f"[圖片辨識] 未知動作類型：{action_type}")
+            return False
