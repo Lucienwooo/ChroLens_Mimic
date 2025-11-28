@@ -358,18 +358,39 @@ class TextCommandEditor(tk.Toplevel):
             with open(self.script_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
             
-            # 轉換為文字指令
-            text_commands = self._json_to_text(data)
-            
-            # 顯示在編輯器中
-            self.text_editor.delete("1.0", "end")
-            self.text_editor.insert("1.0", text_commands)
-            
-            self.status_label.config(
-                text=f"✅ 已載入: {os.path.basename(self.script_path)}",
-                bg="#e8f5e9",
-                fg="#2e7d32"
-            )
+            # ✅ 轉換為文字指令（增加錯誤處理）
+            try:
+                text_commands = self._json_to_text(data)
+                
+                # ✅ 只有轉換成功才更新編輯器
+                self.text_editor.delete("1.0", "end")
+                self.text_editor.insert("1.0", text_commands)
+                
+                self.status_label.config(
+                    text=f"✅ 已載入: {os.path.basename(self.script_path)}",
+                    bg="#e8f5e9",
+                    fg="#2e7d32"
+                )
+            except Exception as convert_error:
+                # ✅ 轉換失敗不清空編輯器，顯示錯誤訊息
+                error_msg = f"# ❌ 轉換失敗：{convert_error}\n\n"
+                error_msg += "# 原始 JSON 資料：\n"
+                error_msg += json.dumps(data, ensure_ascii=False, indent=2)
+                
+                self.text_editor.delete("1.0", "end")
+                self.text_editor.insert("1.0", error_msg)
+                
+                self.status_label.config(
+                    text=f"⚠️ 轉換失敗: {convert_error}",
+                    bg="#fff3e0",
+                    fg="#e65100"
+                )
+                
+                messagebox.showwarning(
+                    "警告", 
+                    f"腳本轉換失敗，可能包含異常資料：\n\n{convert_error}\n\n"
+                    f"已顯示原始 JSON 資料，請手動修復或刪除腳本。"
+                )
             
         except Exception as e:
             messagebox.showerror("錯誤", f"載入腳本失敗:\n{e}")
@@ -387,58 +408,72 @@ class TextCommandEditor(tk.Toplevel):
         lines.append("# ←←可用\"#\"來進行備註 \n")
         lines.append("# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
         
+        # ✅ 空腳本處理
+        if not events:
+            lines.append("# ⚠️ 此腳本無事件\n")
+            lines.append("# 請先錄製操作或手動新增指令\n")
+            return "".join(lines)
+        
         # 記錄按下但未放開的按鍵
         pressed_keys = {}
         start_time = events[0]["time"] if events else 0
         
-        for event in events:
-            event_type = event.get("type")
-            event_name = event.get("event")
-            time_offset = event.get("time", 0) - start_time
-            
-            # 格式化時間
-            time_str = self._format_time(time_offset)
-            
-            if event_type == "keyboard":
-                key_name = event.get("name", "")
+        # ✅ 逐迴所有事件，增加異常處理
+        for idx, event in enumerate(events):
+            try:
+                event_type = event.get("type")
+                event_name = event.get("event")
+                time_offset = event.get("time", 0) - start_time
                 
-                if event_name == "down":
-                    # 記錄按下時間
-                    pressed_keys[key_name] = time_offset
+                # 格式化時間
+                time_str = self._format_time(time_offset)
+                
+                if event_type == "keyboard":
+                    key_name = event.get("name", "")
                     
-                elif event_name == "up" and key_name in pressed_keys:
-                    # 計算持續時間
-                    press_time = pressed_keys[key_name]
-                    duration = int((time_offset - press_time) * 1000)  # 轉為毫秒
+                    if event_name == "down":
+                        # 記錄按下時間
+                        pressed_keys[key_name] = time_offset
+                        
+                    elif event_name == "up" and key_name in pressed_keys:
+                        # 計算持續時間
+                        press_time = pressed_keys[key_name]
+                        duration = int((time_offset - press_time) * 1000)  # 轉為毫秒
+                        
+                        # 格式化按下時間
+                        press_time_str = self._format_time(press_time)
+                        
+                        # 生成指令
+                        lines.append(f">按{key_name}, 延遲{duration}ms, T={press_time_str}\n")
+                        
+                        del pressed_keys[key_name]
+                
+                elif event_type == "mouse":
+                    x = event.get("x", 0)
+                    y = event.get("y", 0)
                     
-                    # 格式化按下時間
-                    press_time_str = self._format_time(press_time)
+                    if event_name == "move":
+                        lines.append(f">移動至({x},{y}), T={time_str}\n")
                     
-                    # 生成指令
-                    lines.append(f">按{key_name}, 延遲{duration}ms, T={press_time_str}\n")
+                    elif event_name == "down":
+                        button = event.get("button", "left")
+                        lines.append(f">按下{button}鍵({x},{y}), T={time_str}\n")
                     
-                    del pressed_keys[key_name]
+                    elif event_name == "up":
+                        button = event.get("button", "left")
+                        lines.append(f">放開{button}鍵({x},{y}), T={time_str}\n")
+                
+                # 戰鬥指令
+                elif event_type in ["start_combat", "find_and_attack", "loop_attack", "smart_combat", "set_combat_region", "pause_combat", "resume_combat", "stop_combat"]:
+                    combat_line = self._format_combat_event(event)
+                    if combat_line:
+                        lines.append(f">{combat_line}, T={time_str}\n")
             
-            elif event_type == "mouse":
-                x = event.get("x", 0)
-                y = event.get("y", 0)
-                
-                if event_name == "move":
-                    lines.append(f">移動至({x},{y}), T={time_str}\n")
-                
-                elif event_name == "down":
-                    button = event.get("button", "left")
-                    lines.append(f">按下{button}鍵({x},{y}), T={time_str}\n")
-                
-                elif event_name == "up":
-                    button = event.get("button", "left")
-                    lines.append(f">放開{button}鍵({x},{y}), T={time_str}\n")
-            
-            # 戰鬥指令
-            elif event_type in ["start_combat", "find_and_attack", "loop_attack", "smart_combat", "set_combat_region", "pause_combat", "resume_combat", "stop_combat"]:
-                combat_line = self._format_combat_event(event)
-                if combat_line:
-                    lines.append(f">{combat_line}, T={time_str}\n")
+            except Exception as event_error:
+                # ✅ 異常事件跳過，記錄錯誤
+                lines.append(f"# ❌ 事件{idx}轉換失敗: {event_error}\n")
+                lines.append(f"# 異常事件: {event}\n\n")
+                continue
         
         # 處理未放開的按鍵
         if pressed_keys:
@@ -665,6 +700,16 @@ class TextCommandEditor(tk.Toplevel):
         match = re.match(click_pattern, command_line)
         if match:
             event["type"] = "click_image"
+            event["image"] = match.group(1)
+            event["confidence"] = float(match.group(2)) if match.group(2) else 0.75
+            event["branches"] = self._parse_branches(next_lines)
+            return event
+        
+        # ✅ 移動到圖片（新增）
+        move_pattern = r'>移動到圖片\[([^\]]+)\](?:,?\s*信心度([\d.]+))?'
+        match = re.match(move_pattern, command_line)
+        if match:
+            event["type"] = "move_to_image"
             event["image"] = match.group(1)
             event["confidence"] = float(match.group(2)) if match.group(2) else 0.75
             event["branches"] = self._parse_branches(next_lines)
@@ -1011,6 +1056,10 @@ class TextCommandEditor(tk.Toplevel):
             if hasattr(self.parent, 'metadata'):
                 self.parent.metadata = data.get("settings", {})
             
+            # ✅ 載入到 core_recorder（關鍵：確保錄製器有事件）
+            if hasattr(self.parent, 'core_recorder'):
+                self.parent.core_recorder.events = data.get("events", [])
+            
             # 5. 更新主程式設定
             settings = data.get("settings", {})
             if hasattr(self.parent, 'speed_var'):
@@ -1029,20 +1078,34 @@ class TextCommandEditor(tk.Toplevel):
                 if current_info:
                     self.parent.recorded_window_info = current_info
             
-            # 7. 執行腳本
-            if hasattr(self.parent, 'play_script'):
-                event_count = len(data.get("events", []))
-                self.status_label.config(text=f"▶️ 執行中... ({event_count}筆事件)")
-                
-                # 記錄日誌
+            # 7. ✅ 確認狀態並執行腳本
+            event_count = len(data.get("events", []))
+            if event_count == 0:
+                self.status_label.config(text="❌ 腳本無事件")
                 if hasattr(self.parent, 'log'):
-                    script_name = os.path.splitext(os.path.basename(self.script_path))[0]
-                    self.parent.log(f"▶️ 從編輯器執行腳本：{script_name}（{event_count}筆事件）")
-                
-                # 觸發播放（不切換視窗）
-                self.parent.play_script()
+                    self.parent.log("❌ 腳本無事件，無法執行")
+                return
+            
+            # ✅ 確保不在錄製或播放狀態
+            if hasattr(self.parent, 'recording') and self.parent.recording:
+                self.status_label.config(text="❌ 請先停止錄製")
+                return
+            if hasattr(self.parent, 'playing') and self.parent.playing:
+                self.status_label.config(text="❌ 已在播放中")
+                return
+            
+            self.status_label.config(text=f"▶️ 執行中... ({event_count}筆事件)")
+            
+            # 記錄日誌
+            if hasattr(self.parent, 'log'):
+                script_name = os.path.splitext(os.path.basename(self.script_path))[0]
+                self.parent.log(f"▶️ 從編輯器執行腳本：{script_name}（{event_count}筆事件）")
+            
+            # ✅ 調用 play_record（直接播放）
+            if hasattr(self.parent, 'play_record'):
+                self.parent.play_record()
             else:
-                self.status_label.config(text="❌ 主程式缺少play_script方法")
+                self.status_label.config(text="❌ 主程式缺少play_record方法")
                 
         except Exception as e:
             self.status_label.config(text=f"❌ 執行失敗：{e}")

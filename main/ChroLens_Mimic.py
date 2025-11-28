@@ -918,27 +918,23 @@ class RecorderApp(tb.Window):
     def _force_focus(self):
         """主動獲得焦點，確保鍵盤鉤子正常工作"""
         try:
-            # ✅ 強化焦點獲取機制
+            # ✅ 強化焦點獲取機制（不使用topmost避免蓋過其他視窗）
             self.lift()  # 提升視窗
             self.focus_force()  # 強制獲得焦點
-            self.attributes('-topmost', True)  # 暫時置頂
             self.update()  # 強制更新
-            self.after(100, lambda: self.attributes('-topmost', False))  # 100ms後取消置頂
             
             # ✅ 额外觸發一次鍵盤事件來激活鉤子
             self.event_generate('<KeyPress>', keysym='Shift_L')
             self.event_generate('<KeyRelease>', keysym='Shift_L')
-            
-            self.log("✅ 主程式已獲得焦點，快捷鍵就緒")
         except Exception as e:
-            self.log(f"⚠️ 焦點獲取失敗: {e}")
+            pass  # 靜默處理錯誤
 
     def _init_background_mode(self):
         """初始化後台模式設定（固定使用智能模式）"""
         mode = "smart"
         if hasattr(self.core_recorder, 'set_background_mode'):
             self.core_recorder.set_background_mode(mode)
-        self.log(f"後台模式：智能模式（自動適應）")
+        # 靜默設定，不顯示日誌
 
     def update_speed_tooltip(self):
         lang = self.language_var.get()
@@ -3673,29 +3669,38 @@ class RecorderApp(tb.Window):
 
     def open_visual_editor(self):
         """開啟文字指令編輯器"""
-        # 獲取當前選中的腳本
-        script_path = None
-        current_script = self.script_var.get()
-        if current_script:
-            script_path = os.path.join(self.script_dir, f"{current_script}.json")
-            if not os.path.exists(script_path):
-                self.log(f"[警告] 找不到腳本檔案: {current_script}.json")
-                script_path = None
-        
-        # 檢查是否已經有編輯器視窗開啟
-        if hasattr(self, 'visual_editor_window') and self.visual_editor_window and self.visual_editor_window.winfo_exists():
-            # 如果已存在，將焦點切到該視窗
-            self.visual_editor_window.focus_force()
-            self.visual_editor_window.lift()
-        else:
-            try:
+        try:
+            # ✅ 檢查編輯器模組是否可用
+            if VisualScriptEditor is None:
+                self.log("❌ 編輯器模組不可用，請檢查 text_script_editor.py 檔案")
+                messagebox.showerror("錯誤", "無法載入腳本編輯器模組")
+                return
+            
+            # 獲取當前選中的腳本
+            script_path = None
+            current_script = self.script_var.get()
+            if current_script:
+                script_path = os.path.join(self.script_dir, f"{current_script}.json")
+                if not os.path.exists(script_path):
+                    self.log(f"[警告] 找不到腳本檔案: {current_script}.json")
+                    script_path = None
+            
+            # 檢查是否已經有編輯器視窗開啟
+            if hasattr(self, 'visual_editor_window') and self.visual_editor_window and self.visual_editor_window.winfo_exists():
+                # 如果已存在，將焦點切到該視窗
+                self.visual_editor_window.focus_force()
+                self.visual_editor_window.lift()
+                self.log("[資訊] 編輯器已開啟，切換至視窗")
+            else:
                 # 建立新視窗並儲存引用
                 self.visual_editor_window = VisualScriptEditor(self, script_path)
                 self.log("[資訊] 已開啟文字指令編輯器")
-            except Exception as e:
-                self.log(f"[錯誤] 無法開啟編輯器：{e}")
-                import traceback
-                self.log(f"錯誤詳情: {traceback.format_exc()}")
+        except Exception as e:
+            self.log(f"[錯誤] 無法開啟編輯器：{e}")
+            import traceback
+            error_detail = traceback.format_exc()
+            self.log(f"錯誤詳情: {error_detail}")
+            messagebox.showerror("錯誤", f"無法開啟腳本編輯器：\n\n{e}\n\n請查看日誌獲取詳細資訊")
 
     def open_schedule_settings(self):
         """開啟排程設定視窗"""
@@ -3956,48 +3961,55 @@ class RecorderApp(tb.Window):
 
     def select_target_window(self):
         """開啟視窗選擇器，選定後只錄製該視窗內的滑鼠動作"""
-        if WindowSelectorDialog is None:
-            self.log("視窗選擇器模組不可用，無法選擇視窗。")
-            return
-
-        def on_selected(hwnd, title):
-            # 清除先前 highlight
-            try:
-                self.clear_window_highlight()
-            except Exception:
-                pass
-            if not hwnd:
-                # 清除選定
-                self._clear_target_window()
+        try:
+            if WindowSelectorDialog is None:
+                self.log("❌ 視窗選擇器模組不可用，無法選擇視窗。")
+                messagebox.showerror("錯誤", "無法載入視窗選擇器模組")
                 return
-            # 驗證 hwnd 是否有效
-            try:
-                if not win32gui.IsWindow(hwnd) or not win32gui.IsWindowVisible(hwnd):
-                    self.log("選取的視窗不可見或不存在。")
-                    return
-            except Exception:
-                pass
-            self.target_hwnd = hwnd
-            self.target_title = title
-            # 更新 UI 顯示（只顯示文字，不顯示圖示）
-            short = title if len(title) <= 30 else title[:27] + "..."
-            self.target_label.config(text=f"[目標] {short}")
-            self.log(f"已選定目標視窗：{title} (hwnd={hwnd})")
-            self.log("💡 提示：右鍵點擊視窗名稱可取消選擇")
-            # 為使用者在畫面上畫出框框提示
-            try:
-                self.show_window_highlight(hwnd)
-            except Exception:
-                pass
-            # 告訴 core_recorder（若支援）只捕捉該 hwnd
-            if hasattr(self.core_recorder, 'set_target_window'):
-                self.core_recorder.set_target_window(hwnd)
-            try:
-                setattr(self.core_recorder, "target_hwnd", hwnd)
-            except Exception:
-                pass
 
-        WindowSelectorDialog(self, on_selected)
+            def on_selected(hwnd, title):
+                # 清除先前 highlight
+                try:
+                    self.clear_window_highlight()
+                except Exception:
+                    pass
+                if not hwnd:
+                    # 清除選定
+                    self._clear_target_window()
+                    return
+                # 驗證 hwnd 是否有效
+                try:
+                    if not win32gui.IsWindow(hwnd) or not win32gui.IsWindowVisible(hwnd):
+                        self.log("選取的視窗不可見或不存在。")
+                        return
+                except Exception:
+                    pass
+                self.target_hwnd = hwnd
+                self.target_title = title
+                # 更新 UI 顯示（只顯示文字，不顯示圖示）
+                short = title if len(title) <= 30 else title[:27] + "..."
+                self.target_label.config(text=f"[目標] {short}")
+                self.log(f"已選定目標視窗：{title} (hwnd={hwnd})")
+                self.log("💡 提示：右鍵點擊視窗名稱可取消選擇")
+                # 為使用者在畫面上畫出框框提示
+                try:
+                    self.show_window_highlight(hwnd)
+                except Exception:
+                    pass
+                # 告訴 core_recorder（若支援）只捕捉該 hwnd
+                if hasattr(self.core_recorder, 'set_target_window'):
+                    self.core_recorder.set_target_window(hwnd)
+                try:
+                    setattr(self.core_recorder, "target_hwnd", hwnd)
+                except Exception:
+                    pass
+
+            WindowSelectorDialog(self, on_selected)
+        except Exception as e:
+            self.log(f"[錯誤] 無法開啟視窗選擇器：{e}")
+            import traceback
+            self.log(f"錯誤詳情: {traceback.format_exc()}")
+            messagebox.showerror("錯誤", f"無法開啟視窗選擇器：\n\n{e}")
     
     def _clear_target_window(self, event=None):
         """清除目標視窗設定（可由右鍵點擊觸發）"""

@@ -61,9 +61,9 @@ class CoreRecorder:
         valid_modes = ["smart", "fast_switch", "postmessage", "foreground"]
         if mode in valid_modes:
             self._background_mode = mode
-            self.logger(f"已設定後台模式：{mode}")
+            # 靜默設定，不顯示日誌
         else:
-            self.logger(f"無效的模式：{mode}，保持目前設定")
+            pass  # 無效模式也靜默處理
     
     def set_mouse_mode(self, enabled):
         """設定滑鼠模式
