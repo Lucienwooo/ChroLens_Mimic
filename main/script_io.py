@@ -47,7 +47,13 @@ def load_script(path: str) -> Dict[str, Any]:
     return _normalize_loaded(data)
 
 def save_script(path: str, events: List[dict], settings: Dict[str, Any]) -> None:
-    """儲存腳本（覆寫），使用 settings 區塊儲存所有參數"""
+    """儲存腳本（覆寫），使用 settings 區塊儲存所有參數
+    
+    安全機制：
+    - 使用臨時檔案寫入，避免寫入失敗導致原檔案損毀
+    - 加入 flush() 和 fsync() 確保資料寫入磁碟（防止藍屏/斷電時檔案損毀）
+    - 重試機制（最多3次）
+    """
     data = {
         "events": events,
         "settings": {
@@ -69,6 +75,9 @@ def save_script(path: str, events: List[dict], settings: Dict[str, Any]) -> None
         try:
             with open(temp_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
+                # ✅ 強制寫入磁碟（防止藍屏/斷電時檔案為空）
+                f.flush()
+                os.fsync(f.fileno())
             # 寫入成功後才替換原檔案
             if os.path.exists(path):
                 os.remove(path)
@@ -149,6 +158,9 @@ def save_script_settings(path: str, settings: Dict[str, Any]) -> None:
         try:
             with open(temp_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
+                # ✅ 強制寫入磁碟（防止藍屏/斷電時檔案為空）
+                f.flush()
+                os.fsync(f.fileno())
             # 寫入成功後才替換原檔案
             if os.path.exists(path):
                 os.remove(path)

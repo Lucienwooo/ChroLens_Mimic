@@ -2045,18 +2045,17 @@ class RecorderApp(tb.Window):
 
     def force_quit(self):
         """
-        強制停止所有動作並關閉程式（全新實作）
+        強制停止所有動作並關閉程式（v2.6.5+ 精確清理版）
         
-        【最高優先權保證】
-        此方法使用 suppress=True 註冊，確保：
-        1. 按下快捷鍵後立即執行，不被其他程式攔截
-        2. 優先於所有其他快捷鍵
-        3. 即使程式卡住也能觸發
+        ✅ 重構改進：
+        - 只移除本程式註冊的快捷鍵
+        - 不使用 keyboard.unhook_all()
+        - 保護其他程式的全域熱鍵
         
         【執行順序】
         1. 立即停止所有錄製和回放
         2. 釋放所有按鍵和 hooks
-        3. 清理快捷鍵註冊
+        3. 清理本程式註冊的快捷鍵（不影響其他程式）
         4. 強制終止程式
         """
         try:
@@ -2091,19 +2090,29 @@ class RecorderApp(tb.Window):
         except:
             pass
 
-        # ✅ 步驟3：清理 keyboard hooks
+        # ✅ 步驟3：精確清理本程式的快捷鍵（不影響其他程式）
         try:
             import keyboard
             
-            # 清理快捷鍵
+            # 移除系統快捷鍵
+            for handler in self._hotkey_handlers.values():
+                try:
+                    keyboard.remove_hotkey(handler)
+                except:
+                    pass
             self._hotkey_handlers.clear()
+            
+            # 移除腳本快捷鍵
+            for handler in self._script_hotkey_handlers.values():
+                try:
+                    keyboard.remove_hotkey(handler)
+                except:
+                    pass
             self._script_hotkey_handlers.clear()
             
-            # ✅ v2.6.5: 直接清理 keyboard 模組
-            try:
-                keyboard.unhook_all()
-            except:
-                pass
+            # ❌ 禁止：keyboard.unhook_all() 
+            # 原因：會移除所有程式的熱鍵，包括使用者的其他工具
+            
         except Exception:
             pass
 
@@ -3024,16 +3033,18 @@ class RecorderApp(tb.Window):
         btn_frame.pack(fill="x", pady=15)
         tb.Button(btn_frame, text="儲存", command=save_and_apply, width=15, bootstyle=SUCCESS).pack(pady=5)
 
-    # ✅ v2.6.5: 不再需要 _stop_hotkey_listener，直接使用 keyboard.unhook_all()
+    # ✅ v2.6.5+: 儲存快捷鍵 handle，避免使用 keyboard.unhook_all()
 
     def _register_hotkeys(self):
         """
-        註冊系統快捷鍵（v2.6.5 - 簡化版，參考2.5穩定機制）
+        註冊系統快捷鍵（v2.6.5+ - 精確 Hook 管理）
         
-        特點：
-        - 直接使用 keyboard.add_hotkey（簡單穩定）
-        - 錄製時快捷鍵始終有效（keyboard.record不影響add_hotkey）
-        - 移除複雜的HotkeyListener雙重架構
+        ✅ 重構改進：
+        - 儲存每個快捷鍵的 handle
+        - 清理時只移除本程式註冊的快捷鍵
+        - 不影響其他程式的全域熱鍵
+        
+        ❌ 禁止：keyboard.unhook_all() - 會移除所有熱鍵（包括其他程式）
         """
         try:
             import keyboard
@@ -3050,7 +3061,7 @@ class RecorderApp(tb.Window):
             "force_quit": "force_quit"
         }
         
-        # 清除舊 handler（安全處理）
+        # ✅ 清除舊 handler（只移除本程式註冊的）
         for handler in self._hotkey_handlers.values():
             try:
                 keyboard.remove_hotkey(handler)
@@ -3069,7 +3080,7 @@ class RecorderApp(tb.Window):
                 if not callable(callback):
                     continue
                 
-                # ✅ 2.5 風格：直接註冊，suppress=False 讓快捷鍵始終有效
+                # ✅ 註冊並儲存 handle
                 handler = keyboard.add_hotkey(
                     hotkey, 
                     callback,

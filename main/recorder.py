@@ -13,11 +13,30 @@ import cv2
 import numpy as np
 from PIL import ImageGrab
 
+# ✅ 重構：匯入新模組
+try:
+    from bezier_mouse import BezierMouseMover
+    BEZIER_AVAILABLE = True
+except ImportError:
+    BEZIER_AVAILABLE = False
+    print("⚠️ BezierMouseMover 未載入，將使用傳統直線移動")
+
 class CoreRecorder:
-    """錄製和回放的核心類別"""
+    """錄製和回放的核心類別
+    
+    ✅ v2.6.5+ 重構改進：
+    - 整合 BezierMouseMover（擬真滑鼠移動）
+    - 支援標準化 logger（LoggerManager）
+    - 預留 OCR 觸發介面
+    """
     
     def __init__(self, logger=None):
+        # ✅ 支援新舊兩種 logger 格式
+        # 舊格式：lambda 函式 logger(msg)
+        # 新格式：LoggerManager 實例 logger.info(msg)
         self.logger = logger or (lambda s: None)
+        self._is_new_logger = hasattr(logger, 'info') if logger else False
+        
         self.recording = False
         self.playing = False
         self.paused = False
@@ -39,14 +58,55 @@ class CoreRecorder:
         # 圖片辨識相關
         self._image_cache = {}  # 快取已載入的圖片 {display_name: (image_array, image_path)}
         self._images_dir = None  # 圖片目錄路徑
+        
+        # ✅ 貝茲曲線滑鼠移動器
+        self._bezier_mover = BezierMouseMover() if BEZIER_AVAILABLE else None
+        self._use_bezier = False  # 預設關閉（保持向下相容）
+    
+    def _log(self, msg: str, level: str = "info"):
+        """統一日誌輸出（相容新舊格式）
+        
+        Args:
+            msg: 訊息內容
+            level: 日誌等級（info/warning/error/debug）
+        """
+        if self._is_new_logger:
+            # 新格式：LoggerManager
+            if level == "info":
+                self.logger.info(msg)
+            elif level == "warning":
+                self.logger.warning(msg)
+            elif level == "error":
+                self.logger.error(msg)
+            elif level == "debug":
+                self.logger.debug(msg)
+        else:
+            # 舊格式：lambda 函式
+            self.logger(msg)
+    
+    def set_bezier_enabled(self, enabled: bool):
+        """啟用/停用貝茲曲線滑鼠移動
+        
+        Args:
+            enabled: True = 擬真移動, False = 直線移動（預設）
+        """
+        if not BEZIER_AVAILABLE:
+            self._log("⚠️ BezierMouseMover 未安裝，無法啟用擬真移動", "warning")
+            return
+        
+        self._use_bezier = enabled
+        if enabled:
+            self._log("✅ 已啟用擬真滑鼠移動（貝茲曲線）", "info")
+        else:
+            self._log("⚠️ 已停用擬真移動（直線移動）", "info")
 
     def set_target_window(self, hwnd):
         """設定目標視窗，只錄製/回放該視窗內的操作"""
         self._target_hwnd = hwnd
         if hwnd:
-            self.logger(f"已設定目標視窗：hwnd={hwnd}")
+            self._log(f"已設定目標視窗：hwnd={hwnd}", "info")
         else:
-            self.logger("已取消目標視窗限定")
+            self._log("已取消目標視窗限定", "info")
 
     def set_background_mode(self, mode):
         """設定後台執行模式
