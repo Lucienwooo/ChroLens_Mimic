@@ -1243,6 +1243,188 @@ class CoreRecorder:
                     
             except Exception as e:
                 self.logger(f"滑鼠事件執行失敗: {e}")
+        
+        # ✅ 處理圖片辨識相關事件
+        elif event['type'] == 'recognize_image':
+            # 辨識圖片（只是辨識，不做動作）
+            try:
+                image_name = event.get('image', '')
+                confidence = event.get('confidence', 0.75)
+                self.logger(f"[圖片辨識] 開始辨識: {image_name}")
+                
+                pos = self.find_image_on_screen(image_name, threshold=confidence, fast_mode=True)
+                if pos:
+                    self.logger(f"[圖片辨識] ✅ 找到圖片於 ({pos[0]}, {pos[1]})")
+                else:
+                    self.logger(f"[圖片辨識] ❌ 未找到圖片")
+            except Exception as e:
+                self.logger(f"圖片辨識執行失敗: {e}")
+        
+        elif event['type'] == 'move_to_image':
+            # 移動到圖片位置
+            try:
+                image_name = event.get('image', '')
+                confidence = event.get('confidence', 0.75)
+                self.logger(f"[移動至圖片] 開始尋找: {image_name}")
+                
+                pos = self.find_image_on_screen(image_name, threshold=confidence, fast_mode=True)
+                if pos:
+                    x, y = pos
+                    ctypes.windll.user32.SetCursorPos(x, y)
+                    self.logger(f"[移動至圖片] ✅ 已移動至 ({x}, {y})")
+                else:
+                    self.logger(f"[移動至圖片] ❌ 未找到圖片，無法移動")
+            except Exception as e:
+                self.logger(f"移動至圖片執行失敗: {e}")
+        
+        elif event['type'] == 'click_image':
+            # 點擊圖片位置（✅ 新增：點擊後返回原位）
+            try:
+                image_name = event.get('image', '')
+                confidence = event.get('confidence', 0.75)
+                button = event.get('button', 'left')
+                return_to_origin = event.get('return_to_origin', True)  # 預設返回原位
+                self.logger(f"[點擊圖片] 開始尋找: {image_name}")
+                
+                # ✅ 記錄原始滑鼠位置
+                if return_to_origin:
+                    original_pos = win32api.GetCursorPos()
+                
+                pos = self.find_image_on_screen(image_name, threshold=confidence, fast_mode=True)
+                if pos:
+                    x, y = pos
+                    # 先移動到位置
+                    ctypes.windll.user32.SetCursorPos(x, y)
+                    time.sleep(0.01)  # 稍微增加延遲確保移動完成
+                    # 執行點擊
+                    self._mouse_event_enhanced('down', button=button)
+                    time.sleep(0.05)
+                    self._mouse_event_enhanced('up', button=button)
+                    self.logger(f"[點擊圖片] ✅ 已點擊 {button} 於 ({x}, {y})")
+                    
+                    # ✅ 返回原位
+                    if return_to_origin:
+                        time.sleep(0.01)
+                        ctypes.windll.user32.SetCursorPos(original_pos[0], original_pos[1])
+                        self.logger(f"[點擊圖片] ✅ 已返回原位 ({original_pos[0]}, {original_pos[1]})")
+                else:
+                    self.logger(f"[點擊圖片] ❌ 未找到圖片，無法點擊")
+            except Exception as e:
+                self.logger(f"點擊圖片執行失敗: {e}")
+        
+        # ✅ 新增：條件判斷 - 如果圖片存在
+        elif event['type'] == 'if_image_exists':
+            try:
+                image_name = event.get('image', '')
+                confidence = event.get('confidence', 0.75)
+                on_success = event.get('on_success')  # {'action': 'continue'/'stop'/'jump', 'target': 'label_name'}
+                on_failure = event.get('on_failure')
+                self.logger(f"[條件判斷] 檢查圖片是否存在: {image_name}")
+                
+                pos = self.find_image_on_screen(image_name, threshold=confidence, fast_mode=True)
+                
+                if pos:
+                    self.logger(f"[條件判斷] ✅ 找到圖片於 ({pos[0]}, {pos[1]})")
+                    if on_success:
+                        return self._handle_branch_action(on_success)
+                else:
+                    self.logger(f"[條件判斷] ✖ 未找到圖片")
+                    if on_failure:
+                        return self._handle_branch_action(on_failure)
+            except Exception as e:
+                self.logger(f"條件判斷執行失敗: {e}")
+        
+        # ✅ 新增：多圖片同時辨識
+        elif event['type'] == 'recognize_any':
+            try:
+                images = event.get('images', [])  # [{'name': 'pic01', 'action': 'click/move/log'}, ...]
+                confidence = event.get('confidence', 0.75)
+                timeout = event.get('timeout', 0)  # 0 = 立即返回，>0 = 持續嘗試直到找到或逾時
+                self.logger(f"[多圖辨識] 同時搜尋 {len(images)} 張圖片")
+                
+                start_time = time.time()
+                found = False
+                
+                while True:
+                    # 輪流檢查每張圖片
+                    for img_config in images:
+                        img_name = img_config.get('name', '')
+                        action = img_config.get('action', 'log')
+                        
+                        pos = self.find_image_on_screen(img_name, threshold=confidence, fast_mode=True)
+                        if pos:
+                            self.logger(f"[多圖辨識] ✅ 找到圖片: {img_name} 於 ({pos[0]}, {pos[1]})")
+                            
+                            # 執行對應動作
+                            if action == 'click':
+                                button = img_config.get('button', 'left')
+                                return_to_origin = img_config.get('return_to_origin', True)
+                                original_pos = win32api.GetCursorPos() if return_to_origin else None
+                                
+                                ctypes.windll.user32.SetCursorPos(pos[0], pos[1])
+                                time.sleep(0.01)
+                                self._mouse_event_enhanced('down', button=button)
+                                time.sleep(0.05)
+                                self._mouse_event_enhanced('up', button=button)
+                                self.logger(f"[多圖辨識] ✅ 已點擊 {img_name}")
+                                
+                                if return_to_origin and original_pos:
+                                    time.sleep(0.01)
+                                    ctypes.windll.user32.SetCursorPos(original_pos[0], original_pos[1])
+                            
+                            elif action == 'move':
+                                ctypes.windll.user32.SetCursorPos(pos[0], pos[1])
+                                self.logger(f"[多圖辨識] ✅ 已移動至 {img_name}")
+                            
+                            found = True
+                            break
+                    
+                    if found:
+                        break
+                    
+                    # 檢查逾時
+                    if timeout > 0 and (time.time() - start_time) >= timeout:
+                        self.logger(f"[多圖辨識] ✖ 逾時 ({timeout}秒)，未找到任何圖片")
+                        break
+                    elif timeout == 0:
+                        self.logger(f"[多圖辨識] ✖ 未找到任何圖片")
+                        break
+                    
+                    time.sleep(0.1)  # 稍微延遲後再次嘗試
+                    
+            except Exception as e:
+                self.logger(f"多圖辨識執行失敗: {e}")
+
+    def _handle_branch_action(self, action_config):
+        """處理分支動作（繼續/停止/跳轉）
+        
+        Args:
+            action_config: {'action': 'continue'/'stop'/'jump', 'target': 'label_name'}
+        
+        Returns:
+            'stop' 如果需要停止回放，否則 None
+        """
+        try:
+            action = action_config.get('action', 'continue')
+            
+            if action == 'stop':
+                self.logger("[分支] 執行停止動作")
+                self.playing = False
+                return 'stop'
+            
+            elif action == 'jump':
+                target = action_config.get('target', '')
+                self.logger(f"[分支] 跳轉至標籤: {target}")
+                # TODO: 實現標籤跳轉功能（需要在 play 方法中配合）
+                return None
+            
+            else:  # continue
+                self.logger("[分支] 繼續執行")
+                return None
+                
+        except Exception as e:
+            self.logger(f"分支動作處理失敗: {e}")
+            return None
 
     def _mouse_event_enhanced(self, event, button='left', delta=0):
         """增強版滑鼠事件執行（更精確穩定）"""
@@ -1368,13 +1550,15 @@ class CoreRecorder:
         self._images_dir = images_dir
         self.logger(f"[圖片辨識] 圖片目錄：{images_dir}")
     
-    def find_image_on_screen(self, image_name_or_path, threshold=0.8, region=None):
-        """在螢幕上尋找圖片
+    def find_image_on_screen(self, image_name_or_path, threshold=0.92, region=None, multi_scale=True, fast_mode=False):
+        """在螢幕上尋找圖片（🔥 終極強化版：多算法融合、SSIM驗證、直方圖比對）
         
         Args:
             image_name_or_path: 圖片顯示名稱或完整路徑
-            threshold: 匹配閾值 (0-1)，越高越精確
+            threshold: 匹配閾值 (0-1)，預設0.92實現近乎完美匹配
             region: 搜尋區域 (x1, y1, x2, y2)，None表示全螢幕
+            multi_scale: 是否啟用多尺度搜尋（提高容錯性）
+            fast_mode: 快速模式（跳過驗證步驟，大幅提升速度）
             
         Returns:
             (center_x, center_y) 如果找到，否則 None
@@ -1395,28 +1579,204 @@ class CoreRecorder:
             # 轉換為OpenCV格式
             screen_cv = cv2.cvtColor(np.array(screenshot), cv2.COLOR_RGB2BGR)
             
-            # 模板匹配
-            result = cv2.matchTemplate(screen_cv, template, cv2.TM_CCOEFF_NORMED)
-            min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
+            best_match_val = 0
+            best_match_loc = None
+            best_template_size = None
+            best_scale = 1.0
             
-            self.logger(f"[圖片辨識] 匹配度：{max_val:.3f} (閾值：{threshold})")
+            # 🔥 快速模式：只使用單一最佳方法
+            if fast_mode:
+                # 只使用3個關鍵尺度
+                scales = [0.9, 1.0, 1.1] if multi_scale else [1.0]
+                
+                for scale in scales:
+                    if scale != 1.0:
+                        width = int(template.shape[1] * scale)
+                        height = int(template.shape[0] * scale)
+                        if width < 10 or height < 10 or width > screen_cv.shape[1] or height > screen_cv.shape[0]:
+                            continue
+                        scaled_template = cv2.resize(template, (width, height), interpolation=cv2.INTER_CUBIC)
+                    else:
+                        scaled_template = template
+                    
+                    # 只使用最快的匹配方法
+                    result = cv2.matchTemplate(screen_cv, scaled_template, cv2.TM_CCOEFF_NORMED)
+                    min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
+                    
+                    if max_val > best_match_val:
+                        best_match_val = max_val
+                        best_match_loc = max_loc
+                        best_template_size = (scaled_template.shape[1], scaled_template.shape[0])
+                        best_scale = scale
+                
+                # 快速模式：直接使用模板匹配結果，不進行額外驗證
+                if best_match_val >= threshold:
+                    w, h = best_template_size
+                    center_x = best_match_loc[0] + w // 2
+                    center_y = best_match_loc[1] + h // 2
+                    
+                    if region:
+                        center_x += region[0]
+                        center_y += region[1]
+                    
+                    self.logger(f"[圖片辨識][快速] 匹配度：{best_match_val:.3f} (尺度:{best_scale:.2f}) ✅ ({center_x}, {center_y})")
+                    return (center_x, center_y)
+                else:
+                    self.logger(f"[圖片辨識][快速] 匹配度：{best_match_val:.3f} ❌ (閾值：{threshold})")
+                    return None
             
-            if max_val >= threshold:
-                # 計算中心點座標
-                h, w = template.shape[:2]
-                center_x = max_loc[0] + w // 2
-                center_y = max_loc[1] + h // 2
-                
-                # 如果有指定region，需要加上偏移
-                if region:
-                    center_x += region[0]
-                    center_y += region[1]
-                
-                self.logger(f"[圖片辨識] ✅ 找到圖片於 ({center_x}, {center_y})")
-                return (center_x, center_y)
+            # 🔥 標準模式：多尺度模板匹配（主要方法）
+            if multi_scale:
+                scales = [0.8, 0.85, 0.9, 0.95, 1.0, 1.05, 1.1, 1.15, 1.2]  # 更細緻的尺度範圍
+                for scale in scales:
+                    if scale != 1.0:
+                        width = int(template.shape[1] * scale)
+                        height = int(template.shape[0] * scale)
+                        if width < 10 or height < 10 or width > screen_cv.shape[1] or height > screen_cv.shape[0]:
+                            continue
+                        scaled_template = cv2.resize(template, (width, height), interpolation=cv2.INTER_CUBIC)
+                    else:
+                        scaled_template = template
+                    
+                    # 🔥 使用多種匹配方法並加權平均
+                    methods = [
+                        (cv2.TM_CCOEFF_NORMED, 1.0),   # 相關係數法（權重最高）
+                        (cv2.TM_CCORR_NORMED, 0.8),    # 相關法
+                        (cv2.TM_SQDIFF_NORMED, 0.6),   # 平方差法（需要反轉）
+                    ]
+                    
+                    method_scores = []
+                    for method, weight in methods:
+                        try:
+                            result = cv2.matchTemplate(screen_cv, scaled_template, method)
+                            
+                            if method == cv2.TM_SQDIFF_NORMED:
+                                # 平方差法：值越小越好，需要反轉
+                                min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
+                                score = 1.0 - min_val  # 反轉分數
+                                loc = min_loc
+                            else:
+                                min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
+                                score = max_val
+                                loc = max_loc
+                            
+                            method_scores.append((score * weight, loc))
+                        except Exception as e:
+                            continue
+                    
+                    if method_scores:
+                        # 計算加權平均分數
+                        avg_score = sum(s for s, _ in method_scores) / len(method_scores)
+                        avg_loc = method_scores[0][1]  # 使用主要方法的位置
+                        
+                        # 記錄最佳匹配
+                        if avg_score > best_match_val:
+                            best_match_val = avg_score
+                            best_match_loc = avg_loc
+                            best_template_size = (scaled_template.shape[1], scaled_template.shape[0])
+                            best_scale = scale
             else:
-                self.logger(f"[圖片辨識] ❌ 未找到圖片（匹配度不足）")
-                return None
+                # 單一尺度匹配
+                result = cv2.matchTemplate(screen_cv, template, cv2.TM_CCOEFF_NORMED)
+                min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
+                best_match_val = max_val
+                best_match_loc = max_loc
+                best_template_size = (template.shape[1], template.shape[0])
+            
+            self.logger(f"[圖片辨識] 模板匹配度：{best_match_val:.3f} (尺度:{best_scale:.2f}, 閾值：{threshold})")
+            
+            # 🔥 階段2: 進階驗證（當模板匹配度接近閾值時）
+            if best_match_val >= threshold * 0.85:  # 降低初步門檻，進行更精確驗證
+                w, h = best_template_size
+                x1, y1 = best_match_loc
+                x2, y2 = x1 + w, y1 + h
+                
+                # 確保範圍在螢幕內
+                if x2 <= screen_cv.shape[1] and y2 <= screen_cv.shape[0]:
+                    matched_region = screen_cv[y1:y2, x1:x2]
+                    
+                    # 調整模板大小以匹配找到的區域
+                    if best_scale != 1.0:
+                        template_resized = cv2.resize(template, (w, h), interpolation=cv2.INTER_CUBIC)
+                    else:
+                        template_resized = template
+                    
+                    verification_score = 0
+                    verification_count = 0
+                    
+                    try:
+                        # 🔥 驗證1: 結構相似度 (SSIM) - 最準確的像素級比較
+                        from skimage.metrics import structural_similarity as ssim
+                        
+                        # 轉換為灰階
+                        gray_template = cv2.cvtColor(template_resized, cv2.COLOR_BGR2GRAY)
+                        gray_matched = cv2.cvtColor(matched_region, cv2.COLOR_BGR2GRAY)
+                        
+                        ssim_score = ssim(gray_template, gray_matched)
+                        verification_score += ssim_score * 1.5  # SSIM權重最高
+                        verification_count += 1.5
+                        self.logger(f"[圖片辨識] SSIM驗證: {ssim_score:.3f}")
+                    except ImportError:
+                        # 如果沒有 scikit-image，使用替代方法
+                        pass
+                    except Exception as e:
+                        self.logger(f"[圖片辨識] SSIM驗證失敗: {e}")
+                    
+                    try:
+                        # 🔥 驗證2: 直方圖相似度（顏色分布比較）
+                        hist_template = cv2.calcHist([template_resized], [0, 1, 2], None, [8, 8, 8], [0, 256, 0, 256, 0, 256])
+                        hist_matched = cv2.calcHist([matched_region], [0, 1, 2], None, [8, 8, 8], [0, 256, 0, 256, 0, 256])
+                        
+                        cv2.normalize(hist_template, hist_template)
+                        cv2.normalize(hist_matched, hist_matched)
+                        
+                        hist_score = cv2.compareHist(hist_template, hist_matched, cv2.HISTCMP_CORREL)
+                        verification_score += hist_score * 1.0
+                        verification_count += 1.0
+                        self.logger(f"[圖片辨識] 直方圖驗證: {hist_score:.3f}")
+                    except Exception as e:
+                        self.logger(f"[圖片辨識] 直方圖驗證失敗: {e}")
+                    
+                    try:
+                        # 🔥 驗證3: 邊緣檢測相似度（形狀輪廓比較）
+                        edges_template = cv2.Canny(template_resized, 50, 150)
+                        edges_matched = cv2.Canny(matched_region, 50, 150)
+                        
+                        # 計算邊緣重疊率
+                        edge_overlap = np.sum(edges_template & edges_matched)
+                        edge_total = np.sum(edges_template)
+                        edge_score = edge_overlap / edge_total if edge_total > 0 else 0
+                        
+                        verification_score += edge_score * 0.8
+                        verification_count += 0.8
+                        self.logger(f"[圖片辨識] 邊緣驗證: {edge_score:.3f}")
+                    except Exception as e:
+                        self.logger(f"[圖片辨識] 邊緣驗證失敗: {e}")
+                    
+                    # 計算最終綜合分數
+                    if verification_count > 0:
+                        final_score = (best_match_val * 0.6 + (verification_score / verification_count) * 0.4)
+                        self.logger(f"[圖片辨識] 綜合分數: {final_score:.3f} (模板:{best_match_val:.3f} + 驗證:{verification_score/verification_count:.3f})")
+                    else:
+                        final_score = best_match_val
+                        self.logger(f"[圖片辨識] 最終分數: {final_score:.3f} (僅模板匹配)")
+                    
+                    # 使用綜合分數判斷
+                    if final_score >= threshold:
+                        # 計算中心點座標
+                        center_x = best_match_loc[0] + w // 2
+                        center_y = best_match_loc[1] + h // 2
+                        
+                        # 如果有指定region，需要加上偏移
+                        if region:
+                            center_x += region[0]
+                            center_y += region[1]
+                        
+                        self.logger(f"[圖片辨識] ✅ 找到圖片於 ({center_x}, {center_y})")
+                        return (center_x, center_y)
+            
+            self.logger(f"[圖片辨識] ❌ 未找到圖片（分數不足）")
+            return None
                 
         except Exception as e:
             self.logger(f"[圖片辨識] 錯誤：{e}")

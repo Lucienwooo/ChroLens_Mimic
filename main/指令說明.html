@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ChroLens Mimic 完整使用手冊</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: "Segoe UI", "Microsoft JhengHei", Arial, sans-serif;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+            background: #1a1a1a;
+        }
+
+        /* 左側選單 - customtkinter 深色風格 */
+        .sidebar {
+            width: 260px;
+            background: #2b2b2b;
+            color: #dce4ee;
+            padding: 25px 20px;
+            overflow-y: auto;
+            border-right: 1px solid #3a3a3a;
+        }
+
+        .sidebar h1 {
+            font-size: 20px;
+            margin-bottom: 30px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #3a3a3a;
+            color: #1f6aa5;
+            font-weight: 600;
+        }
+
+        .sidebar nav ul {
+            list-style: none;
+        }
+
+        .sidebar nav li {
+            margin-bottom: 8px;
+        }
+
+        .sidebar nav a {
+            color: #dce4ee;
+            text-decoration: none;
+            display: block;
+            padding: 12px 16px;
+            border-radius: 6px;
+            transition: all 0.2s ease;
+            background: transparent;
+            font-size: 14px;
+        }
+
+        .sidebar nav a:hover {
+            background: #343638;
+            color: #ffffff;
+        }
+
+        .sidebar nav a.active {
+            background: #1f6aa5;
+            color: #ffffff;
+        }
+
+        /* 主內容區 - customtkinter 風格 */
+        .main-content {
+            flex: 1;
+            padding: 30px;
+            overflow-y: auto;
+            background: #1a1a1a;
+        }
+
+        .page {
+            display: none;
+            background: #2b2b2b;
+            padding: 35px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            color: #dce4ee;
+        }
+
+        .page.active {
+            display: block;
+        }
+
+        .page h2 {
+            color: #1f6aa5;
+            margin-bottom: 25px;
+            padding-bottom: 12px;
+            border-bottom: 2px solid #1f6aa5;
+            font-weight: 600;
+        }
+
+        .page h3 {
+            color: #52a8ec;
+            margin-top: 30px;
+            margin-bottom: 15px;
+            font-weight: 600;
+        }
+
+        .page h4 {
+            color: #8ab4f8;
+            margin-top: 20px;
+            margin-bottom: 12px;
+            font-weight: 500;
+        }
+
+        .page p {
+            line-height: 1.8;
+            color: #b8c5d6;
+            margin-bottom: 15px;
+            font-size: 14px;
+        }
+
+        .page ul {
+            margin-left: 20px;
+            margin-bottom: 15px;
+            color: #b8c5d6;
+        }
+
+        .page li {
+            margin-bottom: 10px;
+            line-height: 1.6;
+        }
+
+        .page li strong {
+            color: #52a8ec;
+        }
+
+        code {
+            background: #1a1a1a;
+            color: #52a8ec;
+            padding: 3px 7px;
+            border-radius: 4px;
+            font-family: "Consolas", "Courier New", monospace;
+            font-size: 13px;
+            border: 1px solid #3a3a3a;
+        }
+
+        pre {
+            background: #1a1a1a;
+            color: #dce4ee;
+            padding: 18px;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin: 20px 0;
+            line-height: 1.6;
+            border: 1px solid #3a3a3a;
+        }
+
+        /* 語法高亮樣式 - customtkinter 配色 */
+        .syntax-operator {
+            color: #ff9500;  /* customtkinter 橘色 */
+            font-weight: bold;
+        }
+
+        .syntax-keyword {
+            color: #52a8ec;  /* customtkinter 青色 */
+            font-weight: bold;
+        }
+
+        .syntax-comment {
+            color: #6c757d;  /* 灰色註解 */
+            font-style: italic;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            background: #1a1a1a;
+            border: 1px solid #3a3a3a;
+        }
+
+        table th {
+            background: #1f6aa5;
+            color: #ffffff;
+            padding: 14px;
+            text-align: left;
+            font-weight: 600;
+            border-bottom: 2px solid #3a3a3a;
+        }
+
+        table td {
+            padding: 12px 14px;
+            border: 1px solid #3a3a3a;
+            color: #b8c5d6;
+        }
+
+        table td code {
+            background: #2b2b2b;
+            color: #52a8ec;
+        }
+
+        table tr:nth-child(even) {
+            background: #232323;
+        }
+
+        table tr:hover {
+            background: #2d2d2d;
+        }
+
+        .sponsor-links {
+            margin-top: 30px;
+            padding: 20px;
+            background: #1a1a1a;
+            border-radius: 10px;
+            text-align: center;
+            border: 1px solid #3a3a3a;
+        }
+
+        .sponsor-links a {
+            display: inline-block;
+            margin: 0 15px;
+            color: #52a8ec;
+            text-decoration: none;
+            font-size: 18px;
+        }
+
+        .sponsor-links a:hover {
+            color: #1f6aa5;
+            text-decoration: underline;
+        }
+
+        /* 更新日誌樣式 - customtkinter 風格 */
+        .message-board {
+            background: #1f4a66;
+            border-left: 4px solid #1f6aa5;
+            padding: 22px;
+            margin-bottom: 30px;
+            border-radius: 8px;
+            color: #dce4ee;
+        }
+
+        .message-board h3 {
+            margin-top: 0;
+            color: #52a8ec;
+        }
+
+        .message-board p {
+            color: #d0dae6;
+        }
+
+        .message-board a {
+            color: #52a8ec;
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        .message-board a:hover {
+            text-decoration: underline;
+        }
+
+        .version-item {
+            background: #232323;
+            border-left: 4px solid #1f6aa5;
+            padding: 22px;
+            margin-bottom: 20px;
+            border-radius: 8px;
+            border: 1px solid #3a3a3a;
+        }
+
+        .version-item h3 {
+            color: #52a8ec;
+            margin-top: 0;
+            margin-bottom: 10px;
+        }
+
+        .version-item h3 a {
+            color: #52a8ec;
+            text-decoration: none;
+            transition: color 0.2s ease;
+        }
+
+        .version-item h3 a:hover {
+            color: #1f6aa5;
+            text-decoration: underline;
+        }
+
+        .version-date {
+            color: #8996a6;
+            font-size: 14px;
+            margin-bottom: 15px;
+        }
+
+        .version-item ul {
+            margin-top: 10px;
+            color: #b8c5d6;
+        }
+
+        .pagination {
+            text-align: center;
+            margin-top: 30px;
+            padding: 20px 0;
+        }
+
+        .pagination button {
+            background: #1f6aa5;
+            color: #ffffff;
+            border: none;
+            padding: 11px 18px;
+            margin: 0 6px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s ease;
+        }
+
+        .pagination button:hover {
+            background: #1557a0;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(31, 106, 165, 0.3);
+        }
+
+        .pagination button.active {
+            background: #144a7a;
+        }
+
+        .pagination button:disabled {
+            background: #3a3a3a;
+            color: #6c757d;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .pagination span {
+            color: #b8c5d6;
+        }
+    </style>
+</head>
+<body>
+    <!-- 左側選單 -->
+    <div class="sidebar">
+        <h1>📖 ChroLens Mimic</h1>
+        <nav>
+            <ul>
+                <li><a href="#intro" class="nav-link active">📌 基本介紹</a></li>
+                <li><a href="#script-editor" class="nav-link">✏️ 腳本編輯器</a></li>
+                <li><a href="#changelog" class="nav-link">📋 更新日誌</a></li>
+            </ul>
+        </nav>
+    </div>
+
+    <!-- 主內容區 -->
+    <div class="main-content">
+        <!-- 基本介紹 -->
+        <div id="intro" class="page active">
+            <h2>📌 基本介紹</h2>
+            
+            <h3>🎯 ChroLens Mimic 是什麼？</h3>
+            <p>ChroLens Mimic 是一款功能強大的 Windows 自動化工具，專為需要重複執行操作的使用者設計。透過精確的錄製與回放功能，結合圖片辨識和條件判斷，讓您輕鬆實現任何重複性工作的自動化。</p>
+            
+            <h3>✨ 核心特色</h3>
+            <ul>
+                <li><strong>🎯 精確錄製與回放</strong> - 記錄每一個鍵盤、滑鼠操作，並以可調速度精確重現</li>
+                <li><strong>📝 腳本編輯器</strong> - 使用簡潔的文字指令語法，輕鬆編輯和管理自動化腳本</li>
+                <li><strong>🖼️ 強化圖片辨識</strong> - 多算法融合、高精度匹配，支援多尺度搜尋</li>
+                <li><strong>🔀 條件判斷與流程控制</strong> - if/else 分支、標籤跳轉、循環控制</li>
+            </ul>
+
+            <h3>🎮 適用場景</h3>
+            <ul>
+                <li><strong>遊戲自動化</strong> - 自動掛機、技能循環、任務重複</li>
+                <li><strong>辦公自動化</strong> - 批次處理文件、表單填寫、數據錄入</li>
+                <li><strong>測試與驗證</strong> - UI 自動化測試、重複性操作驗證</li>
+            </ul>
+
+            <h3>🎬 錄製與回放功能</h3>
+            <p>錄製與回放是 ChroLens Mimic 的核心功能，可以精確記錄並重現您的鍵盤、滑鼠操作。類似於市面上的 <strong>按鍵精靈</strong>、<strong>MacroRecorder</strong>、<strong>Pulover's Macro Creator</strong> 等工具，但更專注於穩定性和圖片辨識功能。</p>
+
+            <h4>⚡ 快捷鍵</h4>
+            <ul>
+                <li><code>F10</code> - 開始錄製</li>
+                <li><code>F9</code> - 停止錄製</li>
+                <li><code>F12</code> - 開始/暫停回放</li>
+                <li><code>Esc</code> - 緊急停止</li>
+            </ul>
+        </div>
+
+        <!-- 腳本編輯器 -->
+        <div id="script-editor" class="page">
+            <h2>✏️ 腳本編輯器</h2>
+
+            <h3>📋 指令分類總覽</h3>
+            
+            <h4>⌨️ 鍵盤操作</h4>
+            <table>
+                <tr>
+                    <th style="width: 25%">指令</th>
+                    <th style="width: 45%">說明</th>
+                    <th style="width: 30%">範例</th>
+                </tr>
+                <tr>
+                    <td><code>按[按鍵]</code></td>
+                    <td>按下後立即放開</td>
+                    <td><code>>按Enter, 延遲50ms, T=0s000</code></td>
+                </tr>
+                <tr>
+                    <td><code>按下[按鍵]</code></td>
+                    <td>只按下不放開（用於組合鍵）</td>
+                    <td><code>>按下Ctrl, 延遲0ms, T=0s000</code></td>
+                </tr>
+                <tr>
+                    <td><code>放開[按鍵]</code></td>
+                    <td>放開已按下的按鍵</td>
+                    <td><code>>放開Ctrl, 延遲0ms, T=0s100</code></td>
+                </tr>
+            </table>
+
+            <p><strong>支援的按鍵：</strong>字母 A-Z、數字 0-9、功能鍵 F1-F12、特殊鍵（Enter, Space, Tab, Escape, Backspace）、修飾鍵（Ctrl, Shift, Alt, Win）、方向鍵（Up, Down, Left, Right）</p>
+
+            <h4>🖱️ 滑鼠操作</h4>
+            <table>
+                <tr>
+                    <th style="width: 25%">指令</th>
+                    <th style="width: 45%">說明</th>
+                    <th style="width: 30%">範例</th>
+                </tr>
+                <tr>
+                    <td><code>移動至(X,Y)</code></td>
+                    <td>移動滑鼠到指定座標</td>
+                    <td><code>>移動至(500,300), T=0s000</code></td>
+                </tr>
+                <tr>
+                    <td><code>左鍵點擊(X,Y)</code></td>
+                    <td>在指定位置點擊左鍵</td>
+                    <td><code>>左鍵點擊(500,300), T=0s100</code></td>
+                </tr>
+                <tr>
+                    <td><code>右鍵點擊(X,Y)</code></td>
+                    <td>在指定位置點擊右鍵</td>
+                    <td><code>>右鍵點擊(500,300), T=0s200</code></td>
+                </tr>
+                <tr>
+                    <td><code>中鍵點擊(X,Y)</code></td>
+                    <td>在指定位置點擊中鍵</td>
+                    <td><code>>中鍵點擊(500,300), T=0s300</code></td>
+                </tr>
+                <tr>
+                    <td><code>雙擊(X,Y)</code></td>
+                    <td>快速點擊兩次</td>
+                    <td><code>>雙擊(500,300), T=0s400</code></td>
+                </tr>
+                <tr>
+                    <td><code>按下left鍵(X,Y)</code></td>
+                    <td>按住左鍵不放（拖曳起點）</td>
+                    <td><code>>按下left鍵(100,100), T=0s000</code></td>
+                </tr>
+                <tr>
+                    <td><code>放開left鍵(X,Y)</code></td>
+                    <td>放開左鍵（拖曳終點）</td>
+                    <td><code>>放開left鍵(500,500), T=0s500</code></td>
+                </tr>
+            </table>
+
+            <h4>🖼️ 圖片辨識操作</h4>
+            <table>
+                <tr>
+                    <th style="width: 25%">指令</th>
+                    <th style="width: 45%">說明</th>
+                    <th style="width: 30%">範例</th>
+                </tr>
+                <tr>
+                    <td><code>辨識>pic##</code></td>
+                    <td>找到圖片位置（不移動滑鼠）</td>
+                    <td><code>>辨識>pic01, T=0s000</code></td>
+                </tr>
+                <tr>
+                    <td><code>移動至>pic##</code></td>
+                    <td>移動滑鼠到圖片中心</td>
+                    <td><code>>移動至>pic01, T=0s100</code></td>
+                </tr>
+                <tr>
+                    <td><code>左鍵點擊>pic##</code></td>
+                    <td>點擊圖片（點擊後滑鼠回到原位）</td>
+                    <td><code>>左鍵點擊>pic01, T=0s200</code></td>
+                </tr>
+                <tr>
+                    <td><code>右鍵點擊>pic##</code></td>
+                    <td>右鍵點擊圖片</td>
+                    <td><code>>右鍵點擊>pic01, T=0s300</code></td>
+                </tr>
+                <tr>
+                    <td><code>辨識任一>pic##|pic##</code></td>
+                    <td>同時找多張圖片（找到任何一張即可）</td>
+                    <td><code>>辨識任一>pic01|pic02, T=0s000</code></td>
+                </tr>
+            </table>
+
+            <p><strong>圖片命名規則：</strong>使用 pic + 數字（pic01, pic02, pic03...），支援 pic01 到 pic999</p>
+
+            <h4>🔀 條件判斷與流程控制</h4>
+            <table>
+                <tr>
+                    <th style="width: 25%">指令</th>
+                    <th style="width: 45%">說明</th>
+                    <th style="width: 30%">範例</th>
+                </tr>
+                <tr>
+                    <td><code>if>pic##</code></td>
+                    <td>檢查圖片是否存在</td>
+                    <td><code>>if>pic01, T=0s000</code></td>
+                </tr>
+                <tr>
+                    <td><code>>></code></td>
+                    <td>成功分支（圖片存在時執行）</td>
+                    <td><code>>>#找到了</code> 或 <code>>></code>（留空=繼續）</td>
+                </tr>
+                <tr>
+                    <td><code>>>></code></td>
+                    <td>失敗分支（圖片不存在時執行）</td>
+                    <td><code>>>>#重試</code> 或 <code>>>></code>（留空=繼續）</td>
+                </tr>
+                <tr>
+                    <td><code>#標籤名</code></td>
+                    <td>定義標籤（跳轉目標）</td>
+                    <td><code>#開始</code></td>
+                </tr>
+                <tr>
+                    <td><code>跳到#標籤名</code></td>
+                    <td>跳轉到指定標籤</td>
+                    <td><code>>跳到#開始, T=1s000</code></td>
+                </tr>
+                <tr>
+                    <td><code>停止</code></td>
+                    <td>停止腳本執行</td>
+                    <td><code>>停止, T=2s000</code></td>
+                </tr>
+            </table>
+
+            <h3>📍 腳本編輯器功能說明</h3>
+            <p>腳本編輯器可以讓您用文字格式編輯自動化腳本，相比純錄製更加靈活和強大。編輯器支援<strong>語法高亮</strong>功能，指令符號（<span class="syntax-operator">&gt;</span>、<span class="syntax-operator">&gt;&gt;</span>、<span class="syntax-operator">&gt;&gt;&gt;</span>、<span class="syntax-operator">,</span>、<span class="syntax-operator">T=</span>）會以<span class="syntax-operator">橘色</span>顯示，標籤（<span class="syntax-keyword">#標籤名</span>）會以<span class="syntax-keyword">青綠色</span>顯示，讓程式碼更易讀。</p>
+
+            <h4>指令格式</h4>
+            <pre><span class="syntax-operator">&gt;</span>動作內容<span class="syntax-operator">,</span> 延遲時間<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>執行時間點</pre>
+
+            <h4>🖼️ 圖片辨識截圖</h4>
+            <ol>
+                <li>在腳本編輯器中點擊「📷 圖片辨識」按鈕</li>
+                <li>編輯器會最小化，螢幕變暗並顯示十字游標</li>
+                <li>按住滑鼠左鍵拖曳，選取要辨識的區域</li>
+                <li>放開滑鼠後，圖片會自動儲存並命名（pic01, pic02...）</li>
+                <li>編輯器恢復，可以使用該圖片編寫指令</li>
+            </ol>
+
+            <h4>💾 自訂模組</h4>
+            <ul>
+                <li><strong>儲存模組：</strong>反白選取常用的指令片段 → 右鍵 → 選擇「儲存為自訂模組」→ 輸入模組名稱</li>
+                <li><strong>載入模組：</strong>在腳本編輯器中右鍵 → 選擇「插入自訂模組」→ 選擇要插入的模組</li>
+                <li><strong>模組管理：</strong>模組儲存在 <code>scripts/modules/</code> 資料夾，可手動編輯或刪除</li>
+            </ul>
+
+            <h3>📝 範例腳本</h3>
+            
+            <h4>範例1：自動登入</h4>
+            <pre><span class="syntax-comment"># 點擊帳號欄位</span>
+<span class="syntax-operator">&gt;</span>左鍵點擊(500,200)<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s000
+
+<span class="syntax-comment"># 輸入帳號</span>
+<span class="syntax-operator">&gt;</span>按u<span class="syntax-operator">,</span> 延遲50ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s100
+<span class="syntax-operator">&gt;</span>按s<span class="syntax-operator">,</span> 延遲50ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s150
+<span class="syntax-operator">&gt;</span>按e<span class="syntax-operator">,</span> 延遲50ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s200
+<span class="syntax-operator">&gt;</span>按r<span class="syntax-operator">,</span> 延遲50ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s250
+
+<span class="syntax-comment"># 切換到密碼欄位</span>
+<span class="syntax-operator">&gt;</span>按Tab<span class="syntax-operator">,</span> 延遲50ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s300
+
+<span class="syntax-comment"># 輸入密碼</span>
+<span class="syntax-operator">&gt;</span>按1<span class="syntax-operator">,</span> 延遲50ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s400
+<span class="syntax-operator">&gt;</span>按2<span class="syntax-operator">,</span> 延遲50ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s450
+<span class="syntax-operator">&gt;</span>按3<span class="syntax-operator">,</span> 延遲50ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s500
+<span class="syntax-operator">&gt;</span>按4<span class="syntax-operator">,</span> 延遲50ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s550
+
+<span class="syntax-comment"># 送出</span>
+<span class="syntax-operator">&gt;</span>按Enter<span class="syntax-operator">,</span> 延遲50ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s600</pre>
+
+            <h4>範例2：圖片辨識與循環</h4>
+            <pre><span class="syntax-comment"># 循環尋找並點擊目標</span>
+<span class="syntax-keyword">#開始</span>
+<span class="syntax-operator">&gt;</span>if&gt;pic01<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s000
+<span class="syntax-operator">&gt;&gt;</span><span class="syntax-keyword">#找到了</span>
+<span class="syntax-operator">&gt;&gt;&gt;</span><span class="syntax-keyword">#開始</span>
+
+<span class="syntax-keyword">#找到了</span>
+<span class="syntax-operator">&gt;</span>左鍵點擊&gt;pic01<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s500
+<span class="syntax-operator">&gt;</span>停止</pre>
+
+            <h4>範例3：組合鍵操作</h4>
+            <pre><span class="syntax-comment"># Ctrl+C 複製</span>
+<span class="syntax-operator">&gt;</span>按下Ctrl<span class="syntax-operator">,</span> 延遲0ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s000
+<span class="syntax-operator">&gt;</span>按C<span class="syntax-operator">,</span> 延遲100ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s000
+<span class="syntax-operator">&gt;</span>放開Ctrl<span class="syntax-operator">,</span> 延遲0ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s100
+
+<span class="syntax-comment"># Alt+Tab 切換視窗</span>
+<span class="syntax-operator">&gt;</span>按下Alt<span class="syntax-operator">,</span> 延遲0ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s500
+<span class="syntax-operator">&gt;</span>按Tab<span class="syntax-operator">,</span> 延遲100ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s500
+<span class="syntax-operator">&gt;</span>放開Alt<span class="syntax-operator">,</span> 延遲0ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s600
+
+<span class="syntax-comment"># Ctrl+V 貼上</span>
+<span class="syntax-operator">&gt;</span>按下Ctrl<span class="syntax-operator">,</span> 延遲0ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>1s000
+<span class="syntax-operator">&gt;</span>按V<span class="syntax-operator">,</span> 延遲100ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>1s000
+<span class="syntax-operator">&gt;</span>放開Ctrl<span class="syntax-operator">,</span> 延遲0ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>1s100</pre>
+        </div>
+
+        <!-- 更新日誌 -->
+        <div id="changelog" class="page">
+            <h2>📋 更新日誌</h2>
+
+            <!-- 留言板區塊 -->
+            <div class="message-board">
+                <h3>💬 開發者的話</h3>
+                <p>感謝各位使用 ChroLens Mimic！這裡會記錄每個版本的更新內容。</p>
+                <p>如果您有任何建議、問題或發現 Bug，歡迎透過 <strong><a href="https://discord.gg/your-discord-link" target="_blank" style="color: #5865F2;">🎮 Discord 社群</a></strong> 反饋給我們。您的每一個意見都是我們進步的動力！</p>
+                <p>如果這個工具對您有幫助，歡迎 <strong><a href="https://your-sponsor-link.com" target="_blank" style="color: #ff6b6b;">☕ 贊助支持開發</a></strong>，讓我們能持續為您帶來更好的功能！</p>
+                <p><strong>🎉 最新消息：</strong>v2.6.6 版本已發布，優化了腳本編輯器的儲存機制和圖片辨識功能，並新增語法高亮功能！</p>
+                <p style="margin-top: 15px; font-size: 13px; color: #999;">（請將上方 Discord 和贊助連結替換為實際連結）</p>
+            </div>
+
+            <!-- 版本更新列表 -->
+            <div id="version-container">
+                <!-- 版本會透過 JavaScript 動態載入 -->
+            </div>
+
+            <!-- 分頁按鈕 -->
+            <div class="pagination">
+                <button id="prev-page" onclick="changePage(-1)">« 上一頁</button>
+                <span id="page-info" style="margin: 0 15px; color: #555;"></span>
+                <button id="next-page" onclick="changePage(1)">下一頁 »</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 頁面切換功能
+        const navLinks = document.querySelectorAll('.nav-link');
+        const pages = document.querySelectorAll('.page');
+
+        navLinks.forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                
+                // 移除所有 active 類別
+                navLinks.forEach(l => l.classList.remove('active'));
+                pages.forEach(p => p.classList.remove('active'));
+                
+                // 添加 active 到當前項目
+                link.classList.add('active');
+                const targetId = link.getAttribute('href').substring(1);
+                document.getElementById(targetId).classList.add('active');
+            });
+        });
+
+        // ========== 更新日誌功能 ==========
+        
+        // 版本資料（從新到舊排序）
+        const versionData = [
+            {
+                version: "v2.6.6",
+                date: "2025-11-30",
+                changes: [
+                    "🔧 修復標籤顯示問題，確保標籤不再重疊或錯位",
+                    "💾 優化腳本編輯器儲存機制，提升儲存穩定性",
+                    "🖼️ 強化圖片辨識功能，提高匹配準確度",
+                    "🧹 清理專案檔案，移除冗餘代碼",
+                    "📝 統一編輯器命名為「腳本編輯器」",
+                    "🎨 新增語法高亮功能，指令符號以橘色/青綠色顯示"
+                ]
+            },
+            {
+                version: "v2.6.5",
+                date: "2025-11-25",
+                changes: [
+                    "✨ 新增自訂模組功能，可儲存常用指令片段",
+                    "🐛 修復滑鼠拖曳座標記錄錯誤",
+                    "⚡ 提升腳本執行效能",
+                    "📖 完善使用說明文件"
+                ]
+            },
+            {
+                version: "v2.6.0",
+                date: "2025-11-20",
+                changes: [
+                    "🎉 重大更新：新增文字指令編輯器",
+                    "🖼️ 實現圖片辨識截圖功能",
+                    "🔀 支援 if/else 條件判斷",
+                    "🏷️ 新增標籤跳轉功能"
+                ]
+            },
+            {
+                version: "v2.5.0",
+                date: "2025-11-10",
+                changes: [
+                    "🎮 優化錄製回放功能",
+                    "⚙️ 新增速度調整功能",
+                    "🔄 支援重複次數設定",
+                    "🪟 新增視窗選擇功能"
+                ]
+            },
+            {
+                version: "v2.4.0",
+                date: "2025-11-01",
+                changes: [
+                    "🖱️ 改進滑鼠操作記錄精確度",
+                    "⌨️ 支援更多快捷鍵組合",
+                    "💾 優化腳本儲存格式",
+                    "🐛 修復多項已知問題"
+                ]
+            },
+            {
+                version: "v2.3.0",
+                date: "2025-10-25",
+                changes: [
+                    "🔧 重構核心引擎",
+                    "📊 改善效能表現",
+                    "🎨 優化使用者介面",
+                    "📝 更新操作說明"
+                ]
+            },
+            {
+                version: "v2.2.0",
+                date: "2025-10-15",
+                changes: [
+                    "✨ 新增快捷鍵設定功能",
+                    "🔊 加入音效提示",
+                    "🌙 支援深色模式",
+                    "🐛 修復啟動錯誤"
+                ]
+            },
+            {
+                version: "v2.1.0",
+                date: "2025-10-05",
+                changes: [
+                    "📦 優化安裝程式",
+                    "🔐 加強安全性檢查",
+                    "📱 改善系統相容性",
+                    "📖 補充說明文件"
+                ]
+            },
+            {
+                version: "v2.0.0",
+                date: "2025-09-28",
+                changes: [
+                    "🎊 全新 2.0 版本發布",
+                    "🎨 全新使用者介面",
+                    "⚡ 大幅提升效能",
+                    "🔄 重新設計架構"
+                ]
+            },
+            {
+                version: "v1.5.0",
+                date: "2025-09-15",
+                changes: [
+                    "🖼️ 新增基礎圖片辨識",
+                    "📊 改善記錄功能",
+                    "🐛 修復穩定性問題",
+                    "📝 更新文件內容"
+                ]
+            }
+        ];
+
+        // 分頁設定
+        const itemsPerPage = 10;
+        let currentPage = 1;
+        const totalPages = Math.ceil(versionData.length / itemsPerPage);
+
+        // 渲染版本列表
+        function renderVersions() {
+            const container = document.getElementById('version-container');
+            const startIndex = (currentPage - 1) * itemsPerPage;
+            const endIndex = startIndex + itemsPerPage;
+            const pageVersions = versionData.slice(startIndex, endIndex);
+
+            container.innerHTML = '';
+
+            pageVersions.forEach(version => {
+                const versionDiv = document.createElement('div');
+                versionDiv.className = 'version-item';
+                
+                let changesHTML = '<ul>';
+                version.changes.forEach(change => {
+                    changesHTML += `<li>${change}</li>`;
+                });
+                changesHTML += '</ul>';
+
+                // 將版本標題轉換為GitHub連結
+                const githubUrl = `https://github.com/Lucienwooo/ChroLens_Mimic/releases/tag/${version.version}`;
+
+                versionDiv.innerHTML = `
+                    <h3><a href="${githubUrl}" target="_blank" style="color: #2c3e50; text-decoration: none;">📦 ${version.version}</a></h3>
+                    <div class="version-date">發布日期：${version.date}</div>
+                    ${changesHTML}
+                `;
+
+                container.appendChild(versionDiv);
+            });
+
+            updatePagination();
+        }
+
+        // 更新分頁按鈕狀態
+        function updatePagination() {
+            const prevBtn = document.getElementById('prev-page');
+            const nextBtn = document.getElementById('next-page');
+            const pageInfo = document.getElementById('page-info');
+
+            prevBtn.disabled = currentPage === 1;
+            nextBtn.disabled = currentPage === totalPages;
+
+            pageInfo.textContent = `第 ${currentPage} 頁 / 共 ${totalPages} 頁`;
+        }
+
+        // 換頁功能
+        function changePage(direction) {
+            const newPage = currentPage + direction;
+            if (newPage >= 1 && newPage <= totalPages) {
+                currentPage = newPage;
+                renderVersions();
+                // 滾動到頁面頂部
+                document.getElementById('version-container').scrollIntoView({ behavior: 'smooth' });
+            }
+        }
+
+        // 頁面載入時初始化更新日誌
+        document.addEventListener('DOMContentLoaded', function() {
+            renderVersions();
+        });
+    </script>
+</body>
+</html>

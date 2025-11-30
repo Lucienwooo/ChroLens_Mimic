@@ -30,11 +30,12 @@
 # 4. 舊版本會自動備份至 backup\版本號\ 資料夾
 #
 # === 版本更新紀錄 ===
+# [2.6.6] - 根據 2.6.5 版本持續優化
 # [2.6.5] - 整合2.5穩定機制：簡化快捷鍵系統、優化錄製流程、即時日誌輸出、移除不必要模組
 # [2.6.4] - 快捷鍵系統優化、打包系統完善、更新UI改進、備份機制優化
 #pyinstaller --noconsole --onedir --icon=..\umi_奶茶色.ico --add-data "..\umi_奶茶色.ico;." --add-data "TTF;TTF" --add-data "recorder.py;." --add-data "lang.py;." --add-data "script_io.py;." --add-data "about.py;." --add-data "mini.py;." --add-data "window_selector.py;." --add-data "text_script_editor.py;." --add-data "visual_script_editor.py;." --add-data "update_manager.py;." --add-data "update_dialog.py;." ChroLens_Mimic.py
 
-VERSION = "2.6.5"
+VERSION = "2.6.6"
 
 import ttkbootstrap as tb
 from ttkbootstrap.constants import *
@@ -67,9 +68,9 @@ except Exception as e:
     print(f"無法匯入 CoreRecorder: {e}")
 
 try:
-    # 使用文字指令編輯器
+    # 使用腳本編輯器
     from text_script_editor import TextCommandEditor as VisualScriptEditor
-    print("✅ 已載入文字指令編輯器 (可直接編輯文字指令)")
+    print("✅ 已載入腳本編輯器 (可直接編輯文字指令)")
 except Exception as e:
     try:
         # 備用：舊版圖形化編輯器
@@ -1840,6 +1841,12 @@ class RecorderApp(tb.Window):
     
     def _continue_play_record(self):
         """實際執行回放的內部方法（支援智能縮放）"""
+        # ✅ 設定圖片辨識目錄
+        images_dir = os.path.join(self.script_dir, "images")
+        if os.path.exists(images_dir):
+            self.core_recorder.set_images_directory(images_dir)
+            self.log(f"[圖片辨識] 已設定圖片目錄: {images_dir}")
+        
         # 獲取當前視窗位置（如果有目標視窗）
         current_window_x = 0
         current_window_y = 0
@@ -3679,7 +3686,7 @@ class RecorderApp(tb.Window):
 
 
     def open_visual_editor(self):
-        """開啟文字指令編輯器"""
+        """開啟腳本編輯器"""
         try:
             # ✅ 檢查編輯器模組是否可用
             if VisualScriptEditor is None:
@@ -3701,11 +3708,11 @@ class RecorderApp(tb.Window):
                 # 如果已存在，將焦點切到該視窗
                 self.visual_editor_window.focus_force()
                 self.visual_editor_window.lift()
-                self.log("[資訊] 編輯器已開啟，切換至視窗")
+                self.log("[資訊] 編輯器已開啟,切換至視窗")
             else:
                 # 建立新視窗並儲存引用
                 self.visual_editor_window = VisualScriptEditor(self, script_path)
-                self.log("[資訊] 已開啟文字指令編輯器")
+                self.log("[資訊] 已開啟腳本編輯器")
         except Exception as e:
             self.log(f"[錯誤] 無法開啟編輯器：{e}")
             import traceback
