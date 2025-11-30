@@ -33,6 +33,8 @@
 
 👉如果你有任何問題、想法或建議，請加入我的 [Discord ChroLens](https://discord.gg/72Kbs4WPPn)
 
+📖 **[查看完整指令說明文件](https://lucienwooo.github.io/ChroLens_Mimic/)** | [View Full Documentation](https://lucienwooo.github.io/ChroLens_Mimic/) | [完全なドキュメントを見る](https://lucienwooo.github.io/ChroLens_Mimic/)
+
 ---
 
 ![ChroLens_Mimic](./pic/clm2.2jp.png)
