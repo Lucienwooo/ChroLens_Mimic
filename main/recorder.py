@@ -1249,7 +1249,7 @@ class CoreRecorder:
             # 辨識圖片（只是辨識，不做動作）
             try:
                 image_name = event.get('image', '')
-                confidence = event.get('confidence', 0.75)
+                confidence = event.get('confidence', 0.7)  # 降低預設閖值加快速度
                 self.logger(f"[圖片辨識] 開始辨識: {image_name}")
                 
                 pos = self.find_image_on_screen(image_name, threshold=confidence, fast_mode=True)
@@ -1264,7 +1264,7 @@ class CoreRecorder:
             # 移動到圖片位置
             try:
                 image_name = event.get('image', '')
-                confidence = event.get('confidence', 0.75)
+                confidence = event.get('confidence', 0.7)  # 降低預設閖值加快速度
                 self.logger(f"[移動至圖片] 開始尋找: {image_name}")
                 
                 pos = self.find_image_on_screen(image_name, threshold=confidence, fast_mode=True)
@@ -1281,7 +1281,7 @@ class CoreRecorder:
             # 點擊圖片位置（✅ 新增：點擊後返回原位）
             try:
                 image_name = event.get('image', '')
-                confidence = event.get('confidence', 0.75)
+                confidence = event.get('confidence', 0.7)  # 降低預設閖值加快速度
                 button = event.get('button', 'left')
                 return_to_origin = event.get('return_to_origin', True)  # 預設返回原位
                 self.logger(f"[點擊圖片] 開始尋找: {image_name}")
@@ -1295,7 +1295,7 @@ class CoreRecorder:
                     x, y = pos
                     # 先移動到位置
                     ctypes.windll.user32.SetCursorPos(x, y)
-                    time.sleep(0.01)  # 稍微增加延遲確保移動完成
+                    time.sleep(0.005)  # 減少延遲到 5ms
                     # 執行點擊
                     self._mouse_event_enhanced('down', button=button)
                     time.sleep(0.05)
@@ -1586,21 +1586,28 @@ class CoreRecorder:
             else:
                 screenshot = ImageGrab.grab()
             
-            # 轉換為OpenCV格式
-            screen_cv = cv2.cvtColor(np.array(screenshot), cv2.COLOR_RGB2BGR)
+            # 🔥 極速優化：轉換為灰度圖加速匹配（速度提升 2-3倍）
+            screen_array = np.array(screenshot)
+            screen_cv = cv2.cvtColor(screen_array, cv2.COLOR_RGB2GRAY)
+            
+            # 🔥 將模板也轉為灰度圖
+            if len(template.shape) == 3:
+                template_gray = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
+            else:
+                template_gray = template
             
             best_match_val = 0
             best_match_loc = None
             best_template_size = None
             best_scale = 1.0
             
-            # 🔥 快速模式：使用新的 _match_template_on_screen 方法
+            # 🔥 快速模式：使用新的 _match_template_on_screen 方法（跳過多尺度）
             if fast_mode:
                 pos = self._match_template_on_screen(
-                    screen_cv, template, mask,
+                    screen_cv, template_gray, None,  # 使用灰度圖，無遮罩
                     threshold=threshold,
                     fast_mode=True,
-                    multi_scale=multi_scale
+                    multi_scale=False  # 快速模式不使用多尺度
                 )
                 
                 if pos:
@@ -1814,6 +1821,9 @@ class CoreRecorder:
         # 檢查快取
         if image_name_or_path in self._image_cache:
             cached = self._image_cache[image_name_or_path]
+            # 返回灰度圖版本（如果有）
+            if len(cached) > 3 and cached[3] is not None:
+                return cached[3], None  # 灰度圖, 無遮罩
             return cached[0], cached[2] if len(cached) > 2 else None
         
         # 判斷是否為完整路徑
@@ -2038,9 +2048,9 @@ class CoreRecorder:
             best_template_size = None
             best_scale = 1.0
             
-            # 🔥 快速模式：只使用3個關鍵尺度
+            # 🔥 快速模式：只使用1.0尺度，跳過多尺度搜尋
             if fast_mode:
-                scales = [0.9, 1.0, 1.1] if multi_scale else [1.0]
+                scales = [1.0]  # 極速模式：只用原始尺寸
             else:
                 scales = [0.8, 0.85, 0.9, 0.95, 1.0, 1.05, 1.1, 1.15, 1.2] if multi_scale else [1.0]
             
