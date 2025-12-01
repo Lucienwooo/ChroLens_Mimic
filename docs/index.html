@@ -639,37 +639,130 @@
 
             <h3>📝 範例腳本</h3>
             
-            <h4>範例1：自動登入</h4>
-            <pre><span class="syntax-comment"># 點擊帳號欄位</span>
-<span class="syntax-operator">&gt;</span>左鍵點擊(500,200)<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s000
+            <h4>範例1：自動打怪</h4>
+            <pre><span class="syntax-comment"># === 初始化與迴圈起點 ===</span>
+<span class="syntax-keyword">#主循環</span>
+<span class="syntax-operator">&gt;</span>if&gt;hp_low_warning.png<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s000
+<span class="syntax-operator">&gt;&gt;</span><span class="syntax-keyword">#緊急補血</span>
+<span class="syntax-comment"># (若血量健康，繼續往下檢查 Buff)</span>
 
-<span class="syntax-comment"># 輸入帳號</span>
-<span class="syntax-operator">&gt;</span>按u<span class="syntax-operator">,</span> 延遲50ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s100
-<span class="syntax-operator">&gt;</span>按s<span class="syntax-operator">,</span> 延遲50ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s150
-<span class="syntax-operator">&gt;</span>按e<span class="syntax-operator">,</span> 延遲50ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s200
-<span class="syntax-operator">&gt;</span>按r<span class="syntax-operator">,</span> 延遲50ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s250
+<span class="syntax-operator">&gt;</span>if&gt;buff_icon.png<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s200
+<span class="syntax-operator">&gt;&gt;</span><span class="syntax-keyword">#搜尋怪物</span>
+<span class="syntax-comment"># (若找不到 Buff 圖示，代表 Buff 消失，執行補 Buff)</span>
 
-<span class="syntax-comment"># 切換到密碼欄位</span>
-<span class="syntax-operator">&gt;</span>按Tab<span class="syntax-operator">,</span> 延遲50ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s300
+<span class="syntax-comment"># === 補 Buff 區塊 ===</span>
+<span class="syntax-operator">&gt;</span>按F5<span class="syntax-operator">,</span> 延遲500ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s500
+<span class="syntax-operator">&gt;</span>按F6<span class="syntax-operator">,</span> 延遲500ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>1s000
+<span class="syntax-operator">&gt;&gt;&gt;</span><span class="syntax-keyword">#搜尋怪物</span>
 
-<span class="syntax-comment"># 輸入密碼</span>
-<span class="syntax-operator">&gt;</span>按1<span class="syntax-operator">,</span> 延遲50ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s400
-<span class="syntax-operator">&gt;</span>按2<span class="syntax-operator">,</span> 延遲50ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s450
-<span class="syntax-operator">&gt;</span>按3<span class="syntax-operator">,</span> 延遲50ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s500
-<span class="syntax-operator">&gt;</span>按4<span class="syntax-operator">,</span> 延遲50ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s550
+<span class="syntax-comment"># === 緊急補血區塊 ===</span>
+<span class="syntax-keyword">#緊急補血</span>
+<span class="syntax-operator">&gt;</span>按F1<span class="syntax-operator">,</span> 延遲100ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s000
+<span class="syntax-operator">&gt;</span>按F1<span class="syntax-operator">,</span> 延遲100ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s100
+<span class="syntax-operator">&gt;</span>延遲500ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s600
+<span class="syntax-operator">&gt;&gt;&gt;</span><span class="syntax-keyword">#主循環</span>
 
-<span class="syntax-comment"># 送出</span>
-<span class="syntax-operator">&gt;</span>按Enter<span class="syntax-operator">,</span> 延遲50ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s600</pre>
+<span class="syntax-comment"># === 索敵區塊 ===</span>
+<span class="syntax-keyword">#搜尋怪物</span>
+<span class="syntax-comment"># 判斷畫面上是否有怪物血條或特定特徵</span>
+<span class="syntax-operator">&gt;</span>if&gt;monster_target.png<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s000
+<span class="syntax-operator">&gt;&gt;</span><span class="syntax-keyword">#攻擊流程</span>
 
-            <h4>範例2：圖片辨識與循環</h4>
-            <pre><span class="syntax-comment"># 循環尋找並點擊目標</span>
-<span class="syntax-keyword">#開始</span>
-<span class="syntax-operator">&gt;</span>if&gt;pic01<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s000
-<span class="syntax-operator">&gt;&gt;</span><span class="syntax-keyword">#找到了</span>
-<span class="syntax-operator">&gt;&gt;&gt;</span><span class="syntax-keyword">#開始</span>
+<span class="syntax-comment"># (若沒找到怪物，模擬玩家旋轉視角尋找)</span>
+<span class="syntax-operator">&gt;</span>按下Right<span class="syntax-operator">,</span> 延遲0ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s200
+<span class="syntax-operator">&gt;</span>延遲800ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>1s000
+<span class="syntax-operator">&gt;</span>放開Right<span class="syntax-operator">,</span> 延遲0ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>1s000
+<span class="syntax-operator">&gt;&gt;&gt;</span><span class="syntax-keyword">#主循環</span>
 
-<span class="syntax-keyword">#找到了</span>
-<span class="syntax-operator">&gt;</span>左鍵點擊&gt;pic01<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s500
+<span class="syntax-comment"># === 戰鬥區塊 ===</span>
+<span class="syntax-keyword">#攻擊流程</span>
+<span class="syntax-comment"># 點擊怪物 (啟動自動攻擊或鎖定)</span>
+<span class="syntax-operator">&gt;</span>左鍵點擊&gt;monster_target.png<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s000
+
+<span class="syntax-comment"># 施放攻擊技能連招 (模擬人類手速，稍微有間隔)</span>
+<span class="syntax-operator">&gt;</span>按Q<span class="syntax-operator">,</span> 延遲50ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s500
+<span class="syntax-operator">&gt;</span>按W<span class="syntax-operator">,</span> 延遲50ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s800
+<span class="syntax-operator">&gt;</span>按E<span class="syntax-operator">,</span> 延遲50ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>1s100
+
+<span class="syntax-comment"># 等待怪物死亡 (簡單延遲或是判斷戰利品出現)</span>
+<span class="syntax-operator">&gt;</span>延遲2000ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>3s100
+
+<span class="syntax-comment"># 撿取戰利品</span>
+<span class="syntax-operator">&gt;</span>按Space<span class="syntax-operator">,</span> 延遲50ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>3s200
+<span class="syntax-operator">&gt;</span>按Space<span class="syntax-operator">,</span> 延遲50ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>3s300
+
+<span class="syntax-comment"># 回到主循環繼續掛機</span>
+<span class="syntax-operator">&gt;&gt;&gt;</span><span class="syntax-keyword">#主循環</span></pre>
+
+            <h4>範例2：跨視窗資料輸入</h4>
+            <pre><span class="syntax-comment"># === 流程開始 ===</span>
+<span class="syntax-keyword">#開始作業</span>
+
+<span class="syntax-comment"># === 步驟 1: Excel 複製 ===</span>
+<span class="syntax-comment"># 假設起始點已經在 Excel 的目標儲存格</span>
+<span class="syntax-operator">&gt;</span>按下Ctrl<span class="syntax-operator">,</span> 延遲0ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s000
+<span class="syntax-operator">&gt;</span>按C<span class="syntax-operator">,</span> 延遲50ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s050
+<span class="syntax-operator">&gt;</span>放開Ctrl<span class="syntax-operator">,</span> 延遲0ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s100
+
+<span class="syntax-comment"># 標記該行已處理 (將儲存格底色變更，方便視覺確認)</span>
+<span class="syntax-operator">&gt;</span>按下Alt<span class="syntax-operator">,</span> 延遲0ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s200
+<span class="syntax-operator">&gt;</span>按H<span class="syntax-operator">,</span> 延遲50ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s250
+<span class="syntax-operator">&gt;</span>按H<span class="syntax-operator">,</span> 延遲50ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s300
+<span class="syntax-operator">&gt;</span>放開Alt<span class="syntax-operator">,</span> 延遲0ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s350
+<span class="syntax-operator">&gt;</span>左鍵點擊(50,150)<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s500  <span class="syntax-comment"># 點擊黃色</span>
+
+<span class="syntax-comment"># === 步驟 2: 切換到瀏覽器 ===</span>
+<span class="syntax-operator">&gt;</span>按下Alt<span class="syntax-operator">,</span> 延遲0ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s600
+<span class="syntax-operator">&gt;</span>按Tab<span class="syntax-operator">,</span> 延遲100ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s700
+<span class="syntax-operator">&gt;</span>放開Alt<span class="syntax-operator">,</span> 延遲0ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s800
+
+<span class="syntax-comment"># === 步驟 3: 網頁操作 ===</span>
+<span class="syntax-comment"># 確保網頁輸入框已出現</span>
+<span class="syntax-keyword">#等待輸入框</span>
+<span class="syntax-operator">&gt;</span>if&gt;web_input_box.png<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>1s000
+<span class="syntax-operator">&gt;&gt;</span><span class="syntax-keyword">#填寫資料</span>
+<span class="syntax-operator">&gt;</span>延遲500ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>1s500
+<span class="syntax-operator">&gt;&gt;&gt;</span><span class="syntax-keyword">#等待輸入框</span>
+
+<span class="syntax-keyword">#填寫資料</span>
+<span class="syntax-operator">&gt;</span>左鍵點擊&gt;web_input_box.png<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s000
+<span class="syntax-operator">&gt;</span>按下Ctrl<span class="syntax-operator">,</span> 延遲0ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s200
+<span class="syntax-operator">&gt;</span>按V<span class="syntax-operator">,</span> 延遲50ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s250
+<span class="syntax-operator">&gt;</span>放開Ctrl<span class="syntax-operator">,</span> 延遲0ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s300
+
+<span class="syntax-comment"># 點擊送出按鈕</span>
+<span class="syntax-operator">&gt;</span>左鍵點擊&gt;submit_btn.png<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s800
+
+<span class="syntax-comment"># === 步驟 4: 結果判斷 (例外處理) ===</span>
+<span class="syntax-keyword">#等待結果</span>
+<span class="syntax-operator">&gt;</span>if&gt;success_msg.png<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s000
+<span class="syntax-operator">&gt;&gt;</span><span class="syntax-keyword">#成功處理</span>
+
+<span class="syntax-operator">&gt;</span>if&gt;error_popup.png<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s100
+<span class="syntax-operator">&gt;&gt;</span><span class="syntax-keyword">#錯誤處理</span>
+
+<span class="syntax-comment"># 若兩者都沒出現，等待並重試</span>
+<span class="syntax-operator">&gt;</span>延遲500ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s600
+<span class="syntax-operator">&gt;&gt;&gt;</span><span class="syntax-keyword">#等待結果</span>
+
+<span class="syntax-comment"># === 分支 A: 成功 ===</span>
+<span class="syntax-keyword">#成功處理</span>
+<span class="syntax-comment"># 切換回 Excel</span>
+<span class="syntax-operator">&gt;</span>按下Alt<span class="syntax-operator">,</span> 延遲0ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s000
+<span class="syntax-operator">&gt;</span>按Tab<span class="syntax-operator">,</span> 延遲100ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s100
+<span class="syntax-operator">&gt;</span>放開Alt<span class="syntax-operator">,</span> 延遲0ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s200
+
+<span class="syntax-comment"># 移動到下一列 (準備處理下一筆)</span>
+<span class="syntax-operator">&gt;</span>按Down<span class="syntax-operator">,</span> 延遲50ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s500
+<span class="syntax-operator">&gt;</span>按Home<span class="syntax-operator">,</span> 延遲50ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s600
+
+<span class="syntax-comment"># 重新開始循環</span>
+<span class="syntax-operator">&gt;&gt;&gt;</span><span class="syntax-keyword">#開始作業</span>
+
+<span class="syntax-comment"># === 分支 B: 失敗 ===</span>
+<span class="syntax-keyword">#錯誤處理</span>
+<span class="syntax-comment"># 這裡可以加入截圖指令或是警報</span>
+<span class="syntax-operator">&gt;</span>左鍵點擊&gt;close_error_btn.png<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s000
 <span class="syntax-operator">&gt;</span>停止</pre>
 
             <h4>範例3：組合鍵操作</h4>
