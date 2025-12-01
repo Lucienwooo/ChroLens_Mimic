@@ -552,15 +552,15 @@ class TextCommandEditor(tk.Toplevel):
                     y = event.get("y", 0)
                     
                     if event_name == "move":
-                        lines.append(f">移動至({x},{y}), T={time_str}\n")
+                        lines.append(f">移動至({x},{y}), 延遲0ms, T={time_str}\n")
                     
                     elif event_name == "down":
                         button = event.get("button", "left")
-                        lines.append(f">按下{button}鍵({x},{y}), T={time_str}\n")
+                        lines.append(f">按下{button}鍵({x},{y}), 延遲0ms, T={time_str}\n")
                     
                     elif event_name == "up":
                         button = event.get("button", "left")
-                        lines.append(f">放開{button}鍵({x},{y}), T={time_str}\n")
+                        lines.append(f">放開{button}鍵({x},{y}), 延遲0ms, T={time_str}\n")
                 
                 # ✅ 圖片辨識指令
                 elif event_type == "recognize_image":
@@ -731,10 +731,17 @@ class TextCommandEditor(tk.Toplevel):
                     # 移除 ">" 並分割
                     parts = line[1:].split(",")
                     
+                    # ✅ 修復：更寬鬆的格式處理，允許只有動作和時間（缺少延遲）
                     if len(parts) >= 2:
                         action = parts[0].strip()
-                        delay_str = parts[1].strip() if len(parts) > 1 else "0ms"
-                        time_str = parts[2].strip() if len(parts) > 2 else "T=0s000"
+                        
+                        # ✅ 智能判斷：如果第二部分包含 T=，則視為時間（缺少延遲欄位）
+                        if len(parts) == 2 and "T=" in parts[1]:
+                            delay_str = "0ms"
+                            time_str = parts[1].strip()
+                        else:
+                            delay_str = parts[1].strip() if len(parts) > 1 else "0ms"
+                            time_str = parts[2].strip() if len(parts) > 2 else "T=0s000"
                         
                         # 解析時間
                         abs_time = start_time + self._parse_time(time_str)
@@ -754,25 +761,29 @@ class TextCommandEditor(tk.Toplevel):
                         
                         # 解析動作類型
                         # ✅ 優先檢查滑鼠操作（避免誤判為鍵盤操作）
-                        if "移動至" in action or "點擊" in action or ("(" in action and "," in action):
-                            # 滑鼠操作 - 檢查是否有座標
-                            coords = re.search(r'\((\d+),(\d+)\)', action)
-                            if coords:
-                                x, y = int(coords.group(1)), int(coords.group(2))
+                        # ✅ 修復：先嘗試提取座標，如果成功就是滑鼠操作
+                        coords = re.search(r'\((\d+),(\d+)\)', action)
+                        if coords:
+                            # 確定是滑鼠操作（有座標）
+                            x, y = int(coords.group(1)), int(coords.group(2))
+                            
+                            if "移動至" in action:
+                                events.append({"type": "mouse", "event": "move", "x": x, "y": y, "time": abs_time, "in_target": True})
+                            elif "點擊" in action or "鍵" in action:
+                                # 解析按鍵類型
+                                button = "right" if "右鍵" in action else "middle" if "中鍵" in action else "left"
                                 
-                                if "移動至" in action:
-                                    events.append({"type": "mouse", "event": "move", "x": x, "y": y, "time": abs_time, "in_target": True})
-                                else:
-                                    button = "right" if "右" in action else "middle" if "中" in action else "left"
-                                    
-                                    if "點擊" in action:
-                                        events.append({"type": "mouse", "event": "down", "button": button, "x": x, "y": y, "time": abs_time, "in_target": True})
-                                        events.append({"type": "mouse", "event": "up", "button": button, "x": x, "y": y, "time": abs_time + 0.05, "in_target": True})
-                                    else:
-                                        event_type = "down" if "按下" in action else "up"
-                                        events.append({"type": "mouse", "event": event_type, "button": button, "x": x, "y": y, "time": abs_time, "in_target": True})
+                                # 判斷是點擊還是按下/放開
+                                if "點擊" in action:
+                                    # 點擊 = 按下 + 放開
+                                    events.append({"type": "mouse", "event": "down", "button": button, "x": x, "y": y, "time": abs_time, "in_target": True})
+                                    events.append({"type": "mouse", "event": "up", "button": button, "x": x, "y": y, "time": abs_time + 0.05, "in_target": True})
+                                elif "按下" in action:
+                                    events.append({"type": "mouse", "event": "down", "button": button, "x": x, "y": y, "time": abs_time, "in_target": True})
+                                elif "放開" in action:
+                                    events.append({"type": "mouse", "event": "up", "button": button, "x": x, "y": y, "time": abs_time, "in_target": True})
                         
-                        elif action.startswith("按") and not "按下" in action:
+                        elif action.startswith("按") and "按下" not in action and "按鍵" not in action:
                             # 鍵盤操作（按 = 按下 + 放開）
                             key = action.replace("按", "").strip()
                             
@@ -1324,7 +1335,7 @@ class TextCommandEditor(tk.Toplevel):
         return ""  # 預設值
     
     def _save_script(self):
-        """儲存文字指令回JSON格式"""
+        """儲存文字指令回JSON格式（增強版安全檢查）"""
         if not self.script_path:
             messagebox.showwarning("警告", "沒有指定要儲存的腳本檔案")
             return
@@ -1357,33 +1368,89 @@ class TextCommandEditor(tk.Toplevel):
             # 轉換為JSON
             json_data = self._text_to_json(text_content)
             
+            # ✅ 二次檢查：確保轉換後的events不為空（防止解析錯誤）
+            if not json_data.get("events") or len(json_data.get("events", [])) == 0:
+                messagebox.showerror(
+                    "錯誤", 
+                    "指令解析失敗，無法產生有效的事件！\n\n可能原因：\n"
+                    "• 指令格式不正確\n"
+                    "• 缺少必要欄位（如時間T=）\n"
+                    "• 座標或按鍵名稱解析失敗\n\n"
+                    "請檢查編輯器中的指令格式。"
+                )
+                self.status_label.config(
+                    text="❌ 解析失敗：events為空",
+                    bg="#ffebee",
+                    fg="#c62828"
+                )
+                return
+            
             # 備份原檔案
             backup_path = self.script_path + ".backup"
             if os.path.exists(self.script_path):
-                with open(self.script_path, 'r', encoding='utf-8') as f:
-                    with open(backup_path, 'w', encoding='utf-8') as bf:
-                        bf.write(f.read())
+                try:
+                    with open(self.script_path, 'r', encoding='utf-8') as f:
+                        with open(backup_path, 'w', encoding='utf-8') as bf:
+                            bf.write(f.read())
+                except:
+                    pass  # 備份失敗不影響儲存流程
             
-            # 儲存新檔案
-            with open(self.script_path, 'w', encoding='utf-8') as f:
+            # ✅ 使用臨時檔案儲存（防止寫入失敗損毀原檔案）
+            temp_path = self.script_path + ".tmp"
+            with open(temp_path, 'w', encoding='utf-8') as f:
                 json.dump(json_data, f, indent=2, ensure_ascii=False)
+                # 強制寫入磁碟
+                f.flush()
+                os.fsync(f.fileno())
             
+            # 驗證臨時檔案內容（確保JSON有效且events不為空）
+            with open(temp_path, 'r', encoding='utf-8') as f:
+                verify_data = json.load(f)
+                if not verify_data.get("events") or len(verify_data.get("events", [])) == 0:
+                    raise ValueError("儲存後驗證失敗：events為空")
+            
+            # 驗證成功後才替換原檔案
+            if os.path.exists(self.script_path):
+                os.remove(self.script_path)
+            os.rename(temp_path, self.script_path)
+            
+            event_count = len(json_data.get("events", []))
             self.status_label.config(
-                text=f"✅ 已儲存: {os.path.basename(self.script_path)}",
+                text=f"✅ 已儲存: {os.path.basename(self.script_path)} ({event_count}筆事件)",
                 bg="#e8f5e9",
                 fg="#2e7d32"
             )
             
-            # ✅ 移除 messagebox.showinfo("成功", "腳本已儲存!")
-            # 靜默儲存，不顯示訊息框
-            
+        except ValueError as ve:
+            # 解析/驗證錯誤
+            messagebox.showerror("錯誤", f"儲存驗證失敗:\n{ve}")
+            self.status_label.config(
+                text=f"❌ 驗證失敗: {ve}",
+                bg="#ffebee",
+                fg="#c62828"
+            )
+            # 清理臨時檔案
+            temp_path = self.script_path + ".tmp"
+            if os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                except:
+                    pass
         except Exception as e:
+            # 其他錯誤
             messagebox.showerror("錯誤", f"儲存腳本失敗:\n{e}")
             self.status_label.config(
                 text=f"❌ 儲存失敗: {e}",
                 bg="#ffebee",
                 fg="#c62828"
             )
+            # 清理臨時檔案
+            temp_path = self.script_path + ".tmp"
+            if os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                except:
+                    pass
     
     # ==================== 右鍵選單功能 ====================
     
