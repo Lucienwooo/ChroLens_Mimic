@@ -2417,9 +2417,23 @@ class RecorderApp(tb.Window):
                 script_file = script
             
             path = os.path.join(self.script_dir, script_file)
+            
+            # ✅ 檢查檔案是否存在
+            if not os.path.exists(path):
+                self.log(f"⚠️ 腳本檔案不存在: {script_file}")
+                return
+            
             try:
                 data = sio_load_script(path)
-                self.events = data.get("events", [])
+                
+                # ✅ 檢查是否為空腳本（防止載入空內容）
+                events = data.get("events", [])
+                if not events:
+                    self.log(f"⚠️ 警告：腳本無事件，可能已損壞或未正確儲存")
+                    # 不清空現有事件，保持當前狀態
+                    return
+                
+                self.events = events
                 settings = data.get("settings", {})
                 
                 # 檢查是否為視覺化編輯器創建的腳本（有 script_actions 但 events 為空）

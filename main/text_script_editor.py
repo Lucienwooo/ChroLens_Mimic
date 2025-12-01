@@ -326,7 +326,21 @@ class TextCommandEditor(tk.Toplevel):
             # 載入選中的腳本
             script_dir = os.path.join(os.getcwd(), "scripts")
             self.script_path = os.path.join(script_dir, selected + ".json")
-            self._load_script()
+            
+            # ✅ 載入前檢查檔案是否存在且有效
+            if os.path.exists(self.script_path):
+                try:
+                    with open(self.script_path, 'r', encoding='utf-8') as f:
+                        test_data = json.load(f)
+                    # 檢查是否為有效的腳本格式
+                    if isinstance(test_data, dict) and ("events" in test_data or "settings" in test_data):
+                        self._load_script()
+                    else:
+                        messagebox.showerror("錯誤", f"腳本格式不正確：{selected}")
+                except Exception as e:
+                    messagebox.showerror("錯誤", f"無法讀取腳本：{e}")
+            else:
+                messagebox.showwarning("警告", f"腳本檔案不存在：{selected}")
     
     def _create_custom_script(self):
         """建立自訂腳本"""
@@ -435,7 +449,11 @@ class TextCommandEditor(tk.Toplevel):
             try:
                 text_commands = self._json_to_text(data)
                 
-                # ✅ 只有轉換成功才更新編輯器
+                # ✅ 檢查轉換結果是否有效（避免載入空內容）
+                if not text_commands or text_commands.strip() == "":
+                    raise ValueError("轉換結果為空")
+                
+                # ✅ 只有轉換成功且有內容才更新編輯器
                 self.text_editor.delete("1.0", "end")
                 self.text_editor.insert("1.0", text_commands)
                 
@@ -443,7 +461,7 @@ class TextCommandEditor(tk.Toplevel):
                 self._apply_syntax_highlighting()
                 
                 self.status_label.config(
-                    text=f"✅ 已載入: {os.path.basename(self.script_path)}",
+                    text=f"✅ 已載入: {os.path.basename(self.script_path)} ({len(data.get('events', []))}筆事件)",
                     bg="#e8f5e9",
                     fg="#2e7d32"
                 )
@@ -735,8 +753,27 @@ class TextCommandEditor(tk.Toplevel):
                         delay_s = delay_ms / 1000.0
                         
                         # 解析動作類型
-                        if action.startswith("按") and not "按下" in action:
-                            # 按鍵操作（按 = 按下 + 放開）
+                        # ✅ 優先檢查滑鼠操作（避免誤判為鍵盤操作）
+                        if "移動至" in action or "點擊" in action or ("(" in action and "," in action):
+                            # 滑鼠操作 - 檢查是否有座標
+                            coords = re.search(r'\((\d+),(\d+)\)', action)
+                            if coords:
+                                x, y = int(coords.group(1)), int(coords.group(2))
+                                
+                                if "移動至" in action:
+                                    events.append({"type": "mouse", "event": "move", "x": x, "y": y, "time": abs_time, "in_target": True})
+                                else:
+                                    button = "right" if "右" in action else "middle" if "中" in action else "left"
+                                    
+                                    if "點擊" in action:
+                                        events.append({"type": "mouse", "event": "down", "button": button, "x": x, "y": y, "time": abs_time, "in_target": True})
+                                        events.append({"type": "mouse", "event": "up", "button": button, "x": x, "y": y, "time": abs_time + 0.05, "in_target": True})
+                                    else:
+                                        event_type = "down" if "按下" in action else "up"
+                                        events.append({"type": "mouse", "event": event_type, "button": button, "x": x, "y": y, "time": abs_time, "in_target": True})
+                        
+                        elif action.startswith("按") and not "按下" in action:
+                            # 鍵盤操作（按 = 按下 + 放開）
                             key = action.replace("按", "").strip()
                             
                             # 按下事件
@@ -765,7 +802,7 @@ class TextCommandEditor(tk.Toplevel):
                                 "time": abs_time
                             })
                         
-                        elif "放開" in action and not "點擊" in action:
+                        elif "放開" in action:
                             # 單純放開按鍵
                             key = action.replace("放開", "").strip()
                             events.append({
@@ -774,24 +811,6 @@ class TextCommandEditor(tk.Toplevel):
                                 "name": key,
                                 "time": abs_time
                             })
-                        
-                        elif "移動至" in action or "點擊" in action or ("按下" in action and "(" in action) or ("放開" in action and "(" in action):
-                            # 滑鼠操作
-                            coords = re.search(r'\((\d+),(\d+)\)', action)
-                            if coords:
-                                x, y = int(coords.group(1)), int(coords.group(2))
-                                
-                                if "移動至" in action:
-                                    events.append({"type": "mouse", "event": "move", "x": x, "y": y, "time": abs_time, "in_target": True})
-                                else:
-                                    button = "right" if "右" in action else "middle" if "中" in action else "left"
-                                    
-                                    if "點擊" in action:
-                                        events.append({"type": "mouse", "event": "down", "button": button, "x": x, "y": y, "time": abs_time, "in_target": True})
-                                        events.append({"type": "mouse", "event": "up", "button": button, "x": x, "y": y, "time": abs_time + 0.05, "in_target": True})
-                                    else:
-                                        event_type = "down" if "按下" in action else "up"
-                                        events.append({"type": "mouse", "event": event_type, "button": button, "x": x, "y": y, "time": abs_time, "in_target": True})
                 
                 except Exception as e:
                     print(f"解析行失敗: {line}\n錯誤: {e}")
@@ -1314,6 +1333,27 @@ class TextCommandEditor(tk.Toplevel):
             # 獲取編輯器內容
             text_content = self.text_editor.get("1.0", "end-1c")
             
+            # ✅ 檢查是否只有註解和空行（避免保存空腳本）
+            has_commands = False
+            for line in text_content.split("\n"):
+                line_stripped = line.strip()
+                if line_stripped and not line_stripped.startswith("#"):
+                    has_commands = True
+                    break
+            
+            if not has_commands:
+                # 只有註解或空行，不保存
+                messagebox.showwarning(
+                    "警告", 
+                    "腳本沒有任何指令，無法儲存！\n\n請先添加指令（以 > 開頭的行）"
+                )
+                self.status_label.config(
+                    text="⚠️ 無法儲存：腳本無指令",
+                    bg="#fff3e0",
+                    fg="#e65100"
+                )
+                return
+            
             # 轉換為JSON
             json_data = self._text_to_json(text_content)
             
@@ -1531,6 +1571,11 @@ class TextCommandEditor(tk.Toplevel):
             # ✅ 載入到 core_recorder（關鍵：確保錄製器有事件）
             if hasattr(self.parent, 'core_recorder'):
                 self.parent.core_recorder.events = data.get("events", [])
+                # 同時確保 core_recorder 的 images_dir 已設定
+                if hasattr(self.parent.core_recorder, 'set_images_dir'):
+                    images_dir = os.path.join(os.path.dirname(self.script_path), "images")
+                    if os.path.exists(images_dir):
+                        self.parent.core_recorder.set_images_dir(images_dir)
             
             # 5. 更新主程式設定
             settings = data.get("settings", {})
@@ -1542,6 +1587,11 @@ class TextCommandEditor(tk.Toplevel):
                 self.parent.repeat_time_var.set(settings.get("repeat_time", "00:00:00"))
             if hasattr(self.parent, 'repeat_interval_var'):
                 self.parent.repeat_interval_var.set(settings.get("repeat_interval", "00:00:00"))
+            
+            # ✅ 同步更新主程式的腳本選擇（避免選擇不一致）
+            if hasattr(self.parent, 'script_var'):
+                script_name = os.path.splitext(os.path.basename(self.script_path))[0]
+                self.parent.script_var.set(script_name)
             
             # 6. 記錄視窗資訊（避免回放時彈窗）
             if hasattr(self.parent, 'target_hwnd') and self.parent.target_hwnd:

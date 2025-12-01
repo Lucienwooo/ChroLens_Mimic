@@ -1346,12 +1346,21 @@ class CoreRecorder:
                 found = False
                 
                 while True:
-                    # 輪流檢查每張圖片
+                    # 🔥 一次截圖，多次匹配（效能優化）
+                    snapshot = ImageGrab.grab()
+                    
+                    # 準備圖片列表
+                    template_list = [{'name': img.get('name', ''), 'threshold': confidence} for img in images]
+                    
+                    # 🔥 使用批次辨識方法
+                    results = self.find_images_in_snapshot(snapshot, template_list, threshold=confidence, fast_mode=True)
+                    
+                    # 檢查是否有找到任何圖片
                     for img_config in images:
                         img_name = img_config.get('name', '')
                         action = img_config.get('action', 'log')
+                        pos = results.get(img_name)
                         
-                        pos = self.find_image_on_screen(img_name, threshold=confidence, fast_mode=True)
                         if pos:
                             self.logger(f"[多圖辨識] ✅ 找到圖片: {img_name} 於 ({pos[0]}, {pos[1]})")
                             
@@ -1550,8 +1559,8 @@ class CoreRecorder:
         self._images_dir = images_dir
         self.logger(f"[圖片辨識] 圖片目錄：{images_dir}")
     
-    def find_image_on_screen(self, image_name_or_path, threshold=0.92, region=None, multi_scale=True, fast_mode=False):
-        """在螢幕上尋找圖片（🔥 終極強化版：多算法融合、SSIM驗證、直方圖比對）
+    def find_image_on_screen(self, image_name_or_path, threshold=0.92, region=None, multi_scale=True, fast_mode=False, use_features_fallback=True):
+        """在螢幕上尋找圖片（🔥 終極強化版：透明遮罩、多算法融合、SSIM驗證、特徵點匹配）
         
         Args:
             image_name_or_path: 圖片顯示名稱或完整路徑
@@ -1559,13 +1568,14 @@ class CoreRecorder:
             region: 搜尋區域 (x1, y1, x2, y2)，None表示全螢幕
             multi_scale: 是否啟用多尺度搜尋（提高容錯性）
             fast_mode: 快速模式（跳過驗證步驟，大幅提升速度）
+            use_features_fallback: 模板匹配失敗時，是否嘗試特徵點匹配
             
         Returns:
             (center_x, center_y) 如果找到，否則 None
         """
         try:
-            # 載入目標圖片
-            template = self._load_image(image_name_or_path)
+            # 🔥 載入目標圖片（支援透明遮罩）
+            template, mask = self._load_image(image_name_or_path)
             if template is None:
                 self.logger(f"[圖片辨識] 無法載入圖片：{image_name_or_path}")
                 return None
@@ -1584,48 +1594,26 @@ class CoreRecorder:
             best_template_size = None
             best_scale = 1.0
             
-            # 🔥 快速模式：只使用單一最佳方法
+            # 🔥 快速模式：使用新的 _match_template_on_screen 方法
             if fast_mode:
-                # 只使用3個關鍵尺度
-                scales = [0.9, 1.0, 1.1] if multi_scale else [1.0]
+                pos = self._match_template_on_screen(
+                    screen_cv, template, mask,
+                    threshold=threshold,
+                    fast_mode=True,
+                    multi_scale=multi_scale
+                )
                 
-                for scale in scales:
-                    if scale != 1.0:
-                        width = int(template.shape[1] * scale)
-                        height = int(template.shape[0] * scale)
-                        if width < 10 or height < 10 or width > screen_cv.shape[1] or height > screen_cv.shape[0]:
-                            continue
-                        scaled_template = cv2.resize(template, (width, height), interpolation=cv2.INTER_CUBIC)
-                    else:
-                        scaled_template = template
-                    
-                    # 只使用最快的匹配方法
-                    result = cv2.matchTemplate(screen_cv, scaled_template, cv2.TM_CCOEFF_NORMED)
-                    min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
-                    
-                    if max_val > best_match_val:
-                        best_match_val = max_val
-                        best_match_loc = max_loc
-                        best_template_size = (scaled_template.shape[1], scaled_template.shape[0])
-                        best_scale = scale
-                
-                # 快速模式：直接使用模板匹配結果，不進行額外驗證
-                if best_match_val >= threshold:
-                    w, h = best_template_size
-                    center_x = best_match_loc[0] + w // 2
-                    center_y = best_match_loc[1] + h // 2
-                    
+                if pos:
+                    # 如果有指定region，需要加上偏移
                     if region:
-                        center_x += region[0]
-                        center_y += region[1]
-                    
-                    self.logger(f"[圖片辨識][快速] 匹配度：{best_match_val:.3f} (尺度:{best_scale:.2f}) ✅ ({center_x}, {center_y})")
-                    return (center_x, center_y)
+                        pos = (pos[0] + region[0], pos[1] + region[1])
+                    self.logger(f"[圖片辨識][快速] ✅ 找到圖片於 ({pos[0]}, {pos[1]})")
+                    return pos
                 else:
-                    self.logger(f"[圖片辨識][快速] 匹配度：{best_match_val:.3f} ❌ (閾值：{threshold})")
+                    self.logger(f"[圖片辨識][快速] ❌ 未找到圖片")
                     return None
             
-            # 🔥 標準模式：多尺度模板匹配（主要方法）
+            # 🔥 標準模式：多尺度模板匹配（主要方法，支援遮罩）
             if multi_scale:
                 scales = [0.8, 0.85, 0.9, 0.95, 1.0, 1.05, 1.1, 1.15, 1.2]  # 更細緻的尺度範圍
                 for scale in scales:
@@ -1635,55 +1623,83 @@ class CoreRecorder:
                         if width < 10 or height < 10 or width > screen_cv.shape[1] or height > screen_cv.shape[0]:
                             continue
                         scaled_template = cv2.resize(template, (width, height), interpolation=cv2.INTER_CUBIC)
+                        scaled_mask = cv2.resize(mask, (width, height), interpolation=cv2.INTER_NEAREST) if mask is not None else None
                     else:
                         scaled_template = template
+                        scaled_mask = mask
                     
-                    # 🔥 使用多種匹配方法並加權平均
-                    methods = [
-                        (cv2.TM_CCOEFF_NORMED, 1.0),   # 相關係數法（權重最高）
-                        (cv2.TM_CCORR_NORMED, 0.8),    # 相關法
-                        (cv2.TM_SQDIFF_NORMED, 0.6),   # 平方差法（需要反轉）
-                    ]
-                    
-                    method_scores = []
-                    for method, weight in methods:
-                        try:
-                            result = cv2.matchTemplate(screen_cv, scaled_template, method)
-                            
-                            if method == cv2.TM_SQDIFF_NORMED:
-                                # 平方差法：值越小越好，需要反轉
-                                min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
-                                score = 1.0 - min_val  # 反轉分數
-                                loc = min_loc
-                            else:
-                                min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
-                                score = max_val
-                                loc = max_loc
-                            
-                            method_scores.append((score * weight, loc))
-                        except Exception as e:
-                            continue
-                    
-                    if method_scores:
-                        # 計算加權平均分數
-                        avg_score = sum(s for s, _ in method_scores) / len(method_scores)
-                        avg_loc = method_scores[0][1]  # 使用主要方法的位置
+                    # 🔥 根據是否有遮罩選擇演算法
+                    if scaled_mask is not None:
+                        # 有透明遮罩：使用支援遮罩的演算法
+                        self.logger(f"[圖片辨識] 使用透明遮罩進行匹配 (尺度:{scale:.2f})")
+                        result = cv2.matchTemplate(screen_cv, scaled_template, cv2.TM_CCORR_NORMED, mask=scaled_mask)
+                        min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
+                        score = max_val
+                        loc = max_loc
+                    else:
+                        # 無遮罩：使用多種匹配方法並加權平均
+                        methods = [
+                            (cv2.TM_CCOEFF_NORMED, 1.0),   # 相關係數法（權重最高）
+                            (cv2.TM_CCORR_NORMED, 0.8),    # 相關法
+                            (cv2.TM_SQDIFF_NORMED, 0.6),   # 平方差法（需要反轉）
+                        ]
                         
-                        # 記錄最佳匹配
-                        if avg_score > best_match_val:
-                            best_match_val = avg_score
-                            best_match_loc = avg_loc
-                            best_template_size = (scaled_template.shape[1], scaled_template.shape[0])
-                            best_scale = scale
+                        method_scores = []
+                        for method, weight in methods:
+                            try:
+                                result = cv2.matchTemplate(screen_cv, scaled_template, method)
+                                
+                                if method == cv2.TM_SQDIFF_NORMED:
+                                    # 平方差法：值越小越好，需要反轉
+                                    min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
+                                    score = 1.0 - min_val  # 反轉分數
+                                    loc = min_loc
+                                else:
+                                    min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
+                                    score = max_val
+                                    loc = max_loc
+                                
+                                method_scores.append((score * weight, loc))
+                            except Exception as e:
+                                continue
+                        
+                        if not method_scores:
+                            continue
+                            
+                        # 計算加權平均分數
+                        score = sum(s for s, _ in method_scores) / len(method_scores)
+                        loc = method_scores[0][1]  # 使用主要方法的位置
+                    
+                    # 記錄最佳匹配
+                    if score > best_match_val:
+                        best_match_val = score
+                        best_match_loc = loc
+                        best_template_size = (scaled_template.shape[1], scaled_template.shape[0])
+                        best_scale = scale
             else:
-                # 單一尺度匹配
-                result = cv2.matchTemplate(screen_cv, template, cv2.TM_CCOEFF_NORMED)
+                # 🔥 單一尺度匹配（支援遮罩）
+                if mask is not None:
+                    result = cv2.matchTemplate(screen_cv, template, cv2.TM_CCORR_NORMED, mask=mask)
+                else:
+                    result = cv2.matchTemplate(screen_cv, template, cv2.TM_CCOEFF_NORMED)
                 min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
                 best_match_val = max_val
                 best_match_loc = max_loc
                 best_template_size = (template.shape[1], template.shape[0])
             
             self.logger(f"[圖片辨識] 模板匹配度：{best_match_val:.3f} (尺度:{best_scale:.2f}, 閾值：{threshold})")
+            
+            # 🔥 如果模板匹配失敗但接近閾值，嘗試特徵點匹配
+            if use_features_fallback and best_match_val < threshold and best_match_val >= threshold * 0.7:
+                self.logger(f"[圖片辨識] 模板匹配未達閾值，嘗試特徵點匹配...")
+                feature_x, feature_y, match_count = self.find_image_by_features(template, screen_cv)
+                
+                if feature_x is not None and match_count >= 15:  # 需要足夠的特徵點
+                    if region:
+                        feature_x += region[0]
+                        feature_y += region[1]
+                    self.logger(f"[圖片辨識] ✅ 特徵點匹配成功於 ({feature_x}, {feature_y})")
+                    return (feature_x, feature_y)
             
             # 🔥 階段2: 進階驗證（當模板匹配度接近閾值時）
             if best_match_val >= threshold * 0.85:  # 降低初步門檻，進行更精確驗證
@@ -1785,17 +1801,20 @@ class CoreRecorder:
             return None
     
     def _load_image(self, image_name_or_path):
-        """載入圖片（支援快取）
+        """載入圖片（支援快取和透明遮罩）
         
         Args:
             image_name_or_path: 圖片顯示名稱或完整路徑
             
         Returns:
-            OpenCV格式的圖片陣列，或None
+            tuple: (image_bgr, mask) 或 (None, None)
+                - image_bgr: OpenCV BGR格式的圖片
+                - mask: Alpha通道遮罩（如果有），否則為None
         """
         # 檢查快取
         if image_name_or_path in self._image_cache:
-            return self._image_cache[image_name_or_path][0]
+            cached = self._image_cache[image_name_or_path]
+            return cached[0], cached[2] if len(cached) > 2 else None
         
         # 判斷是否為完整路徑
         if os.path.isfile(image_name_or_path):
@@ -1804,7 +1823,7 @@ class CoreRecorder:
             # 從圖片目錄中尋找
             if not self._images_dir or not os.path.exists(self._images_dir):
                 self.logger(f"[圖片辨識] 圖片目錄不存在：{self._images_dir}")
-                return None
+                return None, None
             
             # 嘗試尋找匹配的檔案
             image_path = None
@@ -1817,28 +1836,331 @@ class CoreRecorder:
             
             if not image_path:
                 self.logger(f"[圖片辨識] 找不到圖片：{image_name_or_path}")
-                return None
+                return None, None
         
         # 載入圖片
         try:
-            image = cv2.imread(image_path)
-            if image is None:
+            # 🔥 使用 IMREAD_UNCHANGED 讀取完整圖片（包含Alpha通道）
+            image_rgba = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
+            if image_rgba is None:
                 self.logger(f"[圖片辨識] 無法讀取圖片：{image_path}")
-                return None
+                return None, None
             
-            # 加入快取
-            self._image_cache[image_name_or_path] = (image, image_path)
-            self.logger(f"[圖片辨識] 已載入圖片：{os.path.basename(image_path)}")
+            mask = None
             
-            return image
+            # 🔥 檢查是否有 Alpha 通道（透明遮罩）
+            if image_rgba.shape[2] == 4:  # RGBA格式
+                # 分離 RGB 和 Alpha
+                bgr = cv2.cvtColor(image_rgba, cv2.COLOR_RGBA2BGR)
+                mask = image_rgba[:, :, 3]  # Alpha通道作為遮罩
+                
+                # 檢查遮罩是否有效（是否真的有透明區域）
+                if np.all(mask == 255):  # 完全不透明
+                    mask = None
+                    self.logger(f"[圖片辨識] 已載入圖片（無透明區域）：{os.path.basename(image_path)}")
+                else:
+                    self.logger(f"[圖片辨識] 已載入圖片（含透明遮罩）：{os.path.basename(image_path)}")
+            else:  # RGB或灰階格式
+                if len(image_rgba.shape) == 2:  # 灰階
+                    bgr = cv2.cvtColor(image_rgba, cv2.COLOR_GRAY2BGR)
+                else:  # RGB
+                    bgr = image_rgba
+                self.logger(f"[圖片辨識] 已載入圖片（不透明）：{os.path.basename(image_path)}")
+            
+            # 🔥 加入快取（包含遮罩資訊）
+            self._image_cache[image_name_or_path] = (bgr, image_path, mask)
+            
+            return bgr, mask
         except Exception as e:
             self.logger(f"[圖片辨識] 載入圖片失敗：{e}")
-            return None
+            import traceback
+            traceback.print_exc()
+            return None, None
     
     def clear_image_cache(self):
         """清除圖片快取"""
         self._image_cache.clear()
         self.logger("[圖片辨識] 已清除圖片快取")
+    
+    def find_image_by_features(self, template, screen_cv, threshold=0.7, min_match_count=10):
+        """使用特徵點匹配尋找圖片（Template Matching 的備案方法）
+        
+        Args:
+            template: 模板圖片 (BGR)
+            screen_cv: 螢幕截圖 (BGR)
+            threshold: Lowe's ratio test 閾值 (0-1)
+            min_match_count: 最小匹配點數量
+            
+        Returns:
+            (center_x, center_y, match_count) 如果找到，否則 (None, None, 0)
+        """
+        try:
+            # 🔥 使用 ORB 特徵檢測器（快速且免費）
+            orb = cv2.ORB_create(nfeatures=2000)  # 增加特徵點數量
+            
+            # 檢測關鍵點和描述符
+            kp1, des1 = orb.detectAndCompute(template, None)
+            kp2, des2 = orb.detectAndCompute(screen_cv, None)
+            
+            if des1 is None or des2 is None:
+                self.logger("[特徵匹配] 無法提取特徵點")
+                return None, None, 0
+            
+            # 🔥 使用 BFMatcher 進行特徵點匹配
+            bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=False)
+            matches = bf.knnMatch(des1, des2, k=2)
+            
+            # 🔥 Lowe's ratio test 篩選優質匹配
+            good_matches = []
+            for match_pair in matches:
+                if len(match_pair) == 2:
+                    m, n = match_pair
+                    if m.distance < threshold * n.distance:
+                        good_matches.append(m)
+            
+            match_count = len(good_matches)
+            self.logger(f"[特徵匹配] 找到 {match_count} 個優質匹配點（最小需求：{min_match_count}）")
+            
+            if match_count >= min_match_count:
+                # 🔥 使用 RANSAC 計算單應性矩陣
+                src_pts = np.float32([kp1[m.queryIdx].pt for m in good_matches]).reshape(-1, 1, 2)
+                dst_pts = np.float32([kp2[m.trainIdx].pt for m in good_matches]).reshape(-1, 1, 2)
+                
+                M, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
+                
+                if M is not None:
+                    # 計算模板四個角點在螢幕上的位置
+                    h, w = template.shape[:2]
+                    pts = np.float32([[0, 0], [0, h-1], [w-1, h-1], [w-1, 0]]).reshape(-1, 1, 2)
+                    dst = cv2.perspectiveTransform(pts, M)
+                    
+                    # 計算中心點
+                    center_x = int(np.mean(dst[:, 0, 0]))
+                    center_y = int(np.mean(dst[:, 0, 1]))
+                    
+                    # 驗證中心點是否在合理範圍內
+                    if 0 <= center_x < screen_cv.shape[1] and 0 <= center_y < screen_cv.shape[0]:
+                        self.logger(f"[特徵匹配] ✅ 找到圖片於 ({center_x}, {center_y})，匹配點數：{match_count}")
+                        return center_x, center_y, match_count
+                    else:
+                        self.logger(f"[特徵匹配] ❌ 中心點超出螢幕範圍")
+                else:
+                    self.logger(f"[特徵匹配] ❌ 無法計算單應性矩陣")
+            
+            return None, None, match_count
+            
+        except Exception as e:
+            self.logger(f"[特徵匹配] 錯誤：{e}")
+            import traceback
+            traceback.print_exc()
+            return None, None, 0
+    
+    def find_images_in_snapshot(self, snapshot, template_list, threshold=0.92, fast_mode=True):
+        """在同一張螢幕截圖中批次搜尋多張圖片（一次截圖，多次匹配）
+        
+        Args:
+            snapshot: 螢幕截圖 (PIL.Image 或 numpy array)
+            template_list: 圖片名稱列表 [{'name': 'pic01', 'threshold': 0.9}, ...]
+            threshold: 預設匹配閾值
+            fast_mode: 是否使用快速模式
+            
+        Returns:
+            dict: {'pic01': (x, y), 'pic02': None, ...}
+        """
+        results = {}
+        
+        try:
+            # 轉換截圖為 OpenCV 格式（如果需要）
+            if not isinstance(snapshot, np.ndarray):
+                screen_cv = cv2.cvtColor(np.array(snapshot), cv2.COLOR_RGB2BGR)
+            else:
+                screen_cv = snapshot
+            
+            self.logger(f"[批次辨識] 開始在同一截圖中搜尋 {len(template_list)} 張圖片")
+            
+            # 🔥 批次處理每張圖片
+            for template_info in template_list:
+                if isinstance(template_info, dict):
+                    img_name = template_info.get('name', '')
+                    img_threshold = template_info.get('threshold', threshold)
+                else:
+                    img_name = template_info
+                    img_threshold = threshold
+                
+                if not img_name:
+                    continue
+                
+                # 載入模板圖片和遮罩
+                template, mask = self._load_image(img_name)
+                if template is None:
+                    results[img_name] = None
+                    continue
+                
+                # 🔥 在同一張截圖上進行匹配（不重複截圖）
+                pos = self._match_template_on_screen(
+                    screen_cv, template, mask, 
+                    threshold=img_threshold, 
+                    fast_mode=fast_mode
+                )
+                
+                results[img_name] = pos
+                
+                if pos:
+                    self.logger(f"[批次辨識] ✅ {img_name} 於 ({pos[0]}, {pos[1]})")
+                else:
+                    self.logger(f"[批次辨識] ❌ {img_name} 未找到")
+            
+            return results
+            
+        except Exception as e:
+            self.logger(f"[批次辨識] 錯誤：{e}")
+            import traceback
+            traceback.print_exc()
+            return results
+    
+    def _match_template_on_screen(self, screen_cv, template, mask, threshold=0.92, fast_mode=False, multi_scale=True):
+        """在給定的螢幕截圖上進行模板匹配（支援透明遮罩）
+        
+        Args:
+            screen_cv: 螢幕截圖 (BGR)
+            template: 模板圖片 (BGR)
+            mask: 透明遮罩（可選）
+            threshold: 匹配閾值
+            fast_mode: 快速模式
+            multi_scale: 多尺度搜尋
+            
+        Returns:
+            (center_x, center_y) 或 None
+        """
+        try:
+            best_match_val = 0
+            best_match_loc = None
+            best_template_size = None
+            best_scale = 1.0
+            
+            # 🔥 快速模式：只使用3個關鍵尺度
+            if fast_mode:
+                scales = [0.9, 1.0, 1.1] if multi_scale else [1.0]
+            else:
+                scales = [0.8, 0.85, 0.9, 0.95, 1.0, 1.05, 1.1, 1.15, 1.2] if multi_scale else [1.0]
+            
+            for scale in scales:
+                if scale != 1.0:
+                    width = int(template.shape[1] * scale)
+                    height = int(template.shape[0] * scale)
+                    if width < 10 or height < 10 or width > screen_cv.shape[1] or height > screen_cv.shape[0]:
+                        continue
+                    scaled_template = cv2.resize(template, (width, height), interpolation=cv2.INTER_CUBIC)
+                    scaled_mask = cv2.resize(mask, (width, height), interpolation=cv2.INTER_NEAREST) if mask is not None else None
+                else:
+                    scaled_template = template
+                    scaled_mask = mask
+                
+                # 🔥 使用遮罩進行匹配（如果有透明背景）
+                if scaled_mask is not None:
+                    # 支援遮罩的演算法：TM_CCORR_NORMED 或 TM_SQDIFF
+                    result = cv2.matchTemplate(screen_cv, scaled_template, cv2.TM_CCORR_NORMED, mask=scaled_mask)
+                    min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
+                    score = max_val
+                    loc = max_loc
+                else:
+                    # 無遮罩：使用標準演算法
+                    result = cv2.matchTemplate(screen_cv, scaled_template, cv2.TM_CCOEFF_NORMED)
+                    min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
+                    score = max_val
+                    loc = max_loc
+                
+                if score > best_match_val:
+                    best_match_val = score
+                    best_match_loc = loc
+                    best_template_size = (scaled_template.shape[1], scaled_template.shape[0])
+                    best_scale = scale
+            
+            # 判斷是否達到閾值
+            if best_match_val >= threshold:
+                w, h = best_template_size
+                center_x = best_match_loc[0] + w // 2
+                center_y = best_match_loc[1] + h // 2
+                return (center_x, center_y)
+            else:
+                return None
+                
+        except Exception as e:
+            self.logger(f"[模板匹配] 錯誤：{e}")
+            return None
+    
+    def find_image_by_features(self, template, screen_cv, threshold=0.7, min_match_count=10):
+        """使用特徵點匹配尋找圖片（Template Matching 的備案方法）
+        
+        Args:
+            template: 模板圖片 (BGR)
+            screen_cv: 螢幕截圖 (BGR)
+            threshold: Lowe's ratio test 閾值 (0-1)
+            min_match_count: 最小匹配點數量
+            
+        Returns:
+            (center_x, center_y, match_count) 如果找到，否則 (None, None, 0)
+        """
+        try:
+            # 🔥 使用 ORB 特徵檢測器（快速且免費）
+            orb = cv2.ORB_create(nfeatures=2000)  # 增加特徵點數量
+            
+            # 檢測關鍵點和描述符
+            kp1, des1 = orb.detectAndCompute(template, None)
+            kp2, des2 = orb.detectAndCompute(screen_cv, None)
+            
+            if des1 is None or des2 is None:
+                self.logger("[特徵匹配] 無法提取特徵點")
+                return None, None, 0
+            
+            # 🔥 使用 BFMatcher 進行特徵點匹配
+            bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=False)
+            matches = bf.knnMatch(des1, des2, k=2)
+            
+            # 🔥 Lowe's ratio test 篩選優質匹配
+            good_matches = []
+            for match_pair in matches:
+                if len(match_pair) == 2:
+                    m, n = match_pair
+                    if m.distance < threshold * n.distance:
+                        good_matches.append(m)
+            
+            match_count = len(good_matches)
+            self.logger(f"[特徵匹配] 找到 {match_count} 個優質匹配點（最小需求：{min_match_count}）")
+            
+            if match_count >= min_match_count:
+                # 🔥 使用 RANSAC 計算單應性矩陣
+                src_pts = np.float32([kp1[m.queryIdx].pt for m in good_matches]).reshape(-1, 1, 2)
+                dst_pts = np.float32([kp2[m.trainIdx].pt for m in good_matches]).reshape(-1, 1, 2)
+                
+                M, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
+                
+                if M is not None:
+                    # 計算模板四個角點在螢幕上的位置
+                    h, w = template.shape[:2]
+                    pts = np.float32([[0, 0], [0, h-1], [w-1, h-1], [w-1, 0]]).reshape(-1, 1, 2)
+                    dst = cv2.perspectiveTransform(pts, M)
+                    
+                    # 計算中心點
+                    center_x = int(np.mean(dst[:, 0, 0]))
+                    center_y = int(np.mean(dst[:, 0, 1]))
+                    
+                    # 驗證中心點是否在合理範圍內
+                    if 0 <= center_x < screen_cv.shape[1] and 0 <= center_y < screen_cv.shape[0]:
+                        self.logger(f"[特徵匹配] ✅ 找到圖片於 ({center_x}, {center_y})，匹配點數：{match_count}")
+                        return center_x, center_y, match_count
+                    else:
+                        self.logger(f"[特徵匹配] ✖ 中心點超出螢幕範圍")
+                else:
+                    self.logger(f"[特徵匹配] ✖ 無法計算單應性矩陣")
+            
+            return None, None, match_count
+            
+        except Exception as e:
+            self.logger(f"[特徵匹配] 錯誤：{e}")
+            import traceback
+            traceback.print_exc()
+            return None, None, 0
     
     def execute_image_action(self, action_type, target_name, button="left", **kwargs):
         """執行圖片辨識相關動作
