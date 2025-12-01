@@ -4,6 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ChroLens Mimic 完整使用手冊</title>
+    <script type="text/javascript">
+    (function(c,l,a,r,i,t,y){
+        c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};
+        t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;
+        y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
+    })(window, document, "clarity", "script", "u4so97z7de");
+</script>
     <style>
         * {
             margin: 0;
@@ -34,8 +41,17 @@
             margin-bottom: 30px;
             padding-bottom: 15px;
             border-bottom: 1px solid #3a3a3a;
-            color: #1f6aa5;
             font-weight: 600;
+        }
+
+        .sidebar h1 a {
+            color: #46DDC3;
+            text-decoration: none;
+            transition: opacity 0.2s ease;
+        }
+
+        .sidebar h1 a:hover {
+            opacity: 0.8;
         }
 
         .sidebar nav ul {
@@ -67,41 +83,60 @@
             color: #ffffff;
         }
 
-        /* 語言選單樣式 */
-        .language-selector {
+        /* 主題切換開關樣式 */
+        .theme-toggle {
             margin-top: 30px;
             padding-top: 20px;
             border-top: 1px solid #3a3a3a;
+            display: flex;
+            justify-content: center;
+            align-items: center;
         }
 
-        .language-selector h3 {
-            font-size: 14px;
-            color: #8996a6;
-            margin-bottom: 12px;
-            font-weight: 500;
-        }
-
-        .language-selector select {
-            width: 100%;
-            padding: 10px 12px;
+        .theme-toggle-button {
             background: #1a1a1a;
-            color: #dce4ee;
             border: 1px solid #3a3a3a;
-            border-radius: 6px;
-            font-size: 14px;
+            border-radius: 50px;
+            padding: 8px 12px;
             cursor: pointer;
-            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.3s ease;
+            position: relative;
+            width: 70px;
+            height: 36px;
         }
 
-        .language-selector select:hover {
-            border-color: #1f6aa5;
+        .theme-toggle-button:hover {
+            border-color: #46DDC3;
             background: #232323;
         }
 
-        .language-selector select:focus {
-            outline: none;
-            border-color: #1f6aa5;
-            box-shadow: 0 0 0 2px rgba(31, 106, 165, 0.2);
+        .theme-icon {
+            font-size: 18px;
+            transition: all 0.3s ease;
+            position: absolute;
+            left: 8px;
+        }
+
+        .theme-toggle-button.light-mode .theme-icon {
+            left: auto;
+            right: 8px;
+        }
+
+        .theme-slider {
+            position: absolute;
+            width: 28px;
+            height: 28px;
+            background: #46DDC3;
+            border-radius: 50%;
+            transition: all 0.3s ease;
+            left: 4px;
+        }
+
+        .theme-toggle-button.light-mode .theme-slider {
+            left: 38px;
         }
 
         /* 主內容區 - customtkinter 風格 */
@@ -126,22 +161,22 @@
         }
 
         .page h2 {
-            color: #1f6aa5;
+            color: #46DDC3;
             margin-bottom: 25px;
             padding-bottom: 12px;
-            border-bottom: 2px solid #1f6aa5;
+            border-bottom: 2px solid #46DDC3;
             font-weight: 600;
         }
 
         .page h3 {
-            color: #52a8ec;
+            color: #46DDC3;
             margin-top: 30px;
             margin-bottom: 15px;
             font-weight: 600;
         }
 
         .page h4 {
-            color: #8ab4f8;
+            color: #46DDC3;
             margin-top: 20px;
             margin-bottom: 12px;
             font-weight: 500;
@@ -303,19 +338,19 @@
         }
 
         .version-item h3 {
-            color: #52a8ec;
+            color: #46DDC3;
             margin-top: 0;
             margin-bottom: 10px;
         }
 
         .version-item h3 a {
-            color: #52a8ec;
+            color: #46DDC3;
             text-decoration: none;
             transition: color 0.2s ease;
         }
 
         .version-item h3 a:hover {
-            color: #1f6aa5;
+            opacity: 0.8;
             text-decoration: underline;
         }
 
@@ -375,7 +410,7 @@
 <body>
     <!-- 左側選單 -->
     <div class="sidebar">
-        <h1>📖 ChroLens Mimic</h1>
+        <h1><a href="https://github.com/Lucienwooo/ChroLens_Mimic" target="_blank">📖 ChroLens Mimic</a></h1>
         <nav>
             <ul>
                 <li><a href="#intro" class="nav-link active">📌 基本介紹</a></li>
@@ -384,14 +419,12 @@
             </ul>
         </nav>
         
-        <!-- 語言選單 -->
-        <div class="language-selector">
-            <h3>Language</h3>
-            <select id="language-select" onchange="changeLanguage(this.value)">
-                <option value="zh-TW">中文 (繁體)</option>
-                <option value="ja">日本語</option>
-                <option value="en">English</option>
-            </select>
+        <!-- 主題切換開關 -->
+        <div class="theme-toggle">
+            <div class="theme-toggle-button" id="theme-toggle" onclick="toggleTheme()">
+                <span class="theme-icon">🌙</span>
+                <div class="theme-slider"></div>
+            </div>
         </div>
     </div>
 
@@ -667,7 +700,6 @@
                 <p>如果您有任何建議、問題或發現 Bug，歡迎透過 <strong><a href="https://discord.gg/your-discord-link" target="_blank" style="color: #5865F2;">🎮 Discord 社群</a></strong> 反饋給我們。您的每一個意見都是我們進步的動力！</p>
                 <p>如果這個工具對您有幫助，歡迎 <strong><a href="https://your-sponsor-link.com" target="_blank" style="color: #ff6b6b;">☕ 贊助支持開發</a></strong>，讓我們能持續為您帶來更好的功能！</p>
                 <p><strong>🎉 最新消息：</strong>v2.6.6 版本已發布，優化了腳本編輯器的儲存機制和圖片辨識功能，並新增語法高亮功能！</p>
-                <p style="margin-top: 15px; font-size: 13px; color: #999;">（請將上方 Discord 和贊助連結替換為實際連結）</p>
             </div>
 
             <!-- 版本更新列表 -->
@@ -838,13 +870,10 @@
 
                 // 將版本標題轉換為GitHub連結
                 const githubUrl = `https://github.com/Lucienwooo/ChroLens_Mimic/releases/tag/${version.version}`;
-                
-                // 取得當前語言的翻譯
-                const t = translations[currentLang] || translations['zh-TW'];
 
                 versionDiv.innerHTML = `
-                    <h3><a href="${githubUrl}" target="_blank" style="color: #2c3e50; text-decoration: none;">📦 ${version.version}</a></h3>
-                    <div class="version-date">${t.changelogVersionDate}${version.date}</div>
+                    <h3><a href="${githubUrl}" target="_blank">📦 ${version.version}</a></h3>
+                    <div class="version-date">發布日期：${version.date}</div>
                     ${changesHTML}
                 `;
 
@@ -862,14 +891,8 @@
 
             prevBtn.disabled = currentPage === 1;
             nextBtn.disabled = currentPage === totalPages;
-
-            // 取得當前語言的翻譯
-            const t = translations[currentLang] || translations['zh-TW'];
-            const pageText = t.changelogPageInfo
-                .replace('{current}', currentPage)
-                .replace('{total}', totalPages);
             
-            pageInfo.textContent = pageText;
+            pageInfo.textContent = `第 ${currentPage} 頁 / 共 ${totalPages} 頁`;
         }
 
         // 換頁功能
@@ -883,313 +906,141 @@
             }
         }
 
-        // 頁面載入時初始化更新日誌
+        // 頁面載入時初始化
         document.addEventListener('DOMContentLoaded', function() {
             renderVersions();
-            // 初始化語言設定
-            initLanguage();
+            initTheme();
         });
 
-        // ========== 多語言系統 ==========
+        // ========== 主題切換系統 ==========
         
-        // 完整翻譯字典
-        const translations = {
-            'zh-TW': {
-                // 側邊欄
-                sidebarTitle: '📖 ChroLens Mimic',
-                navIntro: '📌 基本介紹',
-                navScriptEditor: '✏️ 腳本編輯器',
-                navChangelog: '📋 更新日誌',
-                
-                // 基本介紹頁面
-                introTitle: '📌 基本介紹',
-                introWhatIs: '🎯 ChroLens Mimic 是什麼？',
-                introWhatIsDesc: 'ChroLens Mimic 是一款功能強大的 Windows 自動化工具，專為需要重複執行操作的使用者設計。透過精確的錄製與回放功能，結合圖片辨識和條件判斷，讓您輕鬆實現任何重複性工作的自動化。',
-                introFeatures: '✨ 核心特色',
-                introFeature1: '🎯 精確錄製與回放',
-                introFeature1Desc: '記錄每一個鍵盤、滑鼠操作，並以可調速度精確重現',
-                introFeature2: '📝 腳本編輯器',
-                introFeature2Desc: '使用簡潔的文字指令語法，輕鬆編輯和管理自動化腳本',
-                introFeature3: '🖼️ 強化圖片辨識',
-                introFeature3Desc: '多算法融合、高精度匹配，支援多尺度搜尋',
-                introFeature4: '🔀 條件判斷與流程控制',
-                introFeature4Desc: 'if/else 分支、標籤跳轉、循環控制',
-                introUseCases: '🎮 適用場景',
-                introUseCase1: '遊戲自動化',
-                introUseCase1Desc: '自動掛機、技能循環、任務重複',
-                introUseCase2: '辦公自動化',
-                introUseCase2Desc: '批次處理文件、表單填寫、數據錄入',
-                introUseCase3: '測試與驗證',
-                introUseCase3Desc: 'UI 自動化測試、重複性操作驗證',
-                introRecordPlayback: '🎬 錄製與回放功能',
-                introRecordPlaybackDesc: '錄製與回放是 ChroLens Mimic 的核心功能，可以精確記錄並重現您的鍵盤、滑鼠操作。類似於市面上的 按鍵精靈、MacroRecorder、Pulover\'s Macro Creator 等工具，但更專注於穩定性和圖片辨識功能。',
-                introHotkeys: '⚡ 快捷鍵',
-                introHotkeyF10: '開始錄製',
-                introHotkeyF11: '停止錄製',
-                introHotkeyF12: '開始回放',
-                introHotkeyShiftF12: '停止回放',
-                
-                // 腳本編輯器頁面
-                scriptEditorTitle: '✏️ 腳本編輯器',
-                scriptEditorDesc: '腳本編輯器提供了一套簡潔直觀的文字指令語法，讓您可以更精確地控制自動化流程。支援語法高亮顯示，讓指令更清晰易讀。',
-                scriptEditorBasic: '🎯 基本操作指令',
-                scriptEditorBasicDesc: '這些指令控制滑鼠和鍵盤的基本操作：',
-                scriptEditorBasicTableCmd: '指令格式',
-                scriptEditorBasicTableDesc: '說明',
-                scriptEditorBasicTableExample: '範例',
-                scriptEditorConditional: '🔀 條件判斷指令',
-                scriptEditorConditionalDesc: '使用圖片辨識進行條件判斷，實現智能自動化：',
-                scriptEditorLabel: '🏷️ 標籤與跳轉',
-                scriptEditorLabelDesc: '使用標籤來組織腳本結構，實現循環和跳轉：',
-                scriptEditorAdvanced: '⚙️ 進階功能',
-                scriptEditorAdvancedDesc: '更多進階功能讓您的自動化更強大：',
-                scriptEditorExamples: '📚 完整範例',
-                scriptEditorExample1: '範例 1：遊戲技能循環',
-                scriptEditorExample2: '範例 2：表單自動填寫',
-                scriptEditorExample3: '範例 3：組合鍵操作',
-                
-                // 更新日誌頁面
-                changelogTitle: '📋 更新日誌',
-                changelogMessageBoardTitle: '💬 開發者的話',
-                changelogMessageBoard1: '感謝各位使用 ChroLens Mimic！這裡會記錄每個版本的更新內容。',
-                changelogMessageBoard2: '如果您有任何建議、問題或發現 Bug，歡迎透過',
-                changelogMessageBoard2Link: '🎮 Discord 社群',
-                changelogMessageBoard2After: '反饋給我們。您的每一個意見都是我們進步的動力！',
-                changelogMessageBoard3: '如果這個工具對您有幫助，歡迎',
-                changelogMessageBoard3Link: '☕ 贊助支持開發',
-                changelogMessageBoard3After: '，讓我們能持續為您帶來更好的功能！',
-                changelogMessageBoard4: '🎉 最新消息：',
-                changelogMessageBoard4After: 'v2.6.6 版本已發布，優化了腳本編輯器的儲存機制和圖片辨識功能，並新增語法高亮功能！',
-                changelogVersionDate: '發布日期：',
-                changelogPrevPage: '« 上一頁',
-                changelogNextPage: '下一頁 »',
-                changelogPageInfo: '第 {current} 頁 / 共 {total} 頁',
-            },
-            'ja': {
-                // サイドバー
-                sidebarTitle: '📖 ChroLens Mimic',
-                navIntro: '📌 基本紹介',
-                navScriptEditor: '✏️ スクリプトエディタ',
-                navChangelog: '📋 更新履歴',
-                
-                // 基本紹介ページ
-                introTitle: '📌 基本紹介',
-                introWhatIs: '🎯 ChroLens Mimic とは？',
-                introWhatIsDesc: 'ChroLens Mimic は、反復操作を必要とするユーザー向けに設計された強力な Windows 自動化ツールです。精密な記録・再生機能と画像認識、条件分岐を組み合わせることで、あらゆる反復作業の自動化を簡単に実現できます。',
-                introFeatures: '✨ 主な機能',
-                introFeature1: '🎯 精密な記録と再生',
-                introFeature1Desc: 'すべてのキーボード・マウス操作を記録し、調整可能な速度で正確に再現',
-                introFeature2: '📝 スクリプトエディタ',
-                introFeature2Desc: 'シンプルなテキストコマンド構文で、自動化スクリプトを簡単に編集・管理',
-                introFeature3: '🖼️ 強化された画像認識',
-                introFeature3Desc: '複数アルゴリズム融合、高精度マッチング、マルチスケール検索対応',
-                introFeature4: '🔀 条件分岐とフロー制御',
-                introFeature4Desc: 'if/else 分岐、ラベルジャンプ、ループ制御',
-                introUseCases: '🎮 適用シーン',
-                introUseCase1: 'ゲーム自動化',
-                introUseCase1Desc: '自動周回、スキルループ、タスク反復',
-                introUseCase2: 'オフィス自動化',
-                introUseCase2Desc: 'バッチ処理、フォーム入力、データ入力',
-                introUseCase3: 'テストと検証',
-                introUseCase3Desc: 'UI自動テスト、反復操作の検証',
-                introRecordPlayback: '🎬 記録と再生機能',
-                introRecordPlaybackDesc: '記録と再生は ChroLens Mimic のコア機能で、キーボード・マウス操作を正確に記録・再現できます。市販の「キー精霊」「MacroRecorder」「Pulover\'s Macro Creator」などのツールに似ていますが、安定性と画像認識機能に重点を置いています。',
-                introHotkeys: '⚡ ホットキー',
-                introHotkeyF10: '記録開始',
-                introHotkeyF11: '記録停止',
-                introHotkeyF12: '再生開始',
-                introHotkeyShiftF12: '再生停止',
-                
-                // スクリプトエディタページ
-                scriptEditorTitle: '✏️ スクリプトエディタ',
-                scriptEditorDesc: 'スクリプトエディタは、自動化フローをより正確に制御できるシンプルで直感的なテキストコマンド構文を提供します。構文ハイライト表示に対応し、コマンドがより明確で読みやすくなります。',
-                scriptEditorBasic: '🎯 基本操作コマンド',
-                scriptEditorBasicDesc: 'これらのコマンドは、マウスとキーボードの基本操作を制御します：',
-                scriptEditorBasicTableCmd: 'コマンド形式',
-                scriptEditorBasicTableDesc: '説明',
-                scriptEditorBasicTableExample: '例',
-                scriptEditorConditional: '🔀 条件分岐コマンド',
-                scriptEditorConditionalDesc: '画像認識を使用した条件分岐により、スマートな自動化を実現：',
-                scriptEditorLabel: '🏷️ ラベルとジャンプ',
-                scriptEditorLabelDesc: 'ラベルを使用してスクリプト構造を整理し、ループとジャンプを実現：',
-                scriptEditorAdvanced: '⚙️ 高度な機能',
-                scriptEditorAdvancedDesc: 'より高度な機能で自動化をさらに強力に：',
-                scriptEditorExamples: '📚 完全な例',
-                scriptEditorExample1: '例 1：ゲームスキルループ',
-                scriptEditorExample2: '例 2：フォーム自動入力',
-                scriptEditorExample3: '例 3：キーボードショートカット操作',
-                
-                // 更新履歴ページ
-                changelogTitle: '📋 更新履歴',
-                changelogMessageBoardTitle: '💬 開発者より',
-                changelogMessageBoard1: 'ChroLens Mimic をご利用いただきありがとうございます！ここでは各バージョンの更新内容を記録しています。',
-                changelogMessageBoard2: 'ご提案、質問、バグ報告がございましたら、',
-                changelogMessageBoard2Link: '🎮 Discord コミュニティ',
-                changelogMessageBoard2After: 'よりフィードバックをお寄せください。皆様のご意見が私たちの進歩の原動力です！',
-                changelogMessageBoard3: 'このツールがお役に立ちましたら、',
-                changelogMessageBoard3Link: '☕ 開発サポート',
-                changelogMessageBoard3After: 'をお願いします。より良い機能を継続的に提供できるようになります！',
-                changelogMessageBoard4: '🎉 最新情報：',
-                changelogMessageBoard4After: 'v2.6.6 がリリースされました。スクリプトエディタの保存機能と画像認識機能を最適化し、構文ハイライト機能を追加しました！',
-                changelogVersionDate: 'リリース日：',
-                changelogPrevPage: '« 前のページ',
-                changelogNextPage: '次のページ »',
-                changelogPageInfo: '{current} ページ / 全 {total} ページ',
-            },
-            'en': {
-                // Sidebar
-                sidebarTitle: '📖 ChroLens Mimic',
-                navIntro: '📌 Introduction',
-                navScriptEditor: '✏️ Script Editor',
-                navChangelog: '📋 Changelog',
-                
-                // Introduction Page
-                introTitle: '📌 Introduction',
-                introWhatIs: '🎯 What is ChroLens Mimic?',
-                introWhatIsDesc: 'ChroLens Mimic is a powerful Windows automation tool designed for users who need to perform repetitive operations. Through precise recording and playback features, combined with image recognition and conditional logic, you can easily automate any repetitive task.',
-                introFeatures: '✨ Core Features',
-                introFeature1: '🎯 Precise Recording & Playback',
-                introFeature1Desc: 'Record every keyboard and mouse operation, and accurately reproduce them at adjustable speeds',
-                introFeature2: '📝 Script Editor',
-                introFeature2Desc: 'Use simple text command syntax to easily edit and manage automation scripts',
-                introFeature3: '🖼️ Enhanced Image Recognition',
-                introFeature3Desc: 'Multi-algorithm fusion, high-precision matching, multi-scale search support',
-                introFeature4: '🔀 Conditional Logic & Flow Control',
-                introFeature4Desc: 'if/else branches, label jumps, loop control',
-                introUseCases: '🎮 Use Cases',
-                introUseCase1: 'Game Automation',
-                introUseCase1Desc: 'Auto-farming, skill rotation, quest repetition',
-                introUseCase2: 'Office Automation',
-                introUseCase2Desc: 'Batch processing, form filling, data entry',
-                introUseCase3: 'Testing & Validation',
-                introUseCase3Desc: 'UI automation testing, repetitive operation validation',
-                introRecordPlayback: '🎬 Recording & Playback Features',
-                introRecordPlaybackDesc: 'Recording and playback are core features of ChroLens Mimic, allowing you to accurately record and reproduce your keyboard and mouse operations. Similar to tools like AutoHotkey, MacroRecorder, and Pulover\'s Macro Creator, but with a focus on stability and image recognition.',
-                introHotkeys: '⚡ Hotkeys',
-                introHotkeyF10: 'Start Recording',
-                introHotkeyF11: 'Stop Recording',
-                introHotkeyF12: 'Start Playback',
-                introHotkeyShiftF12: 'Stop Playback',
-                
-                // Script Editor Page
-                scriptEditorTitle: '✏️ Script Editor',
-                scriptEditorDesc: 'The script editor provides a simple and intuitive text command syntax for more precise control of automation flows. Supports syntax highlighting for clearer and more readable commands.',
-                scriptEditorBasic: '🎯 Basic Operation Commands',
-                scriptEditorBasicDesc: 'These commands control basic mouse and keyboard operations:',
-                scriptEditorBasicTableCmd: 'Command Format',
-                scriptEditorBasicTableDesc: 'Description',
-                scriptEditorBasicTableExample: 'Example',
-                scriptEditorConditional: '🔀 Conditional Commands',
-                scriptEditorConditionalDesc: 'Use image recognition for conditional logic to achieve smart automation:',
-                scriptEditorLabel: '🏷️ Labels & Jumps',
-                scriptEditorLabelDesc: 'Use labels to organize script structure and implement loops and jumps:',
-                scriptEditorAdvanced: '⚙️ Advanced Features',
-                scriptEditorAdvancedDesc: 'More advanced features to make your automation more powerful:',
-                scriptEditorExamples: '📚 Complete Examples',
-                scriptEditorExample1: 'Example 1: Game Skill Rotation',
-                scriptEditorExample2: 'Example 2: Auto Form Filling',
-                scriptEditorExample3: 'Example 3: Keyboard Shortcuts',
-                
-                // Changelog Page
-                changelogTitle: '📋 Changelog',
-                changelogMessageBoardTitle: '💬 Developer\'s Note',
-                changelogMessageBoard1: 'Thank you for using ChroLens Mimic! This page records the update history of each version.',
-                changelogMessageBoard2: 'If you have any suggestions, questions, or found bugs, please feel free to provide feedback via',
-                changelogMessageBoard2Link: '🎮 Discord Community',
-                changelogMessageBoard2After: '. Every comment from you is our motivation to improve!',
-                changelogMessageBoard3: 'If this tool helps you, please consider',
-                changelogMessageBoard3Link: '☕ Supporting Development',
-                changelogMessageBoard3After: ' to help us continue bringing you better features!',
-                changelogMessageBoard4: '🎉 Latest News:',
-                changelogMessageBoard4After: 'v2.6.6 has been released, optimizing script editor save mechanism and image recognition features, with new syntax highlighting!',
-                changelogVersionDate: 'Release Date:',
-                changelogPrevPage: '« Previous',
-                changelogNextPage: 'Next »',
-                changelogPageInfo: 'Page {current} / {total}',
-            }
-        };
+        // 主題切換功能
+        let currentTheme = 'dark';
 
-        // 語言切換功能
-        let currentLang = 'zh-TW';
-
-        function initLanguage() {
-            // 從 localStorage 讀取儲存的語言設定
-            const savedLang = localStorage.getItem('chrolens-language');
-            if (savedLang && translations[savedLang]) {
-                currentLang = savedLang;
-                document.getElementById('language-select').value = savedLang;
-                applyTranslations(savedLang);
+        function initTheme() {
+            const savedTheme = localStorage.getItem('chrolens-theme');
+            if (savedTheme === 'light') {
+                applyLightTheme();
             }
         }
 
-        function changeLanguage(lang) {
-            if (!translations[lang]) {
-                console.error('Unsupported language:', lang);
-                return;
+        function toggleTheme() {
+            if (currentTheme === 'dark') {
+                applyLightTheme();
+            } else {
+                applyDarkTheme();
             }
-            
-            currentLang = lang;
-            localStorage.setItem('chrolens-language', lang);
-            applyTranslations(lang);
         }
 
-        function applyTranslations(lang) {
-            const t = translations[lang];
+        function applyLightTheme() {
+            currentTheme = 'light';
+            localStorage.setItem('chrolens-theme', 'light');
             
-            // 更新側邊欄
-            document.querySelector('.sidebar h1').textContent = t.sidebarTitle;
-            const navLinks = document.querySelectorAll('.nav-link');
-            navLinks[0].textContent = t.navIntro;
-            navLinks[1].textContent = t.navScriptEditor;
-            navLinks[2].textContent = t.navChangelog;
+            const toggleBtn = document.getElementById('theme-toggle');
+            toggleBtn.classList.add('light-mode');
+            toggleBtn.querySelector('.theme-icon').textContent = '☀️';
             
-            // 更新基本介紹頁面
-            updateIntroPage(t);
+            // 亮色主題樣式
+            document.body.style.background = '#f5f5f5';
+            document.querySelector('.sidebar').style.background = '#ffffff';
+            document.querySelector('.sidebar').style.color = '#333333';
+            document.querySelector('.sidebar').style.borderRight = '1px solid #e0e0e0';
             
-            // 更新腳本編輯器頁面
-            updateScriptEditorPage(t);
+            // 更新導航連結顏色
+            document.querySelectorAll('.sidebar nav a').forEach(link => {
+                link.style.color = '#333333';
+            });
             
-            // 更新更新日誌頁面
-            updateChangelogPage(t);
+            // 更新主內容區
+            document.querySelector('.main-content').style.background = '#f5f5f5';
+            document.querySelectorAll('.page').forEach(page => {
+                page.style.background = '#ffffff';
+                page.style.color = '#333333';
+                page.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)';
+            });
+            
+            // 更新文字顏色
+            document.querySelectorAll('.page p, .page li').forEach(el => {
+                el.style.color = '#555555';
+            });
+            
+            // 更新表格
+            document.querySelectorAll('table').forEach(table => {
+                table.style.background = '#ffffff';
+                table.style.border = '1px solid #e0e0e0';
+            });
+            
+            document.querySelectorAll('table td').forEach(td => {
+                td.style.borderColor = '#e0e0e0';
+                td.style.color = '#555555';
+            });
+            
+            document.querySelectorAll('table tr:nth-child(even)').forEach(tr => {
+                tr.style.background = '#f9f9f9';
+            });
+            
+            // 更新版本項目
+            document.querySelectorAll('.version-item').forEach(item => {
+                item.style.background = '#f9f9f9';
+                item.style.border = '1px solid #e0e0e0';
+            });
+            
+            document.querySelectorAll('.version-date').forEach(date => {
+                date.style.color = '#666666';
+            });
         }
 
-        function updateIntroPage(t) {
-            const introPage = document.getElementById('intro');
-            if (!introPage) return;
+        function applyDarkTheme() {
+            currentTheme = 'dark';
+            localStorage.setItem('chrolens-theme', 'dark');
             
-            // 由於內容複雜，我們使用 data-i18n 屬性來標記需要翻譯的元素
-            // 這裡簡化處理：直接替換主要標題
-            const h2 = introPage.querySelector('h2');
-            if (h2) h2.textContent = t.introTitle;
-        }
-
-        function updateScriptEditorPage(t) {
-            const scriptPage = document.getElementById('script-editor');
-            if (!scriptPage) return;
+            const toggleBtn = document.getElementById('theme-toggle');
+            toggleBtn.classList.remove('light-mode');
+            toggleBtn.querySelector('.theme-icon').textContent = '🌙';
             
-            const h2 = scriptPage.querySelector('h2');
-            if (h2) h2.textContent = t.scriptEditorTitle;
-        }
-
-        function updateChangelogPage(t) {
-            const changelogPage = document.getElementById('changelog');
-            if (!changelogPage) return;
+            // 恢復深色主題（移除所有內聯樣式）
+            document.body.style.background = '';
+            document.querySelector('.sidebar').style.background = '';
+            document.querySelector('.sidebar').style.color = '';
+            document.querySelector('.sidebar').style.borderRight = '';
             
-            const h2 = changelogPage.querySelector('h2');
-            if (h2) h2.textContent = t.changelogTitle;
+            document.querySelectorAll('.sidebar nav a').forEach(link => {
+                link.style.color = '';
+            });
             
-            // 更新留言板標題
-            const messageBoardTitle = changelogPage.querySelector('.message-board h3');
-            if (messageBoardTitle) messageBoardTitle.textContent = t.changelogMessageBoardTitle;
+            document.querySelector('.main-content').style.background = '';
+            document.querySelectorAll('.page').forEach(page => {
+                page.style.background = '';
+                page.style.color = '';
+                page.style.boxShadow = '';
+            });
             
-            // 更新分頁文字
-            const prevBtn = document.getElementById('prev-page');
-            const nextBtn = document.getElementById('next-page');
-            if (prevBtn) prevBtn.textContent = t.changelogPrevPage;
-            if (nextBtn) nextBtn.textContent = t.changelogNextPage;
+            document.querySelectorAll('.page p, .page li').forEach(el => {
+                el.style.color = '';
+            });
             
-            // 重新渲染版本列表以更新日期文字
-            renderVersions();
+            document.querySelectorAll('table').forEach(table => {
+                table.style.background = '';
+                table.style.border = '';
+            });
+            
+            document.querySelectorAll('table td').forEach(td => {
+                td.style.borderColor = '';
+                td.style.color = '';
+            });
+            
+            document.querySelectorAll('table tr:nth-child(even)').forEach(tr => {
+                tr.style.background = '';
+            });
+            
+            document.querySelectorAll('.version-item').forEach(item => {
+                item.style.background = '';
+                item.style.border = '';
+            });
+            
+            document.querySelectorAll('.version-date').forEach(date => {
+                date.style.color = '';
+            });
         }
     </script>
 </body>
