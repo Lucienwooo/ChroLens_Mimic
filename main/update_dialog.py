@@ -12,6 +12,48 @@ import ttkbootstrap as tb
 from ttkbootstrap.constants import *
 from tkinter import messagebox
 import threading
+import os
+import sys
+
+
+def get_icon_path():
+    """取得圖示檔案路徑（打包後和開發環境通用）"""
+    try:
+        if getattr(sys, 'frozen', False):
+            return os.path.join(sys._MEIPASS, "umi_奶茶色.ico")
+        else:
+            if os.path.exists("umi_奶茶色.ico"):
+                return "umi_奶茶色.ico"
+            elif os.path.exists("../pic/umi_奶茶色.ico"):
+                return "../pic/umi_奶茶色.ico"
+            elif os.path.exists("../umi_奶茶色.ico"):
+                return "../umi_奶茶色.ico"
+            else:
+                return "umi_奶茶色.ico"
+    except:
+        return "umi_奶茶色.ico"
+import os
+import sys
+
+
+def get_icon_path():
+    """取得圖示檔案路徑（打包後和開發環境通用）"""
+    try:
+        if getattr(sys, 'frozen', False):
+            # 打包後的環境
+            return os.path.join(sys._MEIPASS, "umi_奶茶色.ico")
+        else:
+            # 開發環境
+            if os.path.exists("umi_奶茶色.ico"):
+                return "umi_奶茶色.ico"
+            elif os.path.exists("../pic/umi_奶茶色.ico"):
+                return "../pic/umi_奶茶色.ico"
+            elif os.path.exists("../umi_奶茶色.ico"):
+                return "../umi_奶茶色.ico"
+            else:
+                return "umi_奶茶色.ico"
+    except:
+        return "umi_奶茶色.ico"
 
 
 class UpdateDialog:
@@ -59,6 +101,14 @@ class UpdateDialog:
         x = (screen_width // 2) - (width // 2)
         y = (screen_height // 2) - (height // 2)
         self.dialog.geometry(f"{width}x{height}+{x}+{y}")
+        
+        # 設定視窗圖標
+        try:
+            icon_path = get_icon_path()
+            if os.path.exists(icon_path):
+                self.dialog.iconbitmap(icon_path)
+        except:
+            pass
         
         # === 標題區 ===
         title_frame = tb.Frame(self.dialog, bootstyle=SUCCESS)
@@ -352,7 +402,23 @@ class NoUpdateDialog:
         y = (screen_height // 2) - (height // 2)
         self.dialog.geometry(f"{width}x{height}+{x}+{y}")
         
-        # === 圖示 ===
+        # 設定視窗圖標
+        try:
+            icon_path = get_icon_path()
+            if os.path.exists(icon_path):
+                self.dialog.iconbitmap(icon_path)
+        except:
+            pass
+        
+        # === 標題區 ===
+        try:
+            icon_path = get_icon_path()
+            if os.path.exists(icon_path):
+                self.dialog.iconbitmap(icon_path)
+        except:
+            pass
+        
+        # === 標題區 ===
         icon_label = tb.Label(
             self.dialog,
             text="✓",

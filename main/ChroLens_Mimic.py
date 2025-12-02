@@ -1,105 +1,20 @@
-#ChroLens Studio - Lucienwooo
-#python "C:\Users\Lucien\Documents\GitHub\ChroLens_Mimic\main\ChroLens_Mimic.py"
+# ChroLens Studio - Lucienwooo
+# python "C:\Users\Lucien\Documents\GitHub\ChroLens_Mimic\main\ChroLens_Mimic.py"
 #
 # ═══════════════════════════════════════════════════════════════════════════
-# 【自動發布流程說明 - 給 AI Agent 使用】
+# 【⚠️ AI Agent 必讀】
 # ═══════════════════════════════════════════════════════════════════════════
-#
-# 🚀 快速發布指令：
-#   python auto_release.py
-#
-# 📋 完整發布流程：
-#   1. 清理多餘檔案
-#      - 刪除 build/、dist/、__pycache__/ 目錄
-#      - 刪除所有 *.spec 檔案
-#      - 刪除測試檔案（test_*.py, quick_*.py, *_test.py）
-#      - 保留：test_editor_manual.py（手動測試工具）
-#
-#   2. 讀取版本資訊
-#      - 從本檔案讀取 VERSION 變數
-#      - 從 更新說明_v{版本}.md 讀取 Release Notes
-#
-#   3. PyInstaller 打包
-#      參數：
-#        --name=ChroLens_Mimic
-#        --onedir
-#        --windowed
-#        --icon=pic/umi_奶茶色.ico
-#        --add-data=TTF;TTF
-#        --add-data=指令說明.html;.
-#        --hidden-import=pynput,PIL,cv2,numpy
-#
-#   4. 創建 ZIP 壓縮檔
-#      - 檔名格式：ChroLens_Mimic_{版本號}.zip
-#      - 包含整個 dist/ChroLens_Mimic/ 目錄
-#
-#   5. 清理建置檔案
-#      - 刪除 build/ 目錄
-#      - 刪除所有 *.spec 檔案
-#      - 保留 dist/ 目錄和 ZIP 檔案
-#
-#   6. 發布到 GitHub Release
-#      使用 GitHub CLI (gh)：
-#        gh release create v{版本號} \
-#          ChroLens_Mimic_{版本號}.zip \
-#          --title "ChroLens_Mimic v{版本號}" \
-#          --notes "{更新說明}" \
-#          --repo Lucienwooo/ChroLens_Mimic
-#
-# 📝 Release Notes 格式（簡短版）：
-#   只列出當前版本的新增/修改內容，3-6 項重點即可
-#   範例：
-#     - 🔧 修復標籤顯示問題
-#     - 💾 優化腳本編輯器儲存機制
-#     - 🖼️ 強化圖片辨識功能
-#     - 🎨 新增語法高亮功能
-#
-# ⚙️ 前置需求：
-#   - PyInstaller: pip install pyinstaller
-#   - GitHub CLI: 下載安裝並執行 gh auth login
-#     下載位置: https://cli.github.com/
-#
-# 🔍 檢查 GitHub CLI 是否就緒：
-#   gh auth status
-#
-# 💡 如果 GitHub CLI 無法使用，腳本會提示手動上傳 ZIP
-#
+# 在對本專案進行任何修改前，請先閱讀 AI_AGENT_NOTES.py
+# 該檔案包含所有開發規範、流程說明、版本管理規則和重要備註
 # ═══════════════════════════════════════════════════════════════════════════
-#
-# === 專案文件清理規則（給 AI Agent） ===
-# 重要：本專案應該保持精簡，避免累積測試檔案
-# 
-# 【應保留的檔案】
-# - README.md (專案根目錄，主要說明文件)
-# - 使用說明_sop.md, 更新系統說明.md, RELEASE_NOTES_*.md (功能文檔)
-# - installer/BUILD_GUIDE.md (打包指南)
-# 
-# 【應刪除的檔案】（每次修復後清理）
-# - main/tests/*.py (所有測試腳本：test_*.py, *_test.py, quick_check.py 等)
-# - main/tests/*.md (測試報告：REPAIR_REPORT.md, TEST_REPORT.md 等)
-# - main/*_test.py, main/test_*.py (主目錄下的測試檔案)
-# - main/run_*.py (臨時執行腳本)
-# - main/tests
-#
-# 【清理命令】
-# Remove-Item main\tests\*.py -Force
-# Remove-Item main\tests\*.md -Force
-# Remove-Item main\*_test.py -Force
-# Remove-Item main\test_*.py -Force
-# Remove-Item main\run_*.py -Force
-#
-# === 打包說明 ===
-# 1. 執行 python auto_release.py 進行自動發布
-# 2. 或執行 python build_simple.py 僅打包（不發布）
-# 3. 打包後檔名統一為 "ChroLens_Mimic.exe"
-# 4. 版本號顯示於視窗標題和 version{版本號}.txt
 #
 # === 版本更新紀錄 ===
+# [2.6.7] - 新增圖片辨識邊框顯示、範圍辨識功能、編輯器優化、規範文件建立
 # [2.6.6] - 修復標籤顯示、優化編輯器、強化圖片辨識、新增語法高亮
 # [2.6.5] - 整合2.5穩定機制：簡化快捷鍵系統、優化錄製流程、即時日誌輸出、移除不必要模組
 # [2.6.4] - 快捷鍵系統優化、打包系統完善、更新UI改進、備份機制優化
 
-VERSION = "2.6.6"
+VERSION = "2.6.7"
 
 import ttkbootstrap as tb
 from ttkbootstrap.constants import *
@@ -134,12 +49,11 @@ except Exception as e:
 try:
     # 使用腳本編輯器
     from text_script_editor import TextCommandEditor as VisualScriptEditor
-    print("✅ 已載入腳本編輯器 (可直接編輯文字指令)")
 except Exception as e:
     try:
         # 備用：舊版圖形化編輯器
         from visual_script_editor import VisualScriptEditor
-        print("⚠️ 使用舊版圖形化編輯器")
+        print("⚠️ 載入舊版編輯器")
     except Exception as e2:
         print(f"❌ 無法匯入編輯器: {e}, {e2}")
         VisualScriptEditor = None
@@ -895,6 +809,17 @@ class RecorderApp(tb.Window):
         self.update_btn = tb.Button(self.global_setting_frame, text="檢查更新", width=15, style="My.TButton", command=self.check_for_updates, bootstyle=INFO)
         self.update_btn.pack(anchor="w", pady=4, padx=8)
         
+        # 官網連結按鈕
+        self.website_btn = tb.Button(
+            self.global_setting_frame, 
+            text="Mimic官網", 
+            width=15, 
+            style="My.TButton", 
+            command=self.open_website, 
+            bootstyle=SUCCESS
+        )
+        self.website_btn.pack(anchor="w", pady=4, padx=8)
+        
         self.actual_language = saved_lang
         self.language_display_var = tk.StringVar(self, value="Language")
         
@@ -1266,6 +1191,16 @@ class RecorderApp(tb.Window):
             about.show_about(self)
         except Exception as e:
             print(f"顯示 about 視窗失敗: {e}")
+    
+    def open_website(self):
+        """開啟 ChroLens Mimic 官網"""
+        import webbrowser
+        try:
+            webbrowser.open("https://lucienwooo.github.io/ChroLens_Mimic/")
+            self.log("已開啟官方網站")
+        except Exception as e:
+            self.log(f"開啟網站失敗: {e}")
+            messagebox.showerror("錯誤", f"無法開啟網站：\n{e}")
     
     def check_for_updates(self):
         """檢查更新（使用新的更新系統）"""

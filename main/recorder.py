@@ -58,6 +58,8 @@ class CoreRecorder:
         # 圖片辨識相關
         self._image_cache = {}  # 快取已載入的圖片 {display_name: (image_array, image_path)}
         self._images_dir = None  # 圖片目錄路徑
+        self._border_window = None  # 邊框視窗
+        self._current_region = None  # 當前辨識範圍（全域狀態，由 >範圍結束 清除）
         
         # ✅ 貝茲曲線滑鼠移動器
         self._bezier_mover = BezierMouseMover() if BEZIER_AVAILABLE else None
@@ -1216,6 +1218,12 @@ class CoreRecorder:
 
     def _execute_event(self, event):
         """執行單一事件（滑鼠模式 - 強化版，添加即時日誌）"""
+        # 處理範圍結束指令
+        if event['type'] == 'region_end':
+            self._current_region = None
+            self.logger("[範圍結束] 已清除辨識範圍限制")
+            return
+        
         if event['type'] == 'keyboard':
             # 鍵盤事件執行
             try:
@@ -1308,9 +1316,27 @@ class CoreRecorder:
             try:
                 image_name = event.get('image', '')
                 confidence = event.get('confidence', 0.7)  # 降低預設閖值加快速度
-                self.logger(f"[圖片辨識] 開始辨識: {image_name}")
+                show_border = event.get('show_border', False)  # 是否顯示邊框
+                region = event.get('region', None)  # 辨識範圍
                 
-                pos = self.find_image_on_screen(image_name, threshold=confidence, fast_mode=True)
+                # 如果事件指定了範圍，更新全域範圍狀態
+                if region is not None:
+                    self._current_region = region
+                # 如果事件沒有指定範圍，使用全域範圍狀態
+                elif self._current_region is not None:
+                    region = self._current_region
+                
+                self.logger(f"[圖片辨識] 開始辨識: {image_name}" + 
+                          (f" (範圍: {region})" if region else ""))
+                
+                pos = self.find_image_on_screen(
+                    image_name, 
+                    threshold=confidence, 
+                    fast_mode=True,
+                    show_border=show_border,
+                    region=region
+                )
+                
                 if pos:
                     self.logger(f"[圖片辨識] ✅ 找到圖片於 ({pos[0]}, {pos[1]})")
                 else:
@@ -1323,9 +1349,27 @@ class CoreRecorder:
             try:
                 image_name = event.get('image', '')
                 confidence = event.get('confidence', 0.7)  # 降低預設閖值加快速度
-                self.logger(f"[移動至圖片] 開始尋找: {image_name}")
+                show_border = event.get('show_border', False)
+                region = event.get('region', None)
                 
-                pos = self.find_image_on_screen(image_name, threshold=confidence, fast_mode=True)
+                # 如果事件指定了範圍，更新全域範圍狀態
+                if region is not None:
+                    self._current_region = region
+                # 如果事件沒有指定範圍，使用全域範圍狀態
+                elif self._current_region is not None:
+                    region = self._current_region
+                
+                self.logger(f"[移動至圖片] 開始尋找: {image_name}" +
+                          (f" (範圍: {region})" if region else ""))
+                
+                pos = self.find_image_on_screen(
+                    image_name,
+                    threshold=confidence,
+                    fast_mode=True,
+                    show_border=show_border,
+                    region=region
+                )
+                
                 if pos:
                     x, y = pos
                     ctypes.windll.user32.SetCursorPos(x, y)
@@ -1342,13 +1386,31 @@ class CoreRecorder:
                 confidence = event.get('confidence', 0.7)  # 降低預設閖值加快速度
                 button = event.get('button', 'left')
                 return_to_origin = event.get('return_to_origin', True)  # 預設返回原位
-                self.logger(f"[點擊圖片] 開始尋找: {image_name}")
+                show_border = event.get('show_border', False)
+                region = event.get('region', None)
+                
+                # 如果事件指定了範圍，更新全域範圍狀態
+                if region is not None:
+                    self._current_region = region
+                # 如果事件沒有指定範圍，使用全域範圍狀態
+                elif self._current_region is not None:
+                    region = self._current_region
+                
+                self.logger(f"[點擊圖片] 開始尋找: {image_name}" +
+                          (f" (範圍: {region})" if region else ""))
                 
                 # ✅ 記錄原始滑鼠位置
                 if return_to_origin:
                     original_pos = win32api.GetCursorPos()
                 
-                pos = self.find_image_on_screen(image_name, threshold=confidence, fast_mode=True)
+                pos = self.find_image_on_screen(
+                    image_name,
+                    threshold=confidence,
+                    fast_mode=True,
+                    show_border=show_border,
+                    region=region
+                )
+                
                 if pos:
                     x, y = pos
                     # 先移動到位置
@@ -1377,9 +1439,26 @@ class CoreRecorder:
                 confidence = event.get('confidence', 0.75)
                 on_success = event.get('on_success')  # {'action': 'continue'/'stop'/'jump', 'target': 'label_name', 'repeat_count': N}
                 on_failure = event.get('on_failure')
-                self.logger(f"[條件判斷] 檢查圖片是否存在: {image_name}")
+                show_border = event.get('show_border', False)
+                region = event.get('region', None)
                 
-                pos = self.find_image_on_screen(image_name, threshold=confidence, fast_mode=True)
+                # 如果事件指定了範圍，更新全域範圍狀態
+                if region is not None:
+                    self._current_region = region
+                # 如果事件沒有指定範圍，使用全域範圍狀態
+                elif self._current_region is not None:
+                    region = self._current_region
+                
+                self.logger(f"[條件判斷] 檢查圖片是否存在: {image_name}" +
+                          (f" (範圍: {region})" if region else ""))
+                
+                pos = self.find_image_on_screen(
+                    image_name,
+                    threshold=confidence,
+                    fast_mode=True,
+                    show_border=show_border,
+                    region=region
+                )
                 
                 if pos:
                     self.logger(f"[條件判斷] ✅ 找到圖片於 ({pos[0]}, {pos[1]})")
@@ -1734,7 +1813,62 @@ class CoreRecorder:
         self._images_dir = images_dir
         self.logger(f"[圖片辨識] 圖片目錄：{images_dir}")
     
-    def find_image_on_screen(self, image_name_or_path, threshold=0.92, region=None, multi_scale=True, fast_mode=False, use_features_fallback=True):
+    def show_match_border(self, x, y, width, height, duration=1500):
+        """顯示圖片辨識位置的邊框
+        
+        Args:
+            x: 左上角 x 坐標
+            y: 左上角 y 坐標
+            width: 寬度
+            height: 高度
+            duration: 顯示時間(毫秒)
+        """
+        try:
+            import tkinter as tk
+            
+            # 關閉舊的邊框視窗
+            if self._border_window:
+                try:
+                    self._border_window.destroy()
+                except:
+                    pass
+                self._border_window = None
+            
+            # 創建新的邊框視窗
+            border = tk.Tk()
+            border.overrideredirect(True)  # 無框視窗
+            border.attributes('-topmost', True)  # 置頂
+            border.attributes('-alpha', 0.6)  # 半透明
+            border.geometry(f"{width}x{height}+{x}+{y}")
+            
+            # 綠色邊框
+            canvas = tk.Canvas(border, bg='green', highlightthickness=3, highlightbackground='lime')
+            canvas.pack(fill='both', expand=True)
+            
+            # 中央文字
+            canvas.create_text(
+                width//2, height//2,
+                text='✅ 已辨識',
+                font=('Microsoft JhengHei', 14, 'bold'),
+                fill='white'
+            )
+            
+            self._border_window = border
+            
+            # 定時關閉
+            def close_border():
+                try:
+                    border.destroy()
+                except:
+                    pass
+                self._border_window = None
+            
+            border.after(duration, close_border)
+            
+        except Exception as e:
+            self._log(f"[邊框] 顯示失敗: {e}", "warning")
+    
+    def find_image_on_screen(self, image_name_or_path, threshold=0.92, region=None, multi_scale=True, fast_mode=False, use_features_fallback=True, show_border=False):
         """在螢幕上尋找圖片（🔥 終極強化版：透明遮罩、多算法融合、SSIM驗證、特徵點匹配）
         
         Args:
@@ -1790,6 +1924,12 @@ class CoreRecorder:
                     if region:
                         pos = (pos[0] + region[0], pos[1] + region[1])
                     self.logger(f"[圖片辨識][快速] ✅ 找到圖片於 ({pos[0]}, {pos[1]})")
+                    
+                    # 顯示邊框
+                    if show_border:
+                        h, w = template_gray.shape
+                        self.show_match_border(pos[0] - w//2, pos[1] - h//2, w, h)
+                    
                     return pos
                 else:
                     self.logger(f"[圖片辨識][快速] ❌ 未找到圖片")
@@ -1971,6 +2111,13 @@ class CoreRecorder:
                             center_y += region[1]
                         
                         self.logger(f"[圖片辨識] ✅ 找到圖片於 ({center_x}, {center_y})")
+                        
+                        # 顯示邊框
+                        if show_border:
+                            x1 = best_match_loc[0] + (region[0] if region else 0)
+                            y1 = best_match_loc[1] + (region[1] if region else 0)
+                            self.show_match_border(x1, y1, w, h)
+                        
                         return (center_x, center_y)
             
             self.logger(f"[圖片辨識] ❌ 未找到圖片（分數不足）")

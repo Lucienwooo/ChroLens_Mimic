@@ -52,11 +52,19 @@ class TextCommandEditor(tk.Toplevel):
         self.parent = parent
         self.script_path = script_path
         self.title("文字指令編輯器")
-        self.geometry("800x700")  # 增加寬度 (原600 + 1/3 = 800)
+        self.geometry("800x920")  # 增加高度以容納三行按鈕和狀態列
         
-        # 設定視窗層級，防止被主視窗覆蓋
-        if parent:
-            self.transient(parent)  # 設定為主視窗的子視窗
+        # 設定最小視窗尺寸，確保按鈕群不被遮住
+        self.minsize(800, 820)
+        
+        # 設定視窗圖標(與主程式相同)
+        try:
+            from ChroLens_Mimic import get_icon_path
+            icon_path = get_icon_path()
+            if os.path.exists(icon_path):
+                self.iconbitmap(icon_path)
+        except Exception as e:
+            pass  # 圖標設定失敗不影響功能
         
         # 預設按鍵持續時間 (毫秒)
         self.default_key_duration = 50
@@ -439,7 +447,7 @@ class TextCommandEditor(tk.Toplevel):
     def _create_command_buttons(self):
         """創建底部指令按鈕區（三行佈局）"""
         # 主容器框架（增加高度以容納三行按鈕）
-        cmd_frame = tk.Frame(self, bg="#2b2b2b", height=140)
+        cmd_frame = tk.Frame(self, bg="#2b2b2b", height=150)
         cmd_frame.pack(fill="x", side="bottom")
         cmd_frame.pack_propagate(False)
         
@@ -461,8 +469,8 @@ class TextCommandEditor(tk.Toplevel):
         button_rows = [
             # 第一行：圖片相關指令
             [
-                ("圖片辨識", "#9C27B0", self._capture_and_recognize, None),
-                ("辨識圖片", "#9C27B0", None, ">辨識>pic01, T=0s000"),
+                ("圖片辨識", "#9C27B0", self._capture_and_recognize, None),  # 截圖+辨識
+                ("範圍辨識", "#7B1FA2", self._capture_region_for_recognition, None),  # 新增：範圍辨識
                 ("移動至圖片", "#673AB7", None, ">移動至>pic01, T=0s000"),
                 ("點擊圖片", "#3F51B5", None, ">左鍵點擊>pic01, T=0s000"),
                 ("條件判斷", "#2196F3", None, ">if>pic01, T=0s000\n>>#標籤\n>>>#標籤"),
@@ -844,11 +852,30 @@ class TextCommandEditor(tk.Toplevel):
                 # 圖片辨識指令
                 elif event_type == "recognize_image":
                     pic_name = event.get("image", "")
-                    lines.append(f">辨識>{pic_name}, T={time_str}\n")
+                    show_border = event.get("show_border", False)
+                    region = event.get("region", None)
+                    
+                    # 建構指令
+                    cmd = f">辨識>{pic_name}"
+                    if show_border:
+                        cmd += ", 邊框"
+                    if region:
+                        cmd += f", 範圍({region[0]},{region[1]},{region[2]},{region[3]})"
+                    cmd += f", T={time_str}\n"
+                    lines.append(cmd)
                 
                 elif event_type == "move_to_image":
                     pic_name = event.get("image", "")
-                    lines.append(f">移動至>{pic_name}, T={time_str}\n")
+                    show_border = event.get("show_border", False)
+                    region = event.get("region", None)
+                    
+                    cmd = f">移動至>{pic_name}"
+                    if show_border:
+                        cmd += ", 邊框"
+                    if region:
+                        cmd += f", 範圍({region[0]},{region[1]},{region[2]},{region[3]})"
+                    cmd += f", T={time_str}\n"
+                    lines.append(cmd)
                 
                 # ==================== OCR 文字辨識事件格式化 ====================
                 elif event_type == "if_text_exists":
@@ -880,15 +907,32 @@ class TextCommandEditor(tk.Toplevel):
                     pic_name = event.get("image", "")
                     button = event.get("button", "left")
                     button_name = "左鍵" if button == "left" else "右鍵"
-                    lines.append(f">{button_name}點擊>{pic_name}, T={time_str}\n")
+                    show_border = event.get("show_border", False)
+                    region = event.get("region", None)
+                    
+                    cmd = f">{button_name}點擊>{pic_name}"
+                    if show_border:
+                        cmd += ", 邊框"
+                    if region:
+                        cmd += f", 範圍({region[0]},{region[1]},{region[2]},{region[3]})"
+                    cmd += f", T={time_str}\n"
+                    lines.append(cmd)
                 
                 elif event_type == "if_image_exists":
                     pic_name = event.get("image", "")
                     on_success = event.get("on_success", {})
                     on_failure = event.get("on_failure", {})
+                    show_border = event.get("show_border", False)
+                    region = event.get("region", None)
                     
                     # 使用新的簡化格式：>if>pic01, T=xxx
-                    lines.append(f">if>{pic_name}, T={time_str}\n")
+                    cmd = f">if>{pic_name}"
+                    if show_border:
+                        cmd += ", 邊框"
+                    if region:
+                        cmd += f", 範圍({region[0]},{region[1]},{region[2]},{region[3]})"
+                    cmd += f", T={time_str}\n"
+                    lines.append(cmd)
                     
                     # 格式化分支動作（使用 >> 和 >>> 格式）
                     if on_success:
@@ -1009,6 +1053,19 @@ class TextCommandEditor(tk.Toplevel):
             if line.startswith(">"):
                 # 跳過分支指令（>> 和 >>>），這些會在條件指令中處理
                 if line.startswith(">>"):
+                    i += 1
+                    continue
+                
+                # 處理 >範圍結束 指令
+                if "範圍結束" in line:
+                    # 解析時間
+                    time_str = line.split(",")[-1].strip() if "," in line and "T=" in line else "T=0s000"
+                    abs_time = start_time + self._parse_time(time_str)
+                    
+                    events.append({
+                        "type": "region_end",
+                        "time": abs_time
+                    })
                     i += 1
                     continue
                 
@@ -1190,14 +1247,27 @@ class TextCommandEditor(tk.Toplevel):
         :param start_time: 起始時間戳
         :return: JSON事件字典
         """
-        # 辨識圖片指令（新格式：>辨識>pic01, T=0s100）
-        recognize_pattern = r'>辨識>([^,]+),\s*T=(\d+)s(\d+)'
+        # 辨識圖片指令（新格式：>辨識>pic01, 邊框, 範圍(x1,y1,x2,y2), T=0s100）
+        recognize_pattern = r'>辨識>([^,]+)(?:,\s*([^T]+))?,\s*T=(\d+)s(\d+)'
         match = re.match(recognize_pattern, command_line)
         if match:
             pic_name = match.group(1).strip()
-            seconds = int(match.group(2))
-            millis = int(match.group(3))
+            options_str = match.group(2).strip() if match.group(2) else ""
+            seconds = int(match.group(3))
+            millis = int(match.group(4))
             abs_time = start_time + seconds + millis / 1000.0
+            
+            # 解析選項
+            show_border = '邊框' in options_str
+            region = None
+            region_match = re.search(r'範圍\((\d+),(\d+),(\d+),(\d+)\)', options_str)
+            if region_match:
+                region = (
+                    int(region_match.group(1)),
+                    int(region_match.group(2)),
+                    int(region_match.group(3)),
+                    int(region_match.group(4))
+                )
             
             # 查找對應的圖片檔案
             image_file = self._find_pic_image_file(pic_name)
@@ -1207,7 +1277,7 @@ class TextCommandEditor(tk.Toplevel):
             
             # 如果有分支，則視為條件判斷
             if branches.get('success') or branches.get('failure'):
-                return {
+                result = {
                     "type": "if_image_exists",
                     "image": pic_name,
                     "image_file": image_file,
@@ -1216,61 +1286,120 @@ class TextCommandEditor(tk.Toplevel):
                     "on_failure": branches.get('failure'),
                     "time": abs_time
                 }
+                if show_border:
+                    result["show_border"] = True
+                if region:
+                    result["region"] = region
+                return result
             
             # 否則視為普通辨識指令
-            return {
+            result = {
                 "type": "recognize_image",
                 "image": pic_name,
                 "image_file": image_file,
-                "confidence": 0.7,  # 降低預設閖值加快速度
+                "confidence": 0.7,
                 "time": abs_time
-            }        # 移動至圖片指令（>移動至>pic01, T=1s000）
-        move_pattern = r'>移動至>([^,]+),\s*T=(\d+)s(\d+)'
+            }
+            if show_border:
+                result["show_border"] = True
+            if region:
+                result["region"] = region
+            return result        # 移動至圖片指令（>移動至>pic01, 邊框, 範圍(x1,y1,x2,y2), T=1s000）
+        move_pattern = r'>移動至>([^,]+)(?:,\s*([^T]+))?,\s*T=(\d+)s(\d+)'
         match = re.match(move_pattern, command_line)
         if match:
             pic_name = match.group(1).strip()
-            seconds = int(match.group(2))
-            millis = int(match.group(3))
-            abs_time = start_time + seconds + millis / 1000.0
-            
-            # 查找對應的圖片檔案
-            image_file = self._find_pic_image_file(pic_name)
-            
-            return {
-                "type": "move_to_image",
-                "image": pic_name,
-                "image_file": image_file,
-                "confidence": 0.7,  # 降低預設閖值加快速度
-                "time": abs_time
-            }        # 點擊圖片指令（>左鍵點擊>pic01, T=1s200 或 >右鍵點擊>pic01, T=1s200）
-        click_pattern = r'>(左鍵|右鍵)點擊>([^,]+),\s*T=(\d+)s(\d+)'
-        match = re.match(click_pattern, command_line)
-        if match:
-            button = "left" if match.group(1) == "左鍵" else "right"
-            pic_name = match.group(2).strip()
+            options_str = match.group(2).strip() if match.group(2) else ""
             seconds = int(match.group(3))
             millis = int(match.group(4))
             abs_time = start_time + seconds + millis / 1000.0
             
+            # 解析選項
+            show_border = '邊框' in options_str
+            region = None
+            region_match = re.search(r'範圍\((\d+),(\d+),(\d+),(\d+)\)', options_str)
+            if region_match:
+                region = (
+                    int(region_match.group(1)),
+                    int(region_match.group(2)),
+                    int(region_match.group(3)),
+                    int(region_match.group(4))
+                )
+            
             # 查找對應的圖片檔案
             image_file = self._find_pic_image_file(pic_name)
             
-            return {
+            result = {
+                "type": "move_to_image",
+                "image": pic_name,
+                "image_file": image_file,
+                "confidence": 0.7,
+                "time": abs_time
+            }
+            if show_border:
+                result["show_border"] = True
+            if region:
+                result["region"] = region
+            return result        # 點擊圖片指令（>左鍵點擊>pic01, 邊框, 範圍(x1,y1,x2,y2), T=1s200）
+        click_pattern = r'>(左鍵|右鍵)點擊>([^,]+)(?:,\s*([^T]+))?,\s*T=(\d+)s(\d+)'
+        match = re.match(click_pattern, command_line)
+        if match:
+            button = "left" if match.group(1) == "左鍵" else "right"
+            pic_name = match.group(2).strip()
+            options_str = match.group(3).strip() if match.group(3) else ""
+            seconds = int(match.group(4))
+            millis = int(match.group(5))
+            abs_time = start_time + seconds + millis / 1000.0
+            
+            # 解析選項
+            show_border = '邊框' in options_str
+            region = None
+            region_match = re.search(r'範圍\((\d+),(\d+),(\d+),(\d+)\)', options_str)
+            if region_match:
+                region = (
+                    int(region_match.group(1)),
+                    int(region_match.group(2)),
+                    int(region_match.group(3)),
+                    int(region_match.group(4))
+                )
+            
+            # 查找對應的圖片檔案
+            image_file = self._find_pic_image_file(pic_name)
+            
+            result = {
                 "type": "click_image",
                 "button": button,
                 "image": pic_name,
                 "image_file": image_file,
-                "confidence": 0.7,  # 降低預設閖值加快速度
-                "return_to_origin": True,  # 預設返回原位
+                "confidence": 0.7,
+                "return_to_origin": True,
                 "time": abs_time
-            }        # 新格式條件判斷：>if>pic01, T=0s100
-        if_simple_pattern = r'>if>([^,]+),\s*T=(\d+)s(\d+)'
+            }
+            if show_border:
+                result["show_border"] = True
+            if region:
+                result["region"] = region
+            return result        # 新格式條件判斷：>if>pic01, 邊框, 範圍(x1,y1,x2,y2), T=0s100
+        if_simple_pattern = r'>if>([^,]+)(?:,\s*([^T]+))?,\s*T=(\d+)s(\d+)'
         match = re.match(if_simple_pattern, command_line)
         if match:
             pic_name = match.group(1).strip()
-            seconds = int(match.group(2))
-            millis = int(match.group(3))
+            options_str = match.group(2).strip() if match.group(2) else ""
+            seconds = int(match.group(3))
+            millis = int(match.group(4))
             abs_time = start_time + seconds + millis / 1000.0
+            
+            # 解析選項
+            show_border = '邊框' in options_str
+            region = None
+            region_match = re.search(r'範圍\((\d+),(\d+),(\d+),(\d+)\)', options_str)
+            if region_match:
+                region = (
+                    int(region_match.group(1)),
+                    int(region_match.group(2)),
+                    int(region_match.group(3)),
+                    int(region_match.group(4))
+                )
             
             # 查找對應的圖片檔案
             image_file = self._find_pic_image_file(pic_name)
@@ -1284,7 +1413,7 @@ class TextCommandEditor(tk.Toplevel):
             if "failure" not in branches:
                 branches["failure"] = {"action": "continue"}
             
-            return {
+            result = {
                 "type": "if_image_exists",
                 "image": pic_name,
                 "image_file": image_file,
@@ -1293,6 +1422,11 @@ class TextCommandEditor(tk.Toplevel):
                 "on_failure": branches.get('failure'),
                 "time": abs_time
             }
+            if show_border:
+                result["show_border"] = True
+            if region:
+                result["region"] = region
+            return result
         
         # 新增：如果存在圖片（條件判斷）>如果存在>pic01, T=0s100
         if_exists_pattern = r'>如果存在>([^,]+),\s*T=(\d+)s(\d+)'
@@ -2375,6 +2509,94 @@ class TextCommandEditor(tk.Toplevel):
     
     # ==================== 圖片辨識功能 ====================
     
+    def _show_image_help(self):
+        """顯示圖片使用說明"""
+        help_text = """
+📷 圖片辨識使用說明
+
+【方法1: 使用截圖功能（推薦新手）】
+1. 點擊「圖片辨識」按鈕
+2. 框選螢幕上要辨識的目標區域
+3. 系統自動命名為 pic01, pic02... 並插入指令
+
+【方法2: 自行放入圖片（進階用戶）】
+1. 準備圖片檔案（建議使用去背景或純淨的圖片）
+   - 支援格式: .png
+   - 建議大小: 50x50 ~ 200x200 px
+   - 圖片越純淨,辨識越準確
+
+2. 圖片命名規則:
+   - 必須以 "pic" 開頭
+   - 後接數字或名稱
+   - 例如: pic01.png, pic_button.png, pic_monster.png
+
+3. 放入圖片資料夾:
+   📁 {images_path}
+
+4. 在編輯器中輸入指令:
+   >辨識>pic01, T=0s000
+   >移動至>pic_button, T=0s000
+   >左鍵點擊>pic_monster, T=0s000
+
+【注意事項】
+✓ 圖片名稱必須以 "pic" 開頭才能被辨識
+✓ 使用去背景或高對比圖片可提升辨識準確度
+✓ 避免過小的圖片（建議 > 30x30 px）
+✓ 系統會自動搜尋 images 資料夾中的圖片
+
+【範例】
+假設你放入了 pic_login.png
+在編輯器中輸入:
+  >辨識>pic_login, T=0s000
+  >>=點擊
+  >>>=找
+
+系統會自動找到並使用 pic_login.png 進行辨識
+"""
+        
+        help_text = help_text.replace("{images_path}", self.images_dir)
+        
+        # 創建說明視窗
+        help_win = tk.Toplevel(self)
+        help_win.title("圖片辨識使用說明")
+        help_win.geometry("600x550")
+        help_win.resizable(False, False)
+        
+        # 文字區域
+        text_area = tk.Text(
+            help_win,
+            wrap="word",
+            font=font_tuple(9),
+            bg="#f5f5f5",
+            fg="#333333",
+            padx=15,
+            pady=15,
+            relief="flat"
+        )
+        text_area.pack(fill="both", expand=True, padx=10, pady=10)
+        text_area.insert("1.0", help_text)
+        text_area.config(state="disabled")
+        
+        # 關閉按鈕
+        close_btn = tk.Button(
+            help_win,
+            text="知道了",
+            font=font_tuple(10, "bold"),
+            bg="#4CAF50",
+            fg="white",
+            padx=30,
+            pady=8,
+            cursor="hand2",
+            command=help_win.destroy
+        )
+        close_btn.pack(pady=10)
+        
+        # 居中顯示
+        help_win.update_idletasks()
+        x = self.winfo_x() + (self.winfo_width() - help_win.winfo_width()) // 2
+        y = self.winfo_y() + (self.winfo_height() - help_win.winfo_height()) // 2
+        help_win.geometry(f"+{x}+{y}")
+    
     def _capture_and_recognize(self):
         """截圖並儲存，插入辨識指令"""
         # 儲存視窗狀態和位置
@@ -2392,18 +2614,19 @@ class TextCommandEditor(tk.Toplevel):
         if self.parent:
             self.parent.update_idletasks()
         
-        # 策略2: 最小化到工作列 (iconic state)
-        self.iconify()
+        # 策略2: 隱藏視窗 (withdraw 取代 iconify)
+        # 🔥 使用 withdraw 以避免 transient 視窗無法 iconify 的錯誤
+        self.withdraw()
         if self.parent:
-            self.parent.iconify()
+            self.parent.withdraw()
         
         # 再次強制更新
         self.update_idletasks()
         if self.parent:
             self.parent.update_idletasks()
         
-        # 給系統時間完成最小化動畫(500ms)
-        self.after(500, self._do_capture)
+        # 給系統時間完成隱藏(300ms)
+        self.after(300, self._do_capture)
     
     def _do_capture(self):
         """執行截圖"""
@@ -2417,10 +2640,12 @@ class TextCommandEditor(tk.Toplevel):
     
     def _restore_windows(self):
         """恢復視窗顯示"""
-        # 從最小化狀態恢復
+        # 從隱藏狀態恢復 (deiconify 可以同時處理 withdraw 和 iconify)
         self.deiconify()
+        self.lift()  # 提升到最上層
         if self.parent:
             self.parent.deiconify()
+            self.parent.lift()
         
         # 恢復位置
         if hasattr(self, 'editor_geometry'):
@@ -2645,6 +2870,69 @@ class TextCommandEditor(tk.Toplevel):
         except Exception as e:
             self._show_message("錯誤", f"儲存圖片失敗：{e}", "error")
     
+    def _capture_region_for_recognition(self):
+        """選擇範圍用於圖片辨識"""
+        # 儲存視窗狀態
+        self.editor_geometry = self.geometry()
+        if self.parent:
+            self.parent_geometry = self.parent.geometry()
+        
+        # 隱藏視窗
+        self.lower()
+        if self.parent:
+            self.parent.lower()
+        
+        self.update_idletasks()
+        if self.parent:
+            self.parent.update_idletasks()
+        
+        self.withdraw()
+        if self.parent:
+            self.parent.withdraw()
+        
+        self.update_idletasks()
+        if self.parent:
+            self.parent.update_idletasks()
+        
+        # 延遲後選擇範圍
+        self.after(300, self._do_region_selection)
+    
+    def _do_region_selection(self):
+        """執行範圍選擇"""
+        try:
+            # 創建範圍選擇視窗
+            region_selector = RegionSelector(self, self._on_region_selected)
+            region_selector.wait_window()
+        except Exception as e:
+            self._show_message("錯誤", f"範圍選擇失敗：{e}", "error")
+            self._restore_windows()
+    
+    def _on_region_selected(self, region):
+        """範圍選擇完成回調"""
+        # 恢復視窗
+        self._restore_windows()
+        
+        if region is None:
+            return
+        
+        try:
+            x1, y1, x2, y2 = region
+            
+            # 在游標位置插入範圍辨識指令
+            # 格式: >辨識>pic01, 範圍(x1,y1,x2,y2), T=0s000
+            current_time = self._get_next_available_time()
+            
+            # 插入範圍辨識指令和範圍結束標記
+            command = f">辨識>pic01, 範圍({x1},{y1},{x2},{y2}), T={current_time}\n>範圍結束\n"
+            
+            self.text_editor.insert(tk.INSERT, command)
+            
+            # 更新狀態列
+            self._update_status(f"已插入範圍辨識指令：({x1},{y1},{x2},{y2})", "success")
+            
+        except Exception as e:
+            self._show_message("錯誤", f"插入指令失敗：{e}", "error")
+    
     def _get_next_available_time(self):
         """獲取下一個可用的時間戳記"""
         content = self.text_editor.get("1.0", "end-1c")
@@ -2680,17 +2968,41 @@ class TextCommandEditor(tk.Toplevel):
         
         支援格式：
         >辨識>pic01, T=時間（新格式）
+        >辨識>pic01, 邊框, T=時間（顯示邊框）
+        >辨識>pic01, 範圍(x1,y1,x2,y2), T=時間（範圍辨識）
+        >辨識>pic01, 邊框, 範圍(x1,y1,x2,y2), T=時間（邊框+範圍）
         >辨識>pic01>img_001.png, T=時間（舊格式，相容性）
         >移動至>pic01, T=時間
         >左鍵點擊>pic01, T=時間
         >右鍵點擊>pic02, T=時間
         """
-        # 辨識指令（新格式：只有pic名稱）
-        match = re.match(r'>辨識>([^>,]+),\s*T=(\d+)s(\d+)', line)
+        # 辨識指令（新格式，支援邊框和範圍）
+        # 格式: >辨識>pic01, 邊框, 範圍(x1,y1,x2,y2), T=0s000
+        match = re.match(r'>辨識>([^>,]+)(?:,\s*([^,T]+))*,\s*T=(\d+)s(\d+)', line)
         if match:
             display_name = match.group(1).strip()
-            seconds = int(match.group(2))
-            millis = int(match.group(3))
+            options_str = match.group(2) if match.group(2) else ""
+            seconds = int(match.group(3))
+            millis = int(match.group(4))
+            
+            # 解析選項
+            show_border = False
+            region = None
+            
+            if options_str:
+                # 檢查是否有"邊框"
+                if '邊框' in options_str:
+                    show_border = True
+                
+                # 檢查是否有"範圍"
+                region_match = re.search(r'範圍\((\d+),(\d+),(\d+),(\d+)\)', options_str)
+                if region_match:
+                    region = (
+                        int(region_match.group(1)),
+                        int(region_match.group(2)),
+                        int(region_match.group(3)),
+                        int(region_match.group(4))
+                    )
             
             # 自動查找pic對應的圖片檔案
             image_file = self._find_pic_image_file(display_name)
@@ -2699,6 +3011,8 @@ class TextCommandEditor(tk.Toplevel):
                 "type": "image_recognize",
                 "display_name": display_name,
                 "image_file": image_file,
+                "show_border": show_border,
+                "region": region,
                 "time": seconds * 1000 + millis
             }
         
@@ -2876,6 +3190,120 @@ class ScreenCaptureSelector(tk.Toplevel):
     
     def _finish(self):
         """完成截圖"""
+        self.destroy()
+        if self.callback:
+            self.callback(self.result)
+
+
+class RegionSelector(tk.Toplevel):
+    """區域選擇工具（用於範圍辨識）"""
+    
+    def __init__(self, parent, callback):
+        super().__init__(parent)
+        
+        self.callback = callback
+        self.start_x = None
+        self.start_y = None
+        self.canvas_start_x = None
+        self.canvas_start_y = None
+        self.rect_id = None
+        self.result = None
+        self.ready = False
+        
+        # 全螢幕置頂
+        self.attributes('-fullscreen', True)
+        self.attributes('-topmost', True)
+        self.attributes('-alpha', 0.3)
+        
+        # 畫布
+        self.canvas = tk.Canvas(self, cursor="cross", bg="gray")
+        self.canvas.pack(fill="both", expand=True)
+        
+        # 說明文字
+        self.text_id = self.canvas.create_text(
+            self.winfo_screenwidth() // 2,
+            50,
+            text="正在準備選擇範圍...",
+            font=font_tuple(18, "bold"),
+            fill="yellow"
+        )
+        
+        # 綁定事件
+        self.canvas.bind("<ButtonPress-1>", self._on_press)
+        self.canvas.bind("<B1-Motion>", self._on_drag)
+        self.canvas.bind("<ButtonRelease-1>", self._on_release)
+        self.bind("<Escape>", lambda e: self._cancel())
+        
+        self.focus_force()
+        
+        # 延遲100ms後才允許選擇
+        self.after(100, self._enable_selection)
+    
+    def _enable_selection(self):
+        """啟用選擇功能"""
+        self.ready = True
+        self.canvas.itemconfig(self.text_id, text="拖曳滑鼠選取辨識範圍 (ESC取消)")
+    
+    def _on_press(self, event):
+        """滑鼠按下"""
+        if not self.ready:
+            return
+        
+        self.start_x = event.x_root
+        self.start_y = event.y_root
+        
+        canvas_x = event.x
+        canvas_y = event.y
+        
+        if self.rect_id:
+            self.canvas.delete(self.rect_id)
+        
+        self.rect_id = self.canvas.create_rectangle(
+            canvas_x, canvas_y, canvas_x, canvas_y,
+            outline="blue", width=3
+        )
+        self.canvas_start_x = canvas_x
+        self.canvas_start_y = canvas_y
+    
+    def _on_drag(self, event):
+        """滑鼠拖曳"""
+        if self.rect_id:
+            self.canvas.coords(
+                self.rect_id,
+                self.canvas_start_x, self.canvas_start_y,
+                event.x, event.y
+            )
+    
+    def _on_release(self, event):
+        """滑鼠放開"""
+        if not self.ready or not self.rect_id:
+            return
+        
+        end_x = event.x_root
+        end_y = event.y_root
+        
+        # 確保 x1 < x2, y1 < y2
+        x1, x2 = min(self.start_x, end_x), max(self.start_x, end_x)
+        y1, y2 = min(self.start_y, end_y), max(self.start_y, end_y)
+        
+        # 檢查範圍是否足夠大
+        if (x2 - x1) < 10 or (y2 - y1) < 10:
+            self.canvas.itemconfig(self.text_id, text="範圍太小，請重新選擇")
+            self.canvas.delete(self.rect_id)
+            self.rect_id = None
+            return
+        
+        # 返回範圍座標 (x1, y1, x2, y2)
+        self.result = (x1, y1, x2, y2)
+        self._finish()
+    
+    def _cancel(self):
+        """取消選擇"""
+        self.result = None
+        self._finish()
+    
+    def _finish(self):
+        """完成選擇"""
         self.destroy()
         if self.callback:
             self.callback(self.result)
