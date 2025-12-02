@@ -663,13 +663,23 @@ class CoreRecorder:
                 pass
             
     def _execute_single_round(self, speed, on_event):
-        """執行單次回放循環"""
+        """執行單次回放循環（支援標籤跳轉和重複執行）"""
         self._current_play_index = 0
         base_time = self.events[0]['time']
         play_start = time.time()
         pause_start_time = None  # 暫停開始時間
         total_pause_time = 0  # 累計暫停時間
         last_pause_state = False  # 上一次的暫停狀態
+        
+        # ✅ 標籤與索引的映射
+        label_map = {}  # {'label_name': index}
+        for idx, event in enumerate(self.events):
+            if event.get('type') == 'label':
+                label_name = event.get('name', '')
+                label_map[label_name] = idx
+        
+        # ✅ 標籤重複計數器 {'label_name': {'count': N, 'start_idx': idx}}
+        label_repeat_tracker = {}
 
         while self._current_play_index < len(self.events):
             # 檢查 playing 狀態（不受外部事件影響）
@@ -737,7 +747,39 @@ class CoreRecorder:
                 
                 if should_execute:
                     # 根據後台模式選擇執行方法
-                    self._execute_event_with_mode(event)
+                    result = self._execute_event_with_mode(event)
+                    
+                    # ✅ 處理分支跳轉
+                    if result:
+                        if result == 'stop':
+                            break
+                        elif isinstance(result, tuple) and result[0] == 'jump':
+                            _, target_label, repeat_count = result
+                            
+                            # 檢查標籤是否存在
+                            if target_label in label_map:
+                                # 初始化計數器
+                                if target_label not in label_repeat_tracker:
+                                    label_repeat_tracker[target_label] = {
+                                        'count': 0,
+                                        'max_count': repeat_count,
+                                        'start_idx': label_map[target_label]
+                                    }
+                                
+                                tracker = label_repeat_tracker[target_label]
+                                
+                                # 檢查是否還需要重複
+                                if tracker['count'] < tracker['max_count']:
+                                    tracker['count'] += 1
+                                    self.logger(f"[跳轉] 跳轉至 #{target_label} (第{tracker['count']}/{tracker['max_count']}次)")
+                                    self._current_play_index = tracker['start_idx']
+                                    continue
+                                else:
+                                    # 重複次數已完成，清除計數器，繼續下一個指令
+                                    self.logger(f"[跳轉] #{target_label} 已完成{tracker['max_count']}次執行，繼續下一個")
+                                    del label_repeat_tracker[target_label]
+                            else:
+                                self.logger(f"[錯誤] 標籤 '{target_label}' 不存在")
                 
                 # 通知事件已執行（即使有錯誤也要通知，保持進度）
                 if on_event:
@@ -753,11 +795,14 @@ class CoreRecorder:
             self._current_play_index += 1
 
     def _execute_event_with_mode(self, event):
-        """根據後台模式和滑鼠模式執行事件（強化版）"""
+        """根據後台模式和滑鼠模式執行事件（強化版）
+        
+        Returns:
+            執行結果，可能是 None, 'stop', 或 ('jump', label, count)
+        """
         # 如果啟用滑鼠模式，直接使用前景模式（控制真實滑鼠）
         if self._mouse_mode:
-            self._execute_event(event)
-            return
+            return self._execute_event(event)
         
         # 否則根據後台模式選擇執行方法
         mode = self._background_mode
@@ -769,8 +814,7 @@ class CoreRecorder:
                 try:
                     if not win32gui.IsWindow(self._target_hwnd):
                         self.logger("目標視窗已關閉，切換到前景模式")
-                        self._execute_event(event)
-                        return
+                        return self._execute_event(event)
                 except:
                     pass
                 
@@ -787,32 +831,32 @@ class CoreRecorder:
                     try:
                         win32gui.SetForegroundWindow(self._target_hwnd)
                         time.sleep(0.001)  # 極短延遲確保切換完成
-                        self._execute_event(event)
+                        result = self._execute_event(event)
                         # 立即切回
                         if current_hwnd and win32gui.IsWindow(current_hwnd):
                             win32gui.SetForegroundWindow(current_hwnd)
+                        return result
                     except:
-                        self._execute_event(event)
-                    return
+                        return self._execute_event(event)
                 except Exception as e:
                     self.logger(f"智能模式執行失敗: {e}")
                 
                 # 3. 最後回退到前景模式
-                self._execute_event(event)
+                return self._execute_event(event)
             else:
                 # 沒有目標視窗，使用前景模式
-                self._execute_event(event)
+                return self._execute_event(event)
         
         # 快速切換模式（增強穩定性）
         elif mode == "fast_switch":
             if self._target_hwnd:
                 try:
-                    self._execute_fast_switch_enhanced(event)
+                    return self._execute_fast_switch_enhanced(event)
                 except Exception as e:
                     self.logger(f"快速切換失敗，回退到前景模式: {e}")
-                    self._execute_event(event)
+                    return self._execute_event(event)
             else:
-                self._execute_event(event)
+                return self._execute_event(event)
         
         # 純後台模式（SendMessage 優先，增強版）
         elif mode == "postmessage":
@@ -824,13 +868,13 @@ class CoreRecorder:
                     success = self._try_postmessage(event)
                     if not success:
                         self.logger("後台模式執行失敗，嘗試前景模式")
-                        self._execute_event(event)
+                        return self._execute_event(event)
             else:
-                self._execute_event(event)
+                return self._execute_event(event)
         
         # 前景模式（預設）
         else:
-            self._execute_event(event)
+            return self._execute_event(event)
 
     def _try_sendmessage_enhanced(self, event):
         """增強版 SendMessage（更可靠的同步執行）"""
@@ -1210,11 +1254,25 @@ class CoreRecorder:
                     pass  # 視窗可能已關閉，使用原始座標
             
             try:
-                # ✅ 修復：確保座標在有效範圍內（防止超出螢幕）
-                screen_width = ctypes.windll.user32.GetSystemMetrics(0)
-                screen_height = ctypes.windll.user32.GetSystemMetrics(1)
-                x = max(0, min(screen_width - 1, int(x)))
-                y = max(0, min(screen_height - 1, int(y)))
+                # ✅ 修復：使用虛擬螢幕範圍（支援多螢幕）
+                # GetSystemMetrics(0/1) 只返回主螢幕尺寸，不適用於多螢幕
+                # 使用 SM_XVIRTUALSCREEN/SM_YVIRTUALSCREEN 獲取整個虛擬螢幕範圍
+                SM_XVIRTUALSCREEN = 76  # 虛擬螢幕左上角 X 座標
+                SM_YVIRTUALSCREEN = 77  # 虛擬螢幕左上角 Y 座標
+                SM_CXVIRTUALSCREEN = 78  # 虛擬螢幕寬度
+                SM_CYVIRTUALSCREEN = 79  # 虛擬螢幕高度
+                
+                virtual_left = ctypes.windll.user32.GetSystemMetrics(SM_XVIRTUALSCREEN)
+                virtual_top = ctypes.windll.user32.GetSystemMetrics(SM_YVIRTUALSCREEN)
+                virtual_width = ctypes.windll.user32.GetSystemMetrics(SM_CXVIRTUALSCREEN)
+                virtual_height = ctypes.windll.user32.GetSystemMetrics(SM_CYVIRTUALSCREEN)
+                
+                virtual_right = virtual_left + virtual_width
+                virtual_bottom = virtual_top + virtual_height
+                
+                # 將座標限制在虛擬螢幕範圍內（支援負數座標）
+                x = max(virtual_left, min(virtual_right - 1, int(x)))
+                y = max(virtual_top, min(virtual_bottom - 1, int(y)))
                 
                 if event['event'] == 'move':
                     # 滑鼠移動（使用硬體級別的 SetCursorPos 確保精確）
@@ -1317,7 +1375,7 @@ class CoreRecorder:
             try:
                 image_name = event.get('image', '')
                 confidence = event.get('confidence', 0.75)
-                on_success = event.get('on_success')  # {'action': 'continue'/'stop'/'jump', 'target': 'label_name'}
+                on_success = event.get('on_success')  # {'action': 'continue'/'stop'/'jump', 'target': 'label_name', 'repeat_count': N}
                 on_failure = event.get('on_failure')
                 self.logger(f"[條件判斷] 檢查圖片是否存在: {image_name}")
                 
@@ -1333,6 +1391,122 @@ class CoreRecorder:
                         return self._handle_branch_action(on_failure)
             except Exception as e:
                 self.logger(f"條件判斷執行失敗: {e}")
+        
+        # ==================== OCR 文字辨識事件 ====================
+        
+        # OCR 條件判斷：if_text_exists
+        elif event['type'] == 'if_text_exists':
+            try:
+                from ocr_trigger import OCRTrigger
+                
+                target_text = event.get('target_text', '')
+                timeout = event.get('timeout', 10.0)
+                match_mode = event.get('match_mode', 'contains')
+                on_success = event.get('on_success')
+                on_failure = event.get('on_failure')
+                
+                self.logger(f"[OCR] 檢查文字是否存在: {target_text}（最長 {timeout}s）")
+                
+                # 初始化 OCR 引擎
+                ocr = OCRTrigger(ocr_engine="auto")
+                
+                if not ocr.is_available():
+                    self.logger("[OCR] ⚠️ OCR 引擎未啟用，跳過此步驟")
+                    if on_failure:
+                        return self._handle_branch_action(on_failure)
+                    return ('continue',)
+                
+                self.logger(f"[OCR] 使用引擎: {ocr.get_engine_name()}")
+                
+                # 等待文字出現
+                found = ocr.wait_for_text(
+                    target_text=target_text,
+                    timeout=timeout,
+                    match_mode=match_mode,
+                    interval=0.5
+                )
+                
+                if found:
+                    self.logger(f"[OCR] ✅ 找到文字: {target_text}")
+                    if on_success:
+                        return self._handle_branch_action(on_success)
+                else:
+                    self.logger(f"[OCR] ✖ 未找到文字: {target_text}")
+                    if on_failure:
+                        return self._handle_branch_action(on_failure)
+                        
+            except ImportError:
+                self.logger("[OCR] ❌ ocr_trigger 模組未找到，請確認檔案存在")
+            except Exception as e:
+                self.logger(f"[OCR] 錯誤: {e}")
+                if event.get('on_failure'):
+                    return self._handle_branch_action(event.get('on_failure'))
+        
+        # OCR 等待文字：wait_text
+        elif event['type'] == 'wait_text':
+            try:
+                from ocr_trigger import OCRTrigger
+                
+                target_text = event.get('target_text', '')
+                timeout = event.get('timeout', 10.0)
+                match_mode = event.get('match_mode', 'contains')
+                
+                self.logger(f"[OCR] 等待文字出現: {target_text}（最長 {timeout}s）")
+                
+                ocr = OCRTrigger(ocr_engine="auto")
+                
+                if not ocr.is_available():
+                    self.logger("[OCR] ⚠️ OCR 引擎未啟用")
+                    return ('continue',)
+                
+                found = ocr.wait_for_text(
+                    target_text=target_text,
+                    timeout=timeout,
+                    match_mode=match_mode
+                )
+                
+                if found:
+                    self.logger(f"[OCR] ✅ 文字已出現")
+                else:
+                    self.logger(f"[OCR] ⏱️ 等待逾時")
+                    
+            except Exception as e:
+                self.logger(f"[OCR] 錯誤: {e}")
+        
+        # OCR 點擊文字位置：click_text
+        elif event['type'] == 'click_text':
+            try:
+                from ocr_trigger import OCRTrigger
+                
+                target_text = event.get('target_text', '')
+                timeout = event.get('timeout', 5.0)
+                
+                self.logger(f"[OCR] 尋找並點擊文字: {target_text}")
+                
+                ocr = OCRTrigger(ocr_engine="auto")
+                
+                if not ocr.is_available():
+                    self.logger("[OCR] ⚠️ OCR 引擎未啟用")
+                    return ('continue',)
+                
+                # 尋找文字位置
+                pos = ocr.find_text_position(target_text)
+                
+                if pos:
+                    x, y = pos
+                    self.logger(f"[OCR] ✅ 找到文字於 ({x}, {y})，執行點擊")
+                    
+                    # 移動並點擊
+                    win32api.SetCursorPos((x, y))
+                    time.sleep(0.05)
+                    win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN, x, y, 0, 0)
+                    time.sleep(0.05)
+                    win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, x, y, 0, 0)
+                else:
+                    self.logger(f"[OCR] ✖ 未找到文字")
+                    
+            except Exception as e:
+                self.logger(f"[OCR] 錯誤: {e}")
         
         # ✅ 新增：多圖片同時辨識
         elif event['type'] == 'recognize_any':
@@ -1408,10 +1582,11 @@ class CoreRecorder:
         """處理分支動作（繼續/停止/跳轉）
         
         Args:
-            action_config: {'action': 'continue'/'stop'/'jump', 'target': 'label_name'}
+            action_config: {'action': 'continue'/'stop'/'jump', 'target': 'label_name', 'repeat_count': N}
         
         Returns:
             'stop' 如果需要停止回放，否則 None
+            ('jump', 'label_name', repeat_count) 如果需要跳轉
         """
         try:
             action = action_config.get('action', 'continue')
@@ -1423,9 +1598,9 @@ class CoreRecorder:
             
             elif action == 'jump':
                 target = action_config.get('target', '')
-                self.logger(f"[分支] 跳轉至標籤: {target}")
-                # TODO: 實現標籤跳轉功能（需要在 play 方法中配合）
-                return None
+                repeat_count = action_config.get('repeat_count', 1)
+                self.logger(f"[分支] 跳轉至標籤: {target}, 重複{repeat_count}次")
+                return ('jump', target, repeat_count)
             
             else:  # continue
                 self.logger("[分支] 繼續執行")

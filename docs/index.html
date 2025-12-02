@@ -576,6 +576,59 @@
 
             <p><strong>圖片命名規則：</strong>使用 pic + 數字（pic01, pic02, pic03...），支援 pic01 到 pic999</p>
 
+            <h4>📝 OCR 文字辨識操作</h4>
+            <p><strong>系統需求：</strong>Windows 10/11 內建 OCR 引擎（免安裝），或安裝 Tesseract OCR</p>
+            <table>
+                <tr>
+                    <th style="width: 25%">指令</th>
+                    <th style="width: 45%">說明</th>
+                    <th style="width: 30%">範例</th>
+                </tr>
+                <tr>
+                    <td><code>if文字>[文字]</code></td>
+                    <td>檢查螢幕上是否出現指定文字（最多等待10秒）</td>
+                    <td><code>>if文字>確認, T=0s000</code></td>
+                </tr>
+                <tr>
+                    <td><code>等待文字>[文字], 最長[秒數]s</code></td>
+                    <td>等待特定文字出現在螢幕上，超時則繼續執行</td>
+                    <td><code>>等待文字>載入完成, 最長15s, T=0s000</code></td>
+                </tr>
+                <tr>
+                    <td><code>點擊文字>[文字]</code></td>
+                    <td>找到螢幕上的文字並點擊該位置</td>
+                    <td><code>>點擊文字>登入, T=0s000</code></td>
+                </tr>
+            </table>
+
+            <p><strong>✨ OCR 特色：</strong></p>
+            <ul>
+                <li>🔍 <strong>智慧辨識</strong> - 自動偵測螢幕上的文字內容，無需截圖</li>
+                <li>🚀 <strong>免安裝</strong> - Windows 10/11 內建 OCR 引擎，開箱即用</li>
+                <li>🌐 <strong>多語言</strong> - 支援繁體中文、英文等多種語言</li>
+                <li>⚡ <strong>容錯機制</strong> - OCR 引擎無法使用時，會自動跳過相關指令（不報錯）</li>
+            </ul>
+
+            <h4>⏱️ 延遲控制</h4>
+            <table>
+                <tr>
+                    <th style="width: 25%">指令</th>
+                    <th style="width: 45%">說明</th>
+                    <th style="width: 30%">範例</th>
+                </tr>
+                <tr>
+                    <td><code>延遲[毫秒數]ms</code></td>
+                    <td>暫停執行指定時間（毫秒）</td>
+                    <td><code>>延遲500ms, T=0s000</code></td>
+                </tr>
+            </table>
+
+            <p><strong>時間參數說明：</strong></p>
+            <ul>
+                <li><code>延遲時間</code> - 執行該動作後，等待多久才執行下一個動作（例如：延遲500ms）</li>
+                <li><code>T=0s000</code> - 該動作在腳本中的絕對執行時間點（格式：秒s毫秒，例如：T=1s500 表示 1.5 秒時執行）</li>
+            </ul>
+
             <h4>🔀 條件判斷與流程控制</h4>
             <table>
                 <tr>
@@ -604,6 +657,11 @@
                     <td><code>#開始</code></td>
                 </tr>
                 <tr>
+                    <td><code>#標籤名*N</code></td>
+                    <td>定義帶有計數器的標籤（重複N次後自動繼續）</td>
+                    <td><code>#刷怪*10</code></td>
+                </tr>
+                <tr>
                     <td><code>跳到#標籤名</code></td>
                     <td>跳轉到指定標籤</td>
                     <td><code>>跳到#開始, T=1s000</code></td>
@@ -614,6 +672,13 @@
                     <td><code>>停止, T=2s000</code></td>
                 </tr>
             </table>
+
+            <p><strong>🔄 標籤計數器說明：</strong></p>
+            <ul>
+                <li>使用 <code>#標籤名*N</code> 格式可以設定標籤重複次數</li>
+                <li>當跳轉到該標籤 N 次後，會自動忽略跳轉，繼續執行後續指令</li>
+                <li>範例：<code>#刷怪*10</code> 表示重複刷怪 10 次後自動停止迴圈</li>
+            </ul>
 
             <h3>📍 腳本編輯器功能說明</h3>
             <p>腳本編輯器可以讓您用文字格式編輯自動化腳本，相比純錄製更加靈活和強大。編輯器支援<strong>語法高亮</strong>功能，指令符號（<span class="syntax-operator">&gt;</span>、<span class="syntax-operator">&gt;&gt;</span>、<span class="syntax-operator">&gt;&gt;&gt;</span>、<span class="syntax-operator">,</span>、<span class="syntax-operator">T=</span>）會以<span class="syntax-operator">橘色</span>顯示，標籤（<span class="syntax-keyword">#標籤名</span>）會以<span class="syntax-keyword">青綠色</span>顯示，讓程式碼更易讀。</p>
@@ -765,7 +830,81 @@
 <span class="syntax-operator">&gt;</span>左鍵點擊&gt;close_error_btn.png<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s000
 <span class="syntax-operator">&gt;</span>停止</pre>
 
-            <h4>範例3：組合鍵操作</h4>
+            <h4>範例3：OCR 智慧等待與點擊（簡單）</h4>
+            <pre><span class="syntax-comment"># === OCR 基礎應用：網頁載入等待 ===</span>
+<span class="syntax-keyword">#開始</span>
+
+<span class="syntax-comment"># 點擊某個按鈕開啟網頁</span>
+<span class="syntax-operator">&gt;</span>左鍵點擊&gt;open_btn.png<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s000
+
+<span class="syntax-comment"># 等待頁面載入完成（OCR 偵測「載入完成」或「Complete」文字）</span>
+<span class="syntax-operator">&gt;</span>等待文字&gt;載入完成<span class="syntax-operator">,</span> 最長15s<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>1s000
+
+<span class="syntax-comment"># 頁面載入完成後，點擊「確認」按鈕（使用 OCR 自動定位文字位置）</span>
+<span class="syntax-operator">&gt;</span>點擊文字&gt;確認<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>16s000
+
+<span class="syntax-comment"># 完成</span>
+<span class="syntax-operator">&gt;</span>停止</pre>
+
+            <h4>範例4：OCR + 圖片混合判斷（複雜）</h4>
+            <pre><span class="syntax-comment"># === 遊戲自動接受組隊邀請 ===</span>
+<span class="syntax-keyword">#檢測邀請*999</span>
+
+<span class="syntax-comment"># 方法1: 先用 OCR 偵測是否有「邀請」文字（快速粗判）</span>
+<span class="syntax-operator">&gt;</span>if文字&gt;邀請<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s000
+<span class="syntax-operator">&gt;&gt;</span><span class="syntax-keyword">#確認邀請視窗</span>
+
+<span class="syntax-comment"># 若無邀請文字，等待 2 秒後繼續檢測</span>
+<span class="syntax-operator">&gt;</span>延遲2000ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>2s000
+<span class="syntax-operator">&gt;&gt;&gt;</span><span class="syntax-keyword">#檢測邀請</span>
+
+<span class="syntax-comment"># === 精確確認邀請視窗（圖片 + OCR 雙重驗證）===</span>
+<span class="syntax-keyword">#確認邀請視窗</span>
+
+<span class="syntax-comment"># 方法2: 用圖片辨識確認特定的邀請按鈕圖示（精確判斷）</span>
+<span class="syntax-operator">&gt;</span>if&gt;accept_btn.png<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s000
+<span class="syntax-operator">&gt;&gt;</span><span class="syntax-keyword">#接受邀請</span>
+
+<span class="syntax-comment"># 若圖片辨識失敗，使用 OCR 點擊文字「接受」（備用方案）</span>
+<span class="syntax-operator">&gt;</span>if文字&gt;接受<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s100
+<span class="syntax-operator">&gt;&gt;</span><span class="syntax-keyword">#OCR點擊</span>
+
+<span class="syntax-comment"># 都失敗則繼續等待</span>
+<span class="syntax-operator">&gt;&gt;&gt;</span><span class="syntax-keyword">#檢測邀請</span>
+
+<span class="syntax-comment"># === 方法 A: 圖片點擊 ===</span>
+<span class="syntax-keyword">#接受邀請</span>
+<span class="syntax-operator">&gt;</span>左鍵點擊&gt;accept_btn.png<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s000
+<span class="syntax-operator">&gt;</span>延遲1000ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>1s000
+<span class="syntax-operator">&gt;&gt;&gt;</span><span class="syntax-keyword">#檢測邀請</span>
+
+<span class="syntax-comment"># === 方法 B: OCR 點擊 ===</span>
+<span class="syntax-keyword">#OCR點擊</span>
+<span class="syntax-operator">&gt;</span>點擊文字&gt;接受<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s000
+<span class="syntax-operator">&gt;</span>延遲1000ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>1s000
+<span class="syntax-operator">&gt;&gt;&gt;</span><span class="syntax-keyword">#檢測邀請</span></pre>
+
+            <h4>範例5：標籤計數器應用</h4>
+            <pre><span class="syntax-comment"># === 自動重複任務 10 次 ===</span>
+<span class="syntax-keyword">#執行任務*10</span>
+
+<span class="syntax-comment"># 點擊任務圖示</span>
+<span class="syntax-operator">&gt;</span>左鍵點擊&gt;task_icon.png<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s000
+
+<span class="syntax-comment"># 等待任務完成（OCR 偵測「完成」文字）</span>
+<span class="syntax-operator">&gt;</span>等待文字&gt;完成<span class="syntax-operator">,</span> 最長30s<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>1s000
+
+<span class="syntax-comment"># 領取獎勵</span>
+<span class="syntax-operator">&gt;</span>左鍵點擊&gt;reward_btn.png<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>31s000
+<span class="syntax-operator">&gt;</span>延遲1000ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>32s000
+
+<span class="syntax-comment"># 跳回開始（重複 10 次後自動停止）</span>
+<span class="syntax-operator">&gt;&gt;&gt;</span><span class="syntax-keyword">#執行任務</span>
+
+<span class="syntax-comment"># 完成 10 次後執行此處</span>
+<span class="syntax-operator">&gt;</span>停止</pre>
+
+            <h4>範例6：組合鍵操作</h4>
             <pre><span class="syntax-comment"># Ctrl+C 複製</span>
 <span class="syntax-operator">&gt;</span>按下Ctrl<span class="syntax-operator">,</span> 延遲0ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s000
 <span class="syntax-operator">&gt;</span>按C<span class="syntax-operator">,</span> 延遲100ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s000

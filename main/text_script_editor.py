@@ -6,12 +6,25 @@ ChroLens 文字指令式腳本編輯器
 
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext, simpledialog, filedialog
+from tkinter import font as tkfont
 import json
 import os
 import re
 import sys
 from typing import List, Dict, Any, Tuple
 from PIL import Image, ImageGrab, ImageTk
+
+# 🔧 載入 LINE Seed 字體
+LINE_SEED_FONT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "TTF", "LINESeedTW_TTF_Rg.ttf")
+try:
+    import pyglet
+    if os.path.exists(LINE_SEED_FONT_PATH):
+        pyglet.font.add_file(LINE_SEED_FONT_PATH)
+        LINE_SEED_FONT_LOADED = True
+    else:
+        LINE_SEED_FONT_LOADED = False
+except:
+    LINE_SEED_FONT_LOADED = False
 
 # 🔧 導入主程式的字體系統
 try:
@@ -20,7 +33,11 @@ try:
 except:
     # 如果無法導入，使用預設字體函數
     def font_tuple(size, weight=None, monospace=False):
-        fam = "Consolas" if monospace else "Microsoft JhengHei"
+        # 優先使用 LINE Seed 字體
+        if LINE_SEED_FONT_LOADED:
+            fam = "LINE Seed TW"
+        else:
+            fam = "Consolas" if monospace else "Microsoft JhengHei"
         if weight:
             return (fam, size, weight)
         return (fam, size)
@@ -36,6 +53,10 @@ class TextCommandEditor(tk.Toplevel):
         self.script_path = script_path
         self.title("文字指令編輯器")
         self.geometry("800x700")  # 增加寬度 (原600 + 1/3 = 800)
+        
+        # 設定視窗層級，防止被主視窗覆蓋
+        if parent:
+            self.transient(parent)  # 設定為主視窗的子視窗
         
         # 預設按鍵持續時間 (毫秒)
         self.default_key_duration = 50
@@ -74,9 +95,8 @@ class TextCommandEditor(tk.Toplevel):
             self.script_var.set(script_name)
             self._load_script()
         
-        # 置頂顯示
-        self.lift()
-        self.focus_force()
+        # 確保編輯器視窗顯示並獲得焦點（但不強制置頂避免覆蓋問題）
+        self.focus_set()
     
     def _get_images_dir(self):
         """獲取圖片儲存目錄"""
@@ -145,11 +165,10 @@ class TextCommandEditor(tk.Toplevel):
         self.script_combo.bind("<<ComboboxSelected>>", self._on_script_selected)
         self.script_combo.bind("<Button-1>", self._on_combo_click)
         
-        # 操作按鈕（包含圖片辨識）
+        # 操作按鈕（移除圖片辨識，移到底部指令區）
         buttons = [
             ("重新載入", self._load_script, "#2196F3"),
-            ("儲存", self._save_script, "#4CAF50"),
-            ("圖片辨識", self._capture_and_recognize, "#9C27B0")
+            ("儲存", self._save_script, "#4CAF50")
         ]
         for text, cmd, color in buttons:
             tk.Button(toolbar, text=text, command=cmd, bg=color, fg="white", font=font_tuple(9, "bold"), padx=15, pady=5).pack(side="left", padx=5)
@@ -169,9 +188,12 @@ class TextCommandEditor(tk.Toplevel):
             font=font_tuple(10, "bold")
         ).pack(anchor="w", pady=5)
         
+        # 使用 LINE Seed 字體
+        editor_font = ("LINE Seed TW", 10) if LINE_SEED_FONT_LOADED else font_tuple(10, monospace=True)
+        
         self.text_editor = scrolledtext.ScrolledText(
             left_frame,
-            font=font_tuple(10, monospace=True),
+            font=editor_font,
             wrap="none",
             bg="#ffffff",
             fg="#000000",
@@ -182,9 +204,18 @@ class TextCommandEditor(tk.Toplevel):
         )
         self.text_editor.pack(fill="both", expand=True)
         
-        # 設定語法高亮標籤
-        self.text_editor.tag_config("syntax_operator", foreground="#FF8C00")  # 橘色
-        self.text_editor.tag_config("syntax_keyword", foreground="#20B2AA")   # 青綠色
+        # 設定語法高亮標籤 (Dracula 配色)
+        self.text_editor.tag_config("syntax_symbol", foreground="#BD93F9")      # 淡紫色 - 符號
+        self.text_editor.tag_config("syntax_time", foreground="#FF79C6")        # 粉紅色 - 時間參數
+        self.text_editor.tag_config("syntax_label", foreground="#8BE9FD")       # 青色 - 標籤
+        self.text_editor.tag_config("syntax_keyboard", foreground="#BD93F9")    # 淡紫色 - 鍵盤操作
+        self.text_editor.tag_config("syntax_mouse", foreground="#6272A4")       # 藍色 - 滑鼠座標
+        self.text_editor.tag_config("syntax_image", foreground="#50FA7B")       # 綠色 - 圖片辨識
+        self.text_editor.tag_config("syntax_condition", foreground="#FFB86C")   # 橘色 - 條件判斷
+        self.text_editor.tag_config("syntax_ocr", foreground="#8BE9FD")         # 青色 - OCR 文字
+        self.text_editor.tag_config("syntax_delay", foreground="#FFB86C")       # 橘色 - 延遲控制
+        self.text_editor.tag_config("syntax_flow", foreground="#FF5555")        # 紅色 - 流程控制
+        self.text_editor.tag_config("syntax_picname", foreground="#F1FA8C")     # 黃色 - 圖片名稱
         
         # 綁定內容變更事件以觸發語法高亮
         self.text_editor.bind("<<Modified>>", self._on_text_modified)
@@ -284,7 +315,7 @@ class TextCommandEditor(tk.Toplevel):
         # 載入模組列表
         self._load_modules_inline()
         
-        # 底部狀態列
+        # 底部狀態列（先創建，讓指令按鈕區可以放在它上方）
         self.status_label = tk.Label(
             self,
             text="就緒",
@@ -296,6 +327,9 @@ class TextCommandEditor(tk.Toplevel):
             pady=5
         )
         self.status_label.pack(fill="x", side="bottom")
+        
+        # 底部指令按鈕區（在狀態列之後創建，會自動顯示在它上方）
+        self._create_command_buttons()
     
     def _show_message(self, title, message, msg_type="info"):
         """顯示自訂訊息對話框，不會改變父視窗位置"""
@@ -401,6 +435,119 @@ class TextCommandEditor(tk.Toplevel):
         
         colors = status_colors.get(status_type, status_colors["info"])
         self.status_label.config(text=text, bg=colors["bg"], fg=colors["fg"])
+    
+    def _create_command_buttons(self):
+        """創建底部指令按鈕區（三行佈局）"""
+        # 主容器框架（增加高度以容納三行按鈕）
+        cmd_frame = tk.Frame(self, bg="#2b2b2b", height=140)
+        cmd_frame.pack(fill="x", side="bottom")
+        cmd_frame.pack_propagate(False)
+        
+        # 標題
+        title_label = tk.Label(
+            cmd_frame,
+            text="快速指令",
+            font=font_tuple(9, "bold"),
+            bg="#2b2b2b",
+            fg="#ffffff"
+        )
+        title_label.pack(anchor="w", padx=10, pady=(3, 3))
+        
+        # 按鈕容器（不使用滾動條，直接三行佈局）
+        button_container = tk.Frame(cmd_frame, bg="#2b2b2b")
+        button_container.pack(fill="both", expand=True, padx=10, pady=(0, 5))
+        
+        # 定義三行按鈕（行索引, 列表）
+        button_rows = [
+            # 第一行：圖片相關指令
+            [
+                ("圖片辨識", "#9C27B0", self._capture_and_recognize, None),
+                ("辨識圖片", "#9C27B0", None, ">辨識>pic01, T=0s000"),
+                ("移動至圖片", "#673AB7", None, ">移動至>pic01, T=0s000"),
+                ("點擊圖片", "#3F51B5", None, ">左鍵點擊>pic01, T=0s000"),
+                ("條件判斷", "#2196F3", None, ">if>pic01, T=0s000\n>>#標籤\n>>>#標籤"),
+                ("找圖迴圈", "#E91E63", None, "#找圖\n>if>pic01, T=0s000\n>>#點擊*3\n>>>#找圖*7\n\n#點擊\n>左鍵點擊>pic01, T=0s000"),
+            ],
+            # 第二行：滑鼠和鍵盤指令
+            [
+                ("左鍵點擊", "#03A9F4", None, ">左鍵點擊(0,0), 延遲50ms, T=0s000"),
+                ("右鍵點擊", "#00BCD4", None, ">右鍵點擊(0,0), 延遲50ms, T=0s000"),
+                ("滑鼠移動", "#009688", None, ">移動至(0,0), 延遲0ms, T=0s000"),
+                ("滑鼠滾輪", "#4CAF50", None, ">滾輪(1), 延遲0ms, T=0s000"),
+                ("按下按鍵", "#8BC34A", None, ">按下a, 延遲50ms, T=0s000"),
+                ("放開按鍵", "#CDDC39", None, ">放開a, 延遲0ms, T=0s000"),
+            ],
+            # 第三行：流程控制和組合指令
+            [
+                ("新增標籤", "#FFC107", None, "#標籤名稱"),
+                ("跳轉標籤", "#FF9800", None, ">>#標籤名稱"),
+                ("條件失敗跳轉", "#FF5722", None, ">>>#標籤名稱"),
+                ("OCR文字判斷", "#00BCD4", None, ">if文字>確認, T=0s000\n>>#找到\n>>>#沒找到"),
+                ("OCR等待文字", "#009688", None, ">等待文字>載入完成, 最長10s, T=0s000"),
+                ("OCR點擊文字", "#4CAF50", None, ">點擊文字>登入, T=0s000"),
+                ("延遲等待", "#795548", None, ">延遲1000ms, T=0s000"),
+            ]
+        ]
+        
+        # 創建三行按鈕
+        for row_idx, row_buttons in enumerate(button_rows):
+            for col_idx, (text, color, command, template) in enumerate(row_buttons):
+                if command:
+                    # 特殊功能按鈕（如圖片辨識）
+                    btn = tk.Button(
+                        button_container,
+                        text=text,
+                        bg=color,
+                        fg="white",
+                        font=font_tuple(8, "bold"),
+                        padx=8,
+                        pady=3,
+                        relief="raised",
+                        bd=2,
+                        cursor="hand2",
+                        command=command
+                    )
+                else:
+                    # 插入模板的按鈕
+                    btn = tk.Button(
+                        button_container,
+                        text=text,
+                        bg=color,
+                        fg="white",
+                        font=font_tuple(8, "bold"),
+                        padx=8,
+                        pady=3,
+                        relief="raised",
+                        bd=2,
+                        cursor="hand2",
+                        command=lambda t=template: self._insert_command_template(t)
+                    )
+                
+                btn.grid(row=row_idx, column=col_idx, padx=2, pady=2, sticky="ew")
+            
+            # 設定列權重，讓按鈕平均分配空間
+            for col in range(len(row_buttons)):
+                button_container.columnconfigure(col, weight=1)
+    
+    def _insert_command_template(self, template):
+        """插入指令模板到編輯器"""
+        if not template:
+            return
+        
+        # 獲取當前游標位置
+        try:
+            cursor_pos = self.text_editor.index(tk.INSERT)
+        except:
+            cursor_pos = "end"
+        
+        # 在游標位置插入模板
+        self.text_editor.insert(cursor_pos, template + "\n")
+        
+        # 更新狀態
+        self._update_status(f"已插入指令模板", "success")
+        
+        # 聚焦到編輯器
+        self.text_editor.focus_set()
     
     def _on_combo_click(self, event):
         """點擊下拉選單時刷新列表"""
@@ -596,40 +743,35 @@ class TextCommandEditor(tk.Toplevel):
                 # 載入後套用語法高亮
                 self._apply_syntax_highlighting()
                 
-                self.status_label.config(
-                    text=f"已載入: {os.path.basename(self.script_path)} ({len(data.get('events', []))}筆事件)",
-                    bg="#e8f5e9",
-                    fg="#2e7d32"
+                self._update_status(
+                    f"已載入: {os.path.basename(self.script_path)} ({len(data.get('events', []))}筆事件)",
+                    "success"
                 )
             except Exception as convert_error:
                 # 轉換失敗不清空編輯器，顯示錯誤訊息
+                import traceback
+                error_detail = traceback.format_exc()
+                
                 error_msg = f"# 轉換失敗：{convert_error}\n\n"
+                error_msg += f"# 錯誤詳情：\n# {error_detail.replace(chr(10), chr(10) + '# ')}\n\n"
                 error_msg += "# 原始 JSON 資料：\n"
                 error_msg += json.dumps(data, ensure_ascii=False, indent=2)
                 
                 self.text_editor.delete("1.0", "end")
                 self.text_editor.insert("1.0", error_msg)
                 
-                self.status_label.config(
-                    text=f"警告: 轉換失敗: {convert_error}",
-                    bg="#fff3e0",
-                    fg="#e65100"
-                )
+                self._update_status(f"警告: 轉換失敗: {convert_error}", "warning")
                 
                 self._show_message(
                     "警告", 
                     f"腳本轉換失敗，可能包含異常資料：\n\n{convert_error}\n\n"
-                    f"已顯示原始 JSON 資料，請手動修復或刪除腳本。",
+                    f"已顯示原始 JSON 資料，請查看日誌或手動修復。",
                     "warning"
                 )
             
         except Exception as e:
             self._show_message("錯誤", f"載入腳本失敗:\n{e}", "error")
-            self.status_label.config(
-                text=f"錯誤: 載入失敗: {e}",
-                bg="#ffebee",
-                fg="#c62828"
-            )
+            self._update_status(f"錯誤: 載入失敗: {e}", "error")
     
     def _json_to_text(self, data: Dict) -> str:
         """將JSON事件轉換為文字指令"""
@@ -708,6 +850,32 @@ class TextCommandEditor(tk.Toplevel):
                     pic_name = event.get("image", "")
                     lines.append(f">移動至>{pic_name}, T={time_str}\n")
                 
+                # ==================== OCR 文字辨識事件格式化 ====================
+                elif event_type == "if_text_exists":
+                    target_text = event.get("target_text", "")
+                    lines.append(f">if文字>{target_text}, T={time_str}\n")
+                    
+                    # 成功分支
+                    on_success = event.get("on_success", {})
+                    if on_success:
+                        branch_text = self._format_branch_action(on_success)
+                        lines.append(f">>{branch_text}\n")
+                    
+                    # 失敗分支
+                    on_failure = event.get("on_failure", {})
+                    if on_failure:
+                        branch_text = self._format_branch_action(on_failure)
+                        lines.append(f">>>{branch_text}\n")
+                
+                elif event_type == "wait_text":
+                    target_text = event.get("target_text", "")
+                    timeout = event.get("timeout", 10.0)
+                    lines.append(f">等待文字>{target_text}, 最長{timeout}s, T={time_str}\n")
+                
+                elif event_type == "click_text":
+                    target_text = event.get("target_text", "")
+                    lines.append(f">點擊文字>{target_text}, T={time_str}\n")
+                
                 elif event_type == "click_image":
                     pic_name = event.get("image", "")
                     button = event.get("button", "left")
@@ -725,17 +893,26 @@ class TextCommandEditor(tk.Toplevel):
                     # 格式化分支動作（使用 >> 和 >>> 格式）
                     if on_success:
                         success_action = self._format_branch_action(on_success)
-                        lines.append(f">>{success_action}\n")
+                        # 只在有實際內容時才添加分支行
+                        if success_action or on_success.get("action") != "continue":
+                            lines.append(f">>{success_action}\n")
                     
                     if on_failure:
                         failure_action = self._format_branch_action(on_failure)
-                        lines.append(f">>>{failure_action}\n")
+                        # 只在有實際內容時才添加分支行
+                        if failure_action or on_failure.get("action") != "continue":
+                            lines.append(f">>>{failure_action}\n")
                 
                 elif event_type == "recognize_any":
                     images = event.get("images", [])
                     pic_names = [img.get("name", "") for img in images]
                     pic_list = "|".join(pic_names)
                     lines.append(f">辨識任一>{pic_list}, T={time_str}\n")
+                
+                # 延遲事件
+                elif event_type == "delay":
+                    duration_ms = int(event.get("duration", 0) * 1000)
+                    lines.append(f">延遲{duration_ms}ms, T={time_str}\n")
                 
                 # 戰鬥指令
                 elif event_type in ["start_combat", "find_and_attack", "loop_attack", "smart_combat", "set_combat_region", "pause_combat", "resume_combat", "stop_combat"]:
@@ -830,6 +1007,11 @@ class TextCommandEditor(tk.Toplevel):
             
             # 解析指令
             if line.startswith(">"):
+                # 跳過分支指令（>> 和 >>>），這些會在條件指令中處理
+                if line.startswith(">>"):
+                    i += 1
+                    continue
+                
                 try:
                     # 檢查是否為戰鬥指令
                     if any(keyword in line for keyword in ["啟動自動戰鬥", "尋找並攻擊", "循環攻擊", "智能戰鬥", "設定戰鬥區域", "暫停戰鬥", "恢復戰鬥", "停止戰鬥"]):
@@ -848,9 +1030,16 @@ class TextCommandEditor(tk.Toplevel):
                         i += 1
                         continue
                     
-                    # 檢查是否為圖片指令（支援舊格式和新格式）
-                    if any(keyword in line for keyword in ["等待圖片", "點擊圖片", "如果存在", "辨識>", "移動至>", "左鍵點擊>", "右鍵點擊>", "如果存在>", "辨識任一>", "if>"]):
-                        # 圖片指令處理
+                    # 檢查是否為圖片指令或OCR指令（支援舊格式和新格式）
+                    # 重要：OCR指令（if文字>、等待文字>、點擊文字>）也要在這裡處理
+                    if any(keyword in line for keyword in [
+                        "等待圖片", "點擊圖片", "如果存在", 
+                        "辨識>", "移動至>", "左鍵點擊>", "右鍵點擊>", 
+                        "如果存在>", "辨識任一>", "if>",
+                        "if文字>", "等待文字>", "點擊文字>",  # OCR指令
+                        "延遲"  # 延遲指令
+                    ]):
+                        # 圖片指令和OCR指令處理
                         event = self._parse_image_command_to_json(line, lines[i+1:i+6], start_time)
                         if event:
                             # 如果有待處理的標籤,先加入標籤事件
@@ -1013,13 +1202,29 @@ class TextCommandEditor(tk.Toplevel):
             # 查找對應的圖片檔案
             image_file = self._find_pic_image_file(pic_name)
             
-        return {
-            "type": "recognize_image",
-            "image": pic_name,
-            "image_file": image_file,
-            "confidence": 0.7,  # 降低預設閖值加快速度
-            "time": abs_time
-        }        # 移動至圖片指令（>移動至>pic01, T=1s000）
+            # 檢查後續行是否有分支（>> 或 >>>）
+            branches = self._parse_simple_condition_branches(next_lines)
+            
+            # 如果有分支，則視為條件判斷
+            if branches.get('success') or branches.get('failure'):
+                return {
+                    "type": "if_image_exists",
+                    "image": pic_name,
+                    "image_file": image_file,
+                    "confidence": 0.7,
+                    "on_success": branches.get('success'),
+                    "on_failure": branches.get('failure'),
+                    "time": abs_time
+                }
+            
+            # 否則視為普通辨識指令
+            return {
+                "type": "recognize_image",
+                "image": pic_name,
+                "image_file": image_file,
+                "confidence": 0.7,  # 降低預設閖值加快速度
+                "time": abs_time
+            }        # 移動至圖片指令（>移動至>pic01, T=1s000）
         move_pattern = r'>移動至>([^,]+),\s*T=(\d+)s(\d+)'
         match = re.match(move_pattern, command_line)
         if match:
@@ -1031,13 +1236,13 @@ class TextCommandEditor(tk.Toplevel):
             # 查找對應的圖片檔案
             image_file = self._find_pic_image_file(pic_name)
             
-        return {
-            "type": "move_to_image",
-            "image": pic_name,
-            "image_file": image_file,
-            "confidence": 0.7,  # 降低預設閖值加快速度
-            "time": abs_time
-        }        # 點擊圖片指令（>左鍵點擊>pic01, T=1s200 或 >右鍵點擊>pic01, T=1s200）
+            return {
+                "type": "move_to_image",
+                "image": pic_name,
+                "image_file": image_file,
+                "confidence": 0.7,  # 降低預設閖值加快速度
+                "time": abs_time
+            }        # 點擊圖片指令（>左鍵點擊>pic01, T=1s200 或 >右鍵點擊>pic01, T=1s200）
         click_pattern = r'>(左鍵|右鍵)點擊>([^,]+),\s*T=(\d+)s(\d+)'
         match = re.match(click_pattern, command_line)
         if match:
@@ -1050,15 +1255,15 @@ class TextCommandEditor(tk.Toplevel):
             # 查找對應的圖片檔案
             image_file = self._find_pic_image_file(pic_name)
             
-        return {
-            "type": "click_image",
-            "button": button,
-            "image": pic_name,
-            "image_file": image_file,
-            "confidence": 0.7,  # 降低預設閖值加快速度
-            "return_to_origin": True,  # 預設返回原位
-            "time": abs_time
-        }        # 新格式條件判斷：>if>pic01, T=0s100
+            return {
+                "type": "click_image",
+                "button": button,
+                "image": pic_name,
+                "image_file": image_file,
+                "confidence": 0.7,  # 降低預設閖值加快速度
+                "return_to_origin": True,  # 預設返回原位
+                "time": abs_time
+            }        # 新格式條件判斷：>if>pic01, T=0s100
         if_simple_pattern = r'>if>([^,]+),\s*T=(\d+)s(\d+)'
         match = re.match(if_simple_pattern, command_line)
         if match:
@@ -1072,6 +1277,12 @@ class TextCommandEditor(tk.Toplevel):
             
             # 解析後續行的 >> 和 >>> 分支
             branches = self._parse_simple_condition_branches(next_lines)
+            
+            # >if> 指令預期有分支，如果沒有則添加預設值
+            if "success" not in branches:
+                branches["success"] = {"action": "continue"}
+            if "failure" not in branches:
+                branches["failure"] = {"action": "continue"}
             
             return {
                 "type": "if_image_exists",
@@ -1105,6 +1316,85 @@ class TextCommandEditor(tk.Toplevel):
                 "confidence": 0.75,
                 "on_success": branches.get('success'),
                 "on_failure": branches.get('failure'),
+                "time": abs_time
+            }
+        
+        # ==================== OCR 文字辨識指令 ====================
+        
+        # OCR 條件判斷：>if文字>確認, T=0s000
+        ocr_if_pattern = r'>if文字>([^,]+),\s*T=(\d+)s(\d+)'
+        match = re.match(ocr_if_pattern, command_line)
+        if match:
+            target_text = match.group(1).strip()
+            seconds = int(match.group(2))
+            millis = int(match.group(3))
+            abs_time = start_time + seconds + millis / 1000.0
+            
+            # 解析後續行的 >> 和 >>> 分支
+            branches = self._parse_simple_condition_branches(next_lines)
+            
+            # 預設分支
+            if "success" not in branches:
+                branches["success"] = {"action": "continue"}
+            if "failure" not in branches:
+                branches["failure"] = {"action": "continue"}
+            
+            return {
+                "type": "if_text_exists",
+                "target_text": target_text,
+                "timeout": 10.0,  # 預設等待10秒
+                "match_mode": "contains",  # contains/exact/regex
+                "on_success": branches.get('success'),
+                "on_failure": branches.get('failure'),
+                "time": abs_time
+            }
+        
+        # 等待文字出現：>等待文字>確認, 最長10s, T=0s000
+        ocr_wait_pattern = r'>等待文字>([^,]+),\s*最長(\d+(?:\.\d+)?)[sS],\s*T=(\d+)s(\d+)'
+        match = re.match(ocr_wait_pattern, command_line)
+        if match:
+            target_text = match.group(1).strip()
+            timeout = float(match.group(2))
+            seconds = int(match.group(3))
+            millis = int(match.group(4))
+            abs_time = start_time + seconds + millis / 1000.0
+            
+            return {
+                "type": "wait_text",
+                "target_text": target_text,
+                "timeout": timeout,
+                "match_mode": "contains",
+                "time": abs_time
+            }
+        
+        # 點擊文字位置：>點擊文字>登入, T=0s000
+        ocr_click_pattern = r'>點擊文字>([^,]+),\s*T=(\d+)s(\d+)'
+        match = re.match(ocr_click_pattern, command_line)
+        if match:
+            target_text = match.group(1).strip()
+            seconds = int(match.group(2))
+            millis = int(match.group(3))
+            abs_time = start_time + seconds + millis / 1000.0
+            
+            return {
+                "type": "click_text",
+                "target_text": target_text,
+                "timeout": 5.0,
+                "time": abs_time
+            }
+        
+        # 延遲指令：>延遲1000ms, T=0s000
+        delay_pattern = r'>延遲(\d+)ms,\s*T=(\d+)s(\d+)'
+        match = re.match(delay_pattern, command_line)
+        if match:
+            delay_ms = int(match.group(1))
+            seconds = int(match.group(2))
+            millis = int(match.group(3))
+            abs_time = start_time + seconds + millis / 1000.0
+            
+            return {
+                "type": "delay",
+                "duration": delay_ms / 1000.0,  # 轉為秒
                 "time": abs_time
             }
         
@@ -1295,9 +1585,17 @@ class TextCommandEditor(tk.Toplevel):
                     label = action_str[3:].strip()
                     branches["failure"] = {"action": "jump", "target": label}
                 elif action_str.startswith("#"):
-                    # 簡化格式：直接寫 '>>>#標籤' 表示跳轉到該標籤
-                    label = action_str[1:].strip()
-                    branches["failure"] = {"action": "jump", "target": label}
+                    # 簡化格式：直接寫 '>>>#標籤' 或 '>>>#標籤*N' 表示跳轉到該標籤並執行N次
+                    label_with_count = action_str[1:].strip()
+                    if "*" in label_with_count:
+                        label, count_str = label_with_count.split("*", 1)
+                        try:
+                            count = int(count_str.strip())
+                            branches["failure"] = {"action": "jump", "target": label.strip(), "repeat_count": count}
+                        except ValueError:
+                            branches["failure"] = {"action": "jump", "target": label_with_count}
+                    else:
+                        branches["failure"] = {"action": "jump", "target": label_with_count}
                 else:
                     # 其他文字視為註解，保存下來（保留用戶的註解內容）
                     branches["failure"] = {"action": "continue", "comment": action_str}
@@ -1316,20 +1614,23 @@ class TextCommandEditor(tk.Toplevel):
                     label = action_str[3:].strip()
                     branches["success"] = {"action": "jump", "target": label}
                 elif action_str.startswith("#"):
-                    # 簡化格式：直接寫 '>>#標籤' 表示跳轉到該標籤
-                    label = action_str[1:].strip()
-                    branches["success"] = {"action": "jump", "target": label}
+                    # 簡化格式：直接寫 '>>#標籤' 或 '>>#標籤*N' 表示跳轉到該標籤並執行N次
+                    label_with_count = action_str[1:].strip()
+                    if "*" in label_with_count:
+                        label, count_str = label_with_count.split("*", 1)
+                        try:
+                            count = int(count_str.strip())
+                            branches["success"] = {"action": "jump", "target": label.strip(), "repeat_count": count}
+                        except ValueError:
+                            branches["success"] = {"action": "jump", "target": label_with_count}
+                    else:
+                        branches["success"] = {"action": "jump", "target": label_with_count}
                 else:
                     # 其他文字視為註解，保存下來（保留用戶的註解內容）
                     branches["success"] = {"action": "continue", "comment": action_str}
                 continue
         
-        # 預設值
-        if "success" not in branches:
-            branches["success"] = {"action": "continue"}
-        if "failure" not in branches:
-            branches["failure"] = {"action": "continue"}
-        
+        # 不設定預設值，讓呼叫者決定是否需要預設行為
         return branches
     
     def _parse_branch_action(self, action: str) -> dict:
@@ -1466,13 +1767,16 @@ class TextCommandEditor(tk.Toplevel):
             return "停止"
         elif action == "jump":
             target = branch.get("target", "")
-            # 使用簡化格式：直接輸出 '#標籤' 而不是 '跳到#標籤'
+            repeat_count = branch.get("repeat_count", 1)
+            # 使用簡化格式：直接輸出 '#標籤*N' 或 '#標籤'
+            if repeat_count > 1:
+                return f"#{target}*{repeat_count}"
             return f"#{target}"
         
         return ""  # 預設值
     
     def _save_script(self):
-        """儲存文字指令回JSON格式（增強版安全檢查）"""
+        """儲存文字指令回JSON格式（雙向驗證增強版）"""
         if not self.script_path:
             self._show_message("警告", "沒有指定要儲存的腳本檔案", "warning")
             return
@@ -1490,23 +1794,18 @@ class TextCommandEditor(tk.Toplevel):
                     break
             
             if not has_commands:
-                # 只有註解或空行，不保存
                 self._show_message(
                     "警告", 
-                    "腳本沒有任何指令，無法儲存！\n\n請先添加指令（以 > 開頭的行）",
+                    "腳本沒有任何指令，無法儲存！\n\n請先添加指令（以 > 或 # 開頭的行）",
                     "warning"
                 )
-                self.status_label.config(
-                    text="警告: 無法儲存：腳本無指令",
-                    bg="#fff3e0",
-                    fg="#e65100"
-                )
+                self._update_status("警告: 無法儲存：腳本無指令", "warning")
                 return
             
             # 轉換為JSON
             json_data = self._text_to_json(text_content)
             
-            # 二次檢查：確保轉換後的events不為空（防止解析錯誤）
+            # 二次檢查：確保轉換後的events不為空
             if not json_data.get("events") or len(json_data.get("events", [])) == 0:
                 self._show_message(
                     "錯誤", 
@@ -1517,11 +1816,22 @@ class TextCommandEditor(tk.Toplevel):
                     "請檢查編輯器中的指令格式。",
                     "error"
                 )
-                self.status_label.config(
-                    text="錯誤: 解析失敗：events為空",
-                    bg="#ffebee",
-                    fg="#c62828"
+                self._update_status("錯誤: 解析失敗：events為空", "error")
+                return
+            
+            # ✅ 雙向驗證：將JSON轉回文字，確保可以正確還原
+            try:
+                verification_text = self._json_to_text(json_data)
+                # 簡單檢查：確保轉換後有內容
+                if not verification_text or len(verification_text.strip()) < 10:
+                    raise ValueError("JSON轉文字驗證失敗：內容過短")
+            except Exception as verify_error:
+                self._show_message(
+                    "錯誤",
+                    f"雙向驗證失敗！\n\n儲存的JSON無法正確轉回文字格式。\n\n錯誤：{verify_error}\n\n請檢查指令格式。",
+                    "error"
                 )
+                self._update_status("錯誤: 雙向驗證失敗", "error")
                 return
             
             # 備份原檔案
@@ -1538,15 +1848,19 @@ class TextCommandEditor(tk.Toplevel):
             temp_path = self.script_path + ".tmp"
             with open(temp_path, 'w', encoding='utf-8') as f:
                 json.dump(json_data, f, indent=2, ensure_ascii=False)
-                # 強制寫入磁碟
                 f.flush()
                 os.fsync(f.fileno())
             
-            # 驗證臨時檔案內容（確保JSON有效且events不為空）
+            # 驗證臨時檔案內容
             with open(temp_path, 'r', encoding='utf-8') as f:
                 verify_data = json.load(f)
                 if not verify_data.get("events") or len(verify_data.get("events", [])) == 0:
                     raise ValueError("儲存後驗證失敗：events為空")
+                
+                # ✅ 再次雙向驗證：確保儲存的檔案可以正確讀取
+                verify_text_2 = self._json_to_text(verify_data)
+                if not verify_text_2 or len(verify_text_2.strip()) < 10:
+                    raise ValueError("儲存檔案二次驗證失敗")
             
             # 驗證成功後才替換原檔案
             if os.path.exists(self.script_path):
@@ -1554,20 +1868,15 @@ class TextCommandEditor(tk.Toplevel):
             os.rename(temp_path, self.script_path)
             
             event_count = len(json_data.get("events", []))
-            self.status_label.config(
-                text=f"已儲存: {os.path.basename(self.script_path)} ({event_count}筆事件)",
-                bg="#e8f5e9",
-                fg="#2e7d32"
+            self._update_status(
+                f"已儲存: {os.path.basename(self.script_path)} ({event_count}筆事件)",
+                "success"
             )
             
         except ValueError as ve:
             # 解析/驗證錯誤
             self._show_message("錯誤", f"儲存驗證失敗:\n{ve}", "error")
-            self.status_label.config(
-                text=f"錯誤: 驗證失敗: {ve}",
-                bg="#ffebee",
-                fg="#c62828"
-            )
+            self._update_status(f"錯誤: 驗證失敗: {ve}", "error")
             # 清理臨時檔案
             temp_path = self.script_path + ".tmp"
             if os.path.exists(temp_path):
@@ -1578,11 +1887,7 @@ class TextCommandEditor(tk.Toplevel):
         except Exception as e:
             # 其他錯誤
             self._show_message("錯誤", f"儲存腳本失敗:\n{e}", "error")
-            self.status_label.config(
-                text=f"錯誤: 儲存失敗: {e}",
-                bg="#ffebee",
-                fg="#c62828"
-            )
+            self._update_status(f"錯誤: 儲存失敗: {e}", "error")
             # 清理臨時檔案
             temp_path = self.script_path + ".tmp"
             if os.path.exists(temp_path):
@@ -1748,33 +2053,101 @@ class TextCommandEditor(tk.Toplevel):
         self.after(50, self._apply_syntax_highlighting)
     
     def _apply_syntax_highlighting(self):
-        """套用語法高亮"""
+        """套用語法高亮 (Dracula 配色)"""
         try:
             # 移除所有現有標籤
-            self.text_editor.tag_remove("syntax_operator", "1.0", tk.END)
-            self.text_editor.tag_remove("syntax_keyword", "1.0", tk.END)
+            for tag in ["syntax_symbol", "syntax_time", "syntax_label", "syntax_keyboard",
+                       "syntax_mouse", "syntax_image", "syntax_condition", "syntax_ocr",
+                       "syntax_delay", "syntax_flow", "syntax_picname"]:
+                self.text_editor.tag_remove(tag, "1.0", tk.END)
             
             # 獲取所有文字內容
             content = self.text_editor.get("1.0", tk.END)
             
-            # 定義需要高亮的模式
-            # 橘色：>, >>, >>>, 逗號, T=
-            patterns_orange = [
-                (r'^>', 'syntax_operator'),           # 行首的 >
-                (r'^>>', 'syntax_operator'),          # 行首的 >>
-                (r'^>>>', 'syntax_operator'),         # 行首的 >>>
-                (r',', 'syntax_operator'),            # 逗號
-                (r'T=', 'syntax_operator'),           # T=
+            # 定義需要高亮的模式 (Dracula 配色方案)
+            # 流程控制 (紅色) - 優先順序最高
+            patterns_flow = [
+                (r'跳到#\S+', 'syntax_flow'),
+                (r'停止', 'syntax_flow'),
             ]
             
-            # 青綠色：# 開頭的標籤
-            patterns_green = [
-                (r'^#\S+', 'syntax_keyword'),         # 行首的 # 標籤
-                (r'>>#\S+', 'syntax_keyword'),        # >> 後的 # 標籤
-                (r'>>>#\S+', 'syntax_keyword'),       # >>> 後的 # 標籤
+            # 條件判斷 (橘色)
+            patterns_condition = [
+                (r'if>', 'syntax_condition'),
+                (r'如果存在>', 'syntax_condition'),
             ]
             
-            all_patterns = patterns_orange + patterns_green
+            # 延遲控制 (橘色)
+            patterns_delay = [
+                (r'延遲\d+ms', 'syntax_delay'),
+                (r'延遲時間', 'syntax_delay'),
+            ]
+            
+            # OCR 文字辨識 (青色)
+            patterns_ocr = [
+                (r'if文字>', 'syntax_ocr'),
+                (r'等待文字>', 'syntax_ocr'),
+                (r'點擊文字>', 'syntax_ocr'),
+            ]
+            
+            # 鍵盤操作 (淡紫色)
+            patterns_keyboard = [
+                (r'按下\w+', 'syntax_keyboard'),
+                (r'放開\w+', 'syntax_keyboard'),
+                (r'按(?![下放])\S+', 'syntax_keyboard'),  # 按但不是按下/按放
+            ]
+            
+            # 滑鼠座標操作 (藍色)
+            patterns_mouse = [
+                (r'移動至\(', 'syntax_mouse'),
+                (r'左鍵點擊\(', 'syntax_mouse'),
+                (r'右鍵點擊\(', 'syntax_mouse'),
+                (r'中鍵點擊\(', 'syntax_mouse'),
+                (r'雙擊\(', 'syntax_mouse'),
+                (r'按下left鍵\(', 'syntax_mouse'),
+                (r'放開left鍵\(', 'syntax_mouse'),
+                (r'滾輪\(', 'syntax_mouse'),
+            ]
+            
+            # 圖片辨識 (綠色)
+            patterns_image = [
+                (r'辨識>', 'syntax_image'),
+                (r'移動至>', 'syntax_image'),
+                (r'左鍵點擊>', 'syntax_image'),
+                (r'右鍵點擊>', 'syntax_image'),
+                (r'辨識任一>', 'syntax_image'),
+            ]
+            
+            # 圖片名稱 (黃色) - pic + 數字
+            patterns_picname = [
+                (r'pic\d+', 'syntax_picname'),
+            ]
+            
+            # 時間參數 (粉紅色)
+            patterns_time = [
+                (r'T=\d+[smh]\d*', 'syntax_time'),
+            ]
+            
+            # 標籤 (青色)
+            patterns_label = [
+                (r'^#\S+', 'syntax_label'),           # 行首的 # 標籤
+                (r'>>#\S+', 'syntax_label'),          # >> 後的 # 標籤
+                (r'>>>#\S+', 'syntax_label'),         # >>> 後的 # 標籤
+            ]
+            
+            # 符號 (淡紫色) - 最後處理
+            patterns_symbol = [
+                (r'^>>>', 'syntax_symbol'),           # 行首的 >>>
+                (r'^>>', 'syntax_symbol'),            # 行首的 >>
+                (r'^>', 'syntax_symbol'),             # 行首的 >
+                (r',', 'syntax_symbol'),              # 逗號
+            ]
+            
+            # 按順序合併所有模式 (優先順序從高到低)
+            all_patterns = (patterns_flow + patterns_condition + patterns_delay + 
+                          patterns_ocr + patterns_keyboard + patterns_mouse + 
+                          patterns_image + patterns_picname + patterns_time + 
+                          patterns_label + patterns_symbol)
             
             # 逐行處理
             lines = content.split('\n')

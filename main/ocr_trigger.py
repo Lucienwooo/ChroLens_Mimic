@@ -56,8 +56,8 @@ class OCRTrigger:
     def _initialize_ocr(self, engine: str) -> None:
         """初始化 OCR 引擎"""
         if engine == "auto":
-            # 嘗試按優先順序載入
-            for eng in ["tesseract", "windows"]:
+            # 嘗試按優先順序載入 (優先使用 Windows 內建 OCR)
+            for eng in ["windows", "tesseract"]:
                 if self._try_load_engine(eng):
                     return
             # 都失敗則不使用 OCR
@@ -71,18 +71,7 @@ class OCRTrigger:
         Returns:
             是否成功載入
         """
-        if engine == "tesseract":
-            try:
-                import pytesseract
-                self._ocr_function = self._ocr_tesseract
-                self._ocr_available = True
-                self.ocr_engine = "tesseract"
-                print("✅ OCR: 使用 Tesseract 引擎")
-                return True
-            except ImportError:
-                pass
-        
-        elif engine == "windows":
+        if engine == "windows":
             try:
                 # Windows Runtime OCR (需要 Python 3.7+ 和 Windows 10+)
                 from PIL import Image
@@ -94,14 +83,29 @@ class OCRTrigger:
                     self._ocr_function = self._ocr_windows
                     self._ocr_available = True
                     self.ocr_engine = "windows"
-                    print("✅ OCR: 使用 Windows Runtime 引擎")
+                    print("✅ OCR: 使用 Windows Runtime 引擎 (內建)")
                     return True
                 except ImportError:
                     pass
             except Exception:
                 pass
         
+        elif engine == "tesseract":
+            try:
+                import pytesseract
+                self._ocr_function = self._ocr_tesseract
+                self._ocr_available = True
+                self.ocr_engine = "tesseract"
+                print("✅ OCR: 使用 Tesseract 引擎")
+                return True
+            except ImportError:
+                pass
+        
         return False
+            except Exception:
+                pass
+        
+        elif engine == "tesseract":
     
     def _ocr_tesseract(self, image) -> str:
         """使用 Tesseract 辨識圖片"""
