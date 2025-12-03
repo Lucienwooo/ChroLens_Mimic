@@ -24,6 +24,7 @@ import tempfile
 import shutil
 import subprocess
 import threading
+import datetime
 from pathlib import Path
 from typing import Optional, Dict, Callable
 
@@ -218,6 +219,108 @@ class UpdateManager:
         temp_zip = None
         temp_extract_dir = None
         
+        # === 步驟 0: 先寫入初始日誌 ===
+        self._logger("開始更新流程...")
+        
+        # 確定當前執行檔路徑
+        if getattr(sys, 'frozen', False):
+            # 打包後的執行檔
+            current_exe = sys.executable
+            current_dir = os.path.dirname(current_exe)
+            env_type = "打包環境"
+        else:
+            # 開發環境
+            current_exe = os.path.abspath(__file__)
+            current_dir = os.path.dirname(current_exe)
+            env_type = "開發環境"
+        
+        self._logger(f"環境類型: {env_type}")
+        self._logger(f"當前目錄: {current_dir}")
+        self._logger(f"執行檔: {current_exe}")
+        
+        # 嘗試寫入初始日誌
+        log_written = False
+        initial_log_path = None
+        
+        # 嘗試 1: 主程式目錄
+        try:
+            initial_log_path = os.path.join(current_dir, "update_log.txt")
+            self._logger(f"嘗試寫入主目錄日誌: {initial_log_path}")
+            
+            with open(initial_log_path, 'w', encoding='utf-8') as f:
+                f.write("="*60 + "\n")
+                f.write("ChroLens_Mimic 更新程式 - 初始日誌\n")
+                f.write(f"更新時間: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                f.write("="*60 + "\n")
+                f.write(f"當前版本: {self.current_version}\n")
+                f.write(f"目標版本: {self._latest_version}\n")
+                f.write(f"環境類型: {env_type}\n")
+                f.write(f"主程式目錄: {current_dir}\n")
+                f.write(f"執行檔: {current_exe}\n")
+                f.write("\n開始下載更新...\n\n")
+            
+            log_written = True
+            self._logger(f"✅ 初始日誌已寫入: {initial_log_path}")
+            
+        except Exception as e:
+            self._logger(f"❌ 無法寫入主目錄日誌: {e}")
+        
+        # 嘗試 2: 臨時目錄
+        if not log_written:
+            try:
+                initial_log_path = os.path.join(tempfile.gettempdir(), "ChroLens_update_log.txt")
+                self._logger(f"嘗試寫入臨時目錄日誌: {initial_log_path}")
+                
+                with open(initial_log_path, 'w', encoding='utf-8') as f:
+                    f.write("="*60 + "\n")
+                    f.write("ChroLens_Mimic 更新程式 - 初始日誌 (臨時目錄)\n")
+                    f.write(f"更新時間: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                    f.write("="*60 + "\n")
+                    f.write(f"當前版本: {self.current_version}\n")
+                    f.write(f"目標版本: {self._latest_version}\n")
+                    f.write(f"環境類型: {env_type}\n")
+                    f.write(f"主程式目錄: {current_dir}\n")
+                    f.write(f"執行檔: {current_exe}\n")
+                    f.write("\n注意: 無法寫入主目錄，使用臨時目錄\n")
+                    f.write("開始下載更新...\n\n")
+                
+                log_written = True
+                self._logger(f"✅ 初始日誌已寫入臨時目錄: {initial_log_path}")
+                
+            except Exception as e:
+                self._logger(f"❌ 無法寫入臨時目錄日誌: {e}")
+        
+        # 嘗試 3: 桌面 (最後的備用方案)
+        if not log_written:
+            try:
+                desktop = os.path.join(os.path.expanduser("~"), "Desktop")
+                initial_log_path = os.path.join(desktop, "ChroLens_update_log.txt")
+                self._logger(f"嘗試寫入桌面日誌: {initial_log_path}")
+                
+                with open(initial_log_path, 'w', encoding='utf-8') as f:
+                    f.write("="*60 + "\n")
+                    f.write("ChroLens_Mimic 更新程式 - 初始日誌 (桌面)\n")
+                    f.write(f"更新時間: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                    f.write("="*60 + "\n")
+                    f.write(f"當前版本: {self.current_version}\n")
+                    f.write(f"目標版本: {self._latest_version}\n")
+                    f.write(f"環境類型: {env_type}\n")
+                    f.write(f"主程式目錄: {current_dir}\n")
+                    f.write(f"執行檔: {current_exe}\n")
+                    f.write("\n注意: 無法寫入主目錄和臨時目錄，使用桌面\n")
+                    f.write("開始下載更新...\n\n")
+                
+                log_written = True
+                self._logger(f"✅ 初始日誌已寫入桌面: {initial_log_path}")
+                
+            except Exception as e:
+                self._logger(f"❌ 無法寫入桌面日誌: {e}")
+        
+        if not log_written:
+            self._logger("⚠️  警告: 所有位置都無法寫入日誌！")
+        else:
+            self._logger(f"✅ 日誌檔案位置: {initial_log_path}")
+        
         try:
             # === 步驟 1: 下載更新包 ===
             self._update_progress(0, "準備下載更新包...")
@@ -276,12 +379,31 @@ class UpdateManager:
             # === 步驟 4: 執行安裝 ===
             self._update_progress(95, "準備重啟程式...")
             
-            # 啟動更新腳本
-            subprocess.Popen(
-                ['cmd', '/c', update_script],
-                shell=True,
-                creationflags=subprocess.CREATE_NO_WINDOW
-            )
+            # 更新日誌：添加批次腳本信息
+            if log_written and initial_log_path:
+                try:
+                    with open(initial_log_path, 'a', encoding='utf-8') as f:
+                        f.write(f"\n下載完成時間: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                        f.write(f"批次腳本路徑: {update_script}\n")
+                        f.write(f"更新來源: {update_source}\n")
+                        f.write("\n批次腳本已準備，即將啟動...\n\n")
+                    self._logger(f"已更新日誌: {initial_log_path}")
+                except Exception as e:
+                    self._logger(f"無法更新日誌: {e}")
+            
+            # 啟動更新腳本（使用簡單的命令）
+            try:
+                # 使用 CREATE_NEW_CONSOLE 讓腳本在新視窗中執行
+                process = subprocess.Popen(
+                    update_script,
+                    shell=True,
+                    creationflags=subprocess.CREATE_NEW_CONSOLE,
+                    cwd=current_dir
+                )
+                self._logger(f"批次腳本已啟動，PID: {process.pid}")
+            except Exception as e:
+                self._logger(f"啟動批次腳本失敗: {e}")
+                raise
             
             self._update_progress(100, "更新準備完成，即將重啟...")
             
@@ -393,71 +515,131 @@ class UpdateManager:
         github_link_txt = f"{self.current_version}.txt"
         github_url = f"https://github.com/{self.GITHUB_REPO}/releases/tag/v{self.current_version}"
         
+        # 生成日誌檔案路徑
+        log_file = os.path.join(target_dir, "update_log.txt")
+        
         script_content = f"""@echo off
 chcp 65001 >nul
+
+REM 建立日誌檔案
+set LOG_FILE="{log_file}"
+echo ======================================== > %LOG_FILE%
+echo ChroLens_Mimic 更新程式 >> %LOG_FILE%
+echo 更新時間: %date% %time% >> %LOG_FILE%
+echo ======================================== >> %LOG_FILE%
+echo. >> %LOG_FILE%
+
 echo ========================================
 echo ChroLens_Mimic 更新程式
 echo ========================================
 echo.
 
-REM 等待主程式關閉（最多 10 秒）
+REM 等待主程式關閉（最多 30 秒，增加等待時間）
 echo 正在等待程式關閉...
+echo 正在等待程式關閉... >> %LOG_FILE%
 set /a count=0
 :wait_loop
 tasklist /FI "IMAGENAME eq ChroLens_Mimic.exe" 2>NUL | find /I /N "ChroLens_Mimic.exe">NUL
 if "%ERRORLEVEL%"=="0" (
-    if %count% LSS 10 (
+    if %count% LSS 30 (
         timeout /t 1 /nobreak >nul
         set /a count+=1
         goto wait_loop
+    ) else (
+        echo 警告: 程式仍在運行，嘗試強制結束... >> %LOG_FILE%
+        taskkill /F /IM ChroLens_Mimic.exe 2>NUL
+        timeout /t 2 /nobreak >nul
     )
+) else (
+    echo 程式已關閉 >> %LOG_FILE%
 )
 
 echo 開始更新檔案...
+echo 開始更新檔案... >> %LOG_FILE%
 
 REM 建立 backup 資料夾
 if not exist "{target_dir}\\backup" (
     mkdir "{target_dir}\\backup" >nul 2>&1
+    echo 建立 backup 資料夾 >> %LOG_FILE%
 )
 
 REM 備份舊版本的 version.txt 到 backup 資料夾
 if exist "{target_dir}\\{backup_version_txt}" (
     echo 備份舊版本檔案...
+    echo 備份 {backup_version_txt} >> %LOG_FILE%
     move /Y "{target_dir}\\{backup_version_txt}" "{target_dir}\\backup\\{backup_version_txt}" >nul 2>&1
 )
 
 REM 在 backup 資料夾生成 GitHub 下載連結檔案
 echo 生成版本資訊...
+echo 生成版本資訊: {github_link_txt} >> %LOG_FILE%
 echo {github_url} > "{target_dir}\\backup\\{github_link_txt}"
 
-REM 刪除舊版 exe（不保留 .exe.old）
+REM 刪除舊版 exe（使用重命名+重試機制）
+echo 移除舊版本檔案...
+echo 處理舊版 exe... >> %LOG_FILE%
+
+REM 先刪除可能存在的 .old 檔案
 if exist "{target_dir}\\ChroLens_Mimic.exe.old" (
+    echo 刪除 .exe.old 檔案 >> %LOG_FILE%
     del /F /Q "{target_dir}\\ChroLens_Mimic.exe.old" >nul 2>&1
 )
+
+REM 將舊的 exe 重命名為 .old，然後嘗試刪除
 if exist "{target_dir}\\ChroLens_Mimic.exe" (
-    del /F /Q "{target_dir}\\ChroLens_Mimic.exe" >nul 2>&1
+    echo 重命名舊版 exe... >> %LOG_FILE%
+    ren "{target_dir}\\ChroLens_Mimic.exe" "ChroLens_Mimic.exe.old" >nul 2>&1
+    if exist "{target_dir}\\ChroLens_Mimic.exe.old" (
+        REM 重試刪除 3 次
+        set /a retry=0
+        :delete_retry
+        del /F /Q "{target_dir}\\ChroLens_Mimic.exe.old" >nul 2>&1
+        if exist "{target_dir}\\ChroLens_Mimic.exe.old" (
+            if %retry% LSS 3 (
+                timeout /t 1 /nobreak >nul
+                set /a retry+=1
+                goto delete_retry
+            ) else (
+                echo 警告: 無法刪除舊版 exe，但會繼續更新 >> %LOG_FILE%
+            )
+        ) else (
+            echo 舊版 exe 已刪除 >> %LOG_FILE%
+        )
+    )
 )
 
 REM 複製新檔案（覆蓋所有檔案）
 echo 正在安裝更新...
-xcopy /E /I /Y /Q "{source_dir}\\*" "{target_dir}\\" >nul 2>&1
+echo 複製新檔案... >> %LOG_FILE%
+echo 來源目錄: {source_dir} >> %LOG_FILE%
+echo 目標目錄: {target_dir} >> %LOG_FILE%
+
+xcopy /E /I /Y /Q "{source_dir}\\*" "{target_dir}\\" >> %LOG_FILE% 2>&1
 
 if errorlevel 1 (
-    echo 更新失敗！
+    echo 更新失敗！錯誤碼: %errorlevel% >> %LOG_FILE%
+    echo 更新失敗！請查看 update_log.txt
     pause
     exit /b 1
+) else (
+    echo 檔案複製成功 >> %LOG_FILE%
 )
 
 echo 更新完成！
+echo 更新完成！ >> %LOG_FILE%
 
 REM 清理臨時檔案
 echo 清理臨時檔案...
+echo 清理臨時檔案: {os.path.dirname(source_dir)} >> %LOG_FILE%
 rd /S /Q "{os.path.dirname(source_dir)}" >nul 2>&1
 
 REM 重新啟動程式
 echo 正在重新啟動程式...
+echo 重新啟動程式: {exe_path} >> %LOG_FILE%
 timeout /t 2 /nobreak >nul
 start "" "{exe_path}"
+
+echo 腳本執行完成 >> %LOG_FILE%
 
 REM 刪除自己
 (goto) 2>nul & del "%~f0"

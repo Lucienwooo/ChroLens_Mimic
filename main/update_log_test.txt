@@ -1,0 +1,9 @@
+============================================================
+ChroLens_Mimic 更新程式 - 測試
+測試時間: 2025-12-04 00:31:45
+============================================================
+測試位置: c:\Users\Lucien\Documents\GitHub\ChroLens_Mimic\main
+日誌路徑: c:\Users\Lucien\Documents\GitHub\ChroLens_Mimic\main\update_log_test.txt
+
+這是一個測試檔案。
+如果您看到這個檔案，表示日誌寫入功能正常。

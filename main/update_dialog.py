@@ -340,10 +340,16 @@ class UpdateDialog:
     
     def _restart_app(self):
         """重啟應用程式"""
+        import time
+        import threading
+        
         # 關閉對話框
         self.dialog.destroy()
         
-        # 關閉主視窗（這會觸發更新腳本）
+        # 延遲0.5秒確保批次腳本已啟動
+        time.sleep(0.5)
+        
+        # 關閉主視窗
         self.parent.quit()
         self.parent.destroy()
     
