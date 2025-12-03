@@ -164,14 +164,12 @@ class LoggerManager:
         if self.file_handler:
             self.logger.removeHandler(self.file_handler)
         
-        try:
-            self.file_handler = logging.FileHandler(log_file, mode=mode, encoding='utf-8')
-            self.file_handler.setFormatter(self.formatter)
-            self.logger.addHandler(self.file_handler)
-        except Exception as e:
-            print(f"⚠️ 無法創建日誌檔案: {e}")
-    
-    def info(self, msg: str) -> None:
+            try:
+                self.file_handler = logging.FileHandler(log_file, mode=mode, encoding='utf-8')
+                self.file_handler.setFormatter(self.formatter)
+                self.logger.addHandler(self.file_handler)
+            except Exception as e:
+                print(f"警告: 無法創建日誌檔案: {e}")    def info(self, msg: str) -> None:
         """記錄 INFO 訊息"""
         self.logger.info(msg)
     
@@ -252,7 +250,7 @@ if __name__ == "__main__":
     btn.pack(pady=10)
     
     # 顯示歡迎訊息
-    logger_mgr.info("=== 日誌系統測試 ===")
+    logger_mgr.info("日誌系統測試")
     logger_mgr.info("點擊按鈕測試不同等級的日誌訊息")
     
     root.mainloop()

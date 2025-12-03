@@ -1,4 +1,4 @@
-# ChroLens Studio - Lucienwooo
+﻿# ChroLens Studio - Lucienwooo
 # python "C:\Users\Lucien\Documents\GitHub\ChroLens_Mimic\main\ChroLens_Mimic.py"
 #
 # ═══════════════════════════════════════════════════════════════════════════
@@ -46,17 +46,15 @@ try:
 except Exception as e:
     print(f"無法匯入 CoreRecorder: {e}")
 
+# ✅ 使用文字指令式腳本編輯器（已移除舊版圖形化編輯器）
 try:
-    # 使用腳本編輯器
     from text_script_editor import TextCommandEditor as VisualScriptEditor
+    print("✓ 已載入文字指令編輯器")
 except Exception as e:
-    try:
-        # 備用：舊版圖形化編輯器
-        from visual_script_editor import VisualScriptEditor
-        print("⚠️ 載入舊版編輯器")
-    except Exception as e2:
-        print(f"❌ 無法匯入編輯器: {e}, {e2}")
-        VisualScriptEditor = None
+    print(f"❌ 無法匯入編輯器: {e}")
+    import traceback
+    traceback.print_exc()
+    VisualScriptEditor = None
 try:
     from lang import LANG_MAP
 except Exception as e:
@@ -959,15 +957,53 @@ class RecorderApp(tb.Window):
         return 0
     
     def _actions_to_events(self, actions):
-        """將視覺化編輯器的動作列表轉換為事件列表"""
+        """將視覺化編輯器的動作列表轉換為事件列表
+        
+        增強穩定性:
+        - 完整的數據驗證
+        - 詳細的錯誤日誌
+        - 自動修復異常數據
+        - 跳過無效動作而非中斷
+        """
         events = []
         current_time = 0.0
+        skipped_count = 0
+        
+        # 數據驗證
+        if not isinstance(actions, list):
+            self.log(f"[轉換錯誤] actions 不是列表類型: {type(actions)}")
+            return []
+        
+        if len(actions) == 0:
+            self.log("[轉換警告] 動作列表為空")
+            return []
+        
+        self.log(f"[轉換開始] 準備轉換 {len(actions)} 個動作為事件")
         
         try:
-            for action in actions:
+            for idx, action in enumerate(actions):
+                # 驗證動作格式
+                if not isinstance(action, dict):
+                    self.log(f"[跳過] 第 {idx+1} 個動作不是字典類型")
+                    skipped_count += 1
+                    continue
+                
                 command = action.get("command", "")
+                if not command:
+                    self.log(f"[跳過] 第 {idx+1} 個動作缺少指令")
+                    skipped_count += 1
+                    continue
+                
                 params_str = action.get("params", "")
-                delay = float(action.get("delay", 0)) / 1000.0  # 毫秒轉秒
+                
+                # 安全解析延遲
+                try:
+                    delay = float(action.get("delay", 0)) / 1000.0  # 毫秒轉秒
+                    if delay < 0:
+                        delay = 0
+                except (ValueError, TypeError) as e:
+                    self.log(f"[警告] 第 {idx+1} 個動作的延遲值無效: {e}")
+                    delay = 0
                 
                 # 先加上延遲
                 current_time += delay
@@ -978,53 +1014,106 @@ class RecorderApp(tb.Window):
                     try:
                         if command == "move_to_path":
                             # move_to_path: params 是 JSON 字串格式的軌跡列表
-                            # 嘗試使用 json.loads 解析
+                            trajectory = None
+                            
+                            # 嘗試解析軌跡數據
                             try:
                                 trajectory = json.loads(params_str)
-                            except:
+                            except json.JSONDecodeError:
                                 # 如果 json.loads 失敗,嘗試 ast.literal_eval
-                                import ast
-                                trajectory = ast.literal_eval(params_str)
+                                try:
+                                    import ast
+                                    trajectory = ast.literal_eval(params_str)
+                                except Exception as ast_err:
+                                    self.log(f"[錯誤] 第 {idx+1} 個動作: 無法解析軌跡數據 - {ast_err}")
+                                    skipped_count += 1
+                                    continue
                             
-                            if trajectory and isinstance(trajectory, list) and len(trajectory) > 0:
-                                # 取最後一個點作為終點
-                                last_point = trajectory[-1]
-                                x = int(last_point.get("x", 0))
-                                y = int(last_point.get("y", 0))
-                                
-                                events.append({
-                                    "type": "mouse",
-                                    "event": "move",
-                                    "x": x,
-                                    "y": y,
-                                    "time": current_time,
-                                    "trajectory": trajectory
-                                })
-                            else:
-                                self.log(f"move_to_path 軌跡數據格式錯誤或為空")
+                            # 驗證軌跡數據
+                            if not isinstance(trajectory, list) or len(trajectory) == 0:
+                                self.log(f"[跳過] 第 {idx+1} 個動作: 軌跡數據格式錯誤或為空")
+                                skipped_count += 1
+                                continue
+                            
+                            # 驗證軌跡點格式
+                            valid_points = []
+                            for pt_idx, point in enumerate(trajectory):
+                                if isinstance(point, dict) and "x" in point and "y" in point:
+                                    valid_points.append(point)
+                                else:
+                                    self.log(f"[警告] 軌跡點 {pt_idx+1} 格式錯誤,已跳過")
+                            
+                            if len(valid_points) == 0:
+                                self.log(f"[跳過] 第 {idx+1} 個動作: 無有效軌跡點")
+                                skipped_count += 1
+                                continue
+                            
+                            # 取最後一個點作為終點
+                            last_point = valid_points[-1]
+                            x = int(last_point.get("x", 0))
+                            y = int(last_point.get("y", 0))
+                            
+                            events.append({
+                                "type": "mouse",
+                                "event": "move",
+                                "x": x,
+                                "y": y,
+                                "time": current_time,
+                                "trajectory": valid_points
+                            })
+                            self.log(f"[轉換] 軌跡移動: {len(valid_points)} 個點")
                         else:
                             # move_to: params 是 "x, y" 或 "x, y, trajectory"
+                            if not params_str:
+                                self.log(f"[跳過] 第 {idx+1} 個動作: move_to 缺少參數")
+                                skipped_count += 1
+                                continue
+                            
                             parts = [p.strip() for p in params_str.split(",", 2)]  # 最多分割為3部分
-                            x = int(parts[0]) if len(parts) > 0 else 0
-                            y = int(parts[1]) if len(parts) > 1 else 0
+                            
+                            # 驗證並解析座標
+                            try:
+                                x = int(parts[0]) if len(parts) > 0 and parts[0] else 0
+                                y = int(parts[1]) if len(parts) > 1 and parts[1] else 0
+                            except (ValueError, IndexError) as e:
+                                self.log(f"[跳過] 第 {idx+1} 個動作: 座標解析失敗 - {e}")
+                                skipped_count += 1
+                                continue
                             
                             # 檢查是否有軌跡數據
                             if len(parts) > 2 and parts[2]:
                                 # 有軌跡數據,嘗試解析
                                 try:
                                     trajectory = json.loads(parts[2])
+                                    events.append({
+                                        "type": "mouse",
+                                        "event": "move",
+                                        "x": x,
+                                        "y": y,
+                                        "time": current_time,
+                                        "trajectory": trajectory
+                                    })
                                 except:
-                                    import ast
-                                    trajectory = ast.literal_eval(parts[2])
-                                
-                                events.append({
-                                    "type": "mouse",
-                                    "event": "move",
-                                    "x": x,
-                                    "y": y,
-                                    "time": current_time,
-                                    "trajectory": trajectory
-                                })
+                                    try:
+                                        import ast
+                                        trajectory = ast.literal_eval(parts[2])
+                                        events.append({
+                                            "type": "mouse",
+                                            "event": "move",
+                                            "x": x,
+                                            "y": y,
+                                            "time": current_time,
+                                            "trajectory": trajectory
+                                        })
+                                    except Exception as traj_err:
+                                        self.log(f"[警告] 第 {idx+1} 個動作: 軌跡解析失敗,使用普通移動 - {traj_err}")
+                                        events.append({
+                                            "type": "mouse",
+                                            "event": "move",
+                                            "x": x,
+                                            "y": y,
+                                            "time": current_time
+                                        })
                             else:
                                 # 普通移動
                                 events.append({
@@ -1035,9 +1124,11 @@ class RecorderApp(tb.Window):
                                     "time": current_time
                                 })
                     except Exception as e:
-                        self.log(f"解析 {command} 參數失敗: {e}")
+                        self.log(f"[錯誤] 第 {idx+1} 個動作({command}): 處理失敗 - {e}")
                         import traceback
-                        self.log(f"錯誤詳情: {traceback.format_exc()}")
+                        self.log(f"詳細: {traceback.format_exc()}")
+                        skipped_count += 1
+                        continue
                 
                 elif command == "click":
                     events.append({
@@ -1105,19 +1196,27 @@ class RecorderApp(tb.Window):
                     })
                 
                 elif command == "scroll":
+                    # 滾輪滾動
                     try:
-                        delta = int(params_str) if params_str else 1
+                        delta = int(params_str) if params_str and params_str.strip() else 1
                         events.append({
                             "type": "mouse",
                             "event": "wheel",
                             "delta": delta,
                             "time": current_time
                         })
-                    except:
-                        pass
+                    except (ValueError, TypeError) as e:
+                        self.log(f"[警告] 第 {idx+1} 個動作: scroll 參數無效 - {e}")
+                        skipped_count += 1
                 
                 elif command == "type_text":
-                    text = params_str.strip()
+                    # 輸入文字
+                    text = params_str.strip() if params_str else ""
+                    if not text:
+                        self.log(f"[跳過] 第 {idx+1} 個動作: type_text 缺少文字內容")
+                        skipped_count += 1
+                        continue
+                    
                     for char in text:
                         events.append({
                             "type": "keyboard",
@@ -1135,24 +1234,40 @@ class RecorderApp(tb.Window):
                         current_time += 0.05
                 
                 elif command == "press_key":
-                    key = params_str.strip()
-                    if key:
-                        events.append({
-                            "type": "keyboard",
-                            "event": "down",
-                            "key": key,
-                            "time": current_time
-                        })
-                        current_time += 0.05
-                        events.append({
-                            "type": "keyboard",
-                            "event": "up",
-                            "key": key,
-                            "time": current_time
-                        })
+                    # 按下按鍵
+                    key = params_str.strip() if params_str else ""
+                    if not key:
+                        self.log(f"[跳過] 第 {idx+1} 個動作: press_key 缺少按鍵名稱")
+                        skipped_count += 1
+                        continue
+                    
+                    events.append({
+                        "type": "keyboard",
+                        "event": "down",
+                        "key": key,
+                        "time": current_time
+                    })
+                    current_time += 0.05
+                    events.append({
+                        "type": "keyboard",
+                        "event": "up",
+                        "key": key,
+                        "time": current_time
+                    })
                 
                 elif command == "hotkey":
-                    keys = [k.strip() for k in params_str.split("+")]
+                    # 快捷鍵組合
+                    if not params_str or not params_str.strip():
+                        self.log(f"[跳過] 第 {idx+1} 個動作: hotkey 缺少按鍵組合")
+                        skipped_count += 1
+                        continue
+                    
+                    keys = [k.strip() for k in params_str.split("+") if k.strip()]
+                    if len(keys) == 0:
+                        self.log(f"[跳過] 第 {idx+1} 個動作: hotkey 解析後無有效按鍵")
+                        skipped_count += 1
+                        continue
+                    
                     # 按下所有按鍵
                     for key in keys:
                         events.append({
@@ -1173,16 +1288,35 @@ class RecorderApp(tb.Window):
                         current_time += 0.02
                 
                 elif command == "delay":
+                    # 延遲等待
                     try:
-                        extra_delay = float(params_str) / 1000.0 if params_str else 0
-                        current_time += extra_delay
-                    except:
-                        pass
+                        extra_delay = float(params_str) / 1000.0 if params_str and params_str.strip() else 0
+                        if extra_delay > 0:
+                            current_time += extra_delay
+                    except (ValueError, TypeError) as e:
+                        self.log(f"[警告] 第 {idx+1} 個動作: delay 參數無效 - {e}")
+                        skipped_count += 1
+                
+                else:
+                    # 未知指令
+                    self.log(f"[跳過] 第 {idx+1} 個動作: 未知指令 '{command}'")
+                    skipped_count += 1
         
         except Exception as e:
-            self.log(f"轉換動作為事件時發生錯誤: {e}")
+            self.log(f"[轉換錯誤] 全局異常: {e}")
             import traceback
-            self.log(traceback.format_exc())
+            self.log(f"詳細: {traceback.format_exc()}")
+        
+        # 轉換完成統計
+        success_count = len(events)
+        total_count = len(actions)
+        
+        self.log(f"[轉換完成] 成功: {success_count}/{total_count} 個動作")
+        if skipped_count > 0:
+            self.log(f"[轉換警告] 跳過: {skipped_count} 個無效動作")
+        
+        if success_count == 0 and total_count > 0:
+            self.log(f"[轉換失敗] 所有動作轉換失敗,請檢查動作格式")
         
         return events
 
@@ -2306,12 +2440,19 @@ class RecorderApp(tb.Window):
 
     # --- 儲存腳本設定 ---
     def save_script_settings(self):
-        """將目前 speed/repeat/repeat_time/repeat_interval/random_interval 寫入當前腳本檔案"""
+        """將目前 speed/repeat/repeat_time/repeat_interval/random_interval 寫入當前腳本檔案
+        
+        增強穩定性:
+        - 完整的錯誤處理
+        - 數據驗證
+        - 清晰的用戶反饋
+        """
         script = self.script_var.get()
         
-        # 必須先選擇腳本才能儲存設定
-        if not script:
-            self.log("請先選擇一個腳本再儲存設定。")
+        # 驗證是否選擇腳本
+        if not script or not script.strip():
+            self.log("儲存失敗: 請先選擇一個腳本")
+            messagebox.showwarning("警告", "請先在腳本選單中選擇一個腳本")
             return
         
         # 確保腳本名稱包含 .json 副檔名
@@ -2325,128 +2466,253 @@ class RecorderApp(tb.Window):
         
         # 檢查檔案是否存在
         if not os.path.exists(path):
-            self.log("找不到腳本檔案，請確認腳本是否存在。")
+            self.log(f"儲存失敗: 找不到腳本檔案 '{script_file}'")
+            messagebox.showerror("錯誤", f"找不到腳本檔案:\n{script_file}\n\n請確認腳本是否存在")
             return
+        
         try:
-            settings = {
-                "speed": self.speed_var.get(),
-                "repeat": self.repeat_var.get(),
-                "repeat_time": self.repeat_time_var.get(),
-                "repeat_interval": self.repeat_interval_var.get(),
-                "random_interval": self.random_interval_var.get()
-            }
+            # 收集設定（加入驗證）
+            settings = {}
+            
+            # 驗證速度
+            try:
+                speed_val = self.speed_var.get().strip()
+                speed_int = int(speed_val)
+                if speed_int < 1 or speed_int > 1000:
+                    raise ValueError(f"速度值 {speed_int} 超出範圍 (1-1000)")
+                settings["speed"] = speed_val
+            except Exception as e:
+                self.log(f"警告: 速度值無效,使用預設值 100: {e}")
+                settings["speed"] = "100"
+            
+            # 驗證重複次數
+            try:
+                repeat_val = self.repeat_var.get().strip()
+                repeat_int = int(repeat_val)
+                if repeat_int < 0:
+                    raise ValueError(f"重複次數 {repeat_int} 不可為負數")
+                settings["repeat"] = repeat_val
+            except Exception as e:
+                self.log(f"警告: 重複次數無效,使用預設值 1: {e}")
+                settings["repeat"] = "1"
+            
+            # 驗證時間格式
+            for time_var_name, var, default in [
+                ("重複時間", self.repeat_time_var, "00:00:00"),
+                ("重複間隔", self.repeat_interval_var, "00:00:00")
+            ]:
+                try:
+                    time_val = var.get().strip()
+                    # 驗證時間格式
+                    if time_val and not self._validate_time_format(time_val):
+                        raise ValueError(f"時間格式不正確: {time_val}")
+                    settings[time_var_name.replace("重複", "repeat_").replace("時間", "time").replace("間隔", "interval")] = time_val if time_val else default
+                except Exception as e:
+                    self.log(f"警告: {time_var_name}格式無效,使用預設值 {default}: {e}")
+                    settings[time_var_name.replace("重複", "repeat_").replace("時間", "time").replace("間隔", "interval")] = default
+            
+            # 隨機間隔
+            try:
+                settings["random_interval"] = bool(self.random_interval_var.get())
+            except:
+                settings["random_interval"] = False
+            
+            # 使用 script_io 儲存
             sio_save_script_settings(path, settings)
-            self.log(f"已將設定儲存到腳本：{script}")
-            self.log("【腳本設定已更新】提示：快捷鍵將使用這些參數回放")
+            
+            # 成功回饋
+            self.log(f"設定已儲存到腳本: {script}")
+            self.log(f"   速度: {settings['speed']}, 重複: {settings['repeat']}, " +
+                    f"時間: {settings.get('repeat_time', '00:00:00')}, " +
+                    f"間隔: {settings.get('repeat_interval', '00:00:00')}")
+            self.log("提示: 使用快捷鍵執行時將套用這些參數")
+            
         except Exception as ex:
-            self.log(f"儲存腳本設定失敗: {ex}")
+            # 詳細錯誤報告
+            error_msg = str(ex)
+            self.log(f"儲存腳本設定失敗: {error_msg}")
+            
+            import traceback
+            detailed_error = traceback.format_exc()
+            self.log(f"錯誤詳情:\n{detailed_error}")
+            
+            messagebox.showerror("儲存失敗", 
+                               f"無法儲存腳本設定:\n\n{error_msg}\n\n請查看日誌獲取詳細資訊")
+    
+    def _validate_time_format(self, time_str):
+        """驗證時間格式 HH:MM:SS"""
+        import re
+        pattern = r'^\d{1,2}:\d{2}:\d{2}$'
+        return re.match(pattern, time_str) is not None
 
     # --- 讀取腳本設定 ---
     def on_script_selected(self, event=None):
+        """載入選中的腳本及其設定
+        
+        增強穩定性:
+        - 完整的檔案驗證
+        - 自動格式轉換 (視覺化編輯器 → events)
+        - 詳細的錯誤報告
+        - 智能視窗資訊處理
+        """
         script = self.script_var.get()
-        if script:
-            # 如果沒有副檔名，加上 .json
-            if not script.endswith('.json'):
-                script_file = script + '.json'
-            else:
-                script_file = script
-            
-            path = os.path.join(self.script_dir, script_file)
-            
-            # ✅ 檢查檔案是否存在
-            if not os.path.exists(path):
-                self.log(f"⚠️ 腳本檔案不存在: {script_file}")
+        if not script or not script.strip():
+            return
+        
+        # 如果沒有副檔名，加上 .json
+        if not script.endswith('.json'):
+            script_file = script + '.json'
+        else:
+            script_file = script
+        
+        path = os.path.join(self.script_dir, script_file)
+        
+        # ✅ 檢查檔案是否存在
+        if not os.path.exists(path):
+            self.log(f"❌ 載入失敗: 腳本檔案不存在 '{script_file}'")
+            messagebox.showwarning("警告", f"找不到腳本檔案:\n{script_file}")
+            return
+        
+        # ✅ 檢查檔案大小 (防止空檔案)
+        try:
+            file_size = os.path.getsize(path)
+            if file_size == 0:
+                self.log(f"載入失敗: 腳本檔案為空 '{script_file}'")
+                messagebox.showerror("錯誤", f"腳本檔案已損壞或為空:\n{script_file}")
                 return
+            elif file_size > 50 * 1024 * 1024:  # 50MB
+                self.log(f"警告: 腳本檔案過大 ({file_size / 1024 / 1024:.1f} MB)")
+                if not messagebox.askyesno("確認", f"腳本檔案較大 ({file_size / 1024 / 1024:.1f} MB)\n確定要載入嗎?"):
+                    return
+        except Exception as e:
+            self.log(f"警告: 檢查檔案時發生錯誤: {e}")
+        
+        try:
+            # 載入腳本數據
+            data = sio_load_script(path)
+            
+            # ✅ 檢查數據完整性
+            if not isinstance(data, dict):
+                raise ValueError("腳本格式錯誤: 不是有效的 JSON 物件")
+            
+            events = data.get("events", [])
+            settings = data.get("settings", {})
+            
+            # ✅ 特殊處理: 視覺化編輯器格式轉換
+            if not events or len(events) == 0:
+                if "script_actions" in settings and settings["script_actions"]:
+                    self.log("偵測到視覺化編輯器腳本,開始轉換...")
+                    try:
+                        events = self._actions_to_events(settings["script_actions"])
+                        if len(events) == 0:
+                            raise ValueError("轉換後無有效事件")
+                        self.log(f"轉換完成: {len(events)} 筆事件")
+                    except Exception as convert_err:
+                        self.log(f"轉換失敗: {convert_err}")
+                        messagebox.showerror("轉換失敗", 
+                                           f"無法轉換視覺化編輯器腳本:\n\n{convert_err}")
+                        return
+                else:
+                    self.log(f"警告: 腳本無事件且無動作列表")
+                    if not messagebox.askyesno("確認", 
+                                               "此腳本沒有任何內容\n是否繼續載入?"):
+                        return
+            
+            # 設定事件列表
+            self.events = events
+            
+            # 恢復參數 (帶預設值)
+            self.speed_var.set(settings.get("speed", "100"))
+            self.repeat_var.set(settings.get("repeat", "1"))
+            self.repeat_time_var.set(settings.get("repeat_time", "00:00:00"))
+            self.repeat_interval_var.set(settings.get("repeat_interval", "00:00:00"))
             
             try:
-                data = sio_load_script(path)
-                
-                # ✅ 檢查是否為空腳本（防止載入空內容）
-                events = data.get("events", [])
-                if not events:
-                    self.log(f"⚠️ 警告：腳本無事件，可能已損壞或未正確儲存")
-                    # 不清空現有事件，保持當前狀態
-                    return
-                
-                self.events = events
-                settings = data.get("settings", {})
-                
-                # 檢查是否為視覺化編輯器創建的腳本（有 script_actions 但 events 為空）
-                if not self.events and "script_actions" in settings and settings["script_actions"]:
-                    self.log("偵測到視覺化編輯器腳本，正在轉換為事件格式...")
-                    self.events = self._actions_to_events(settings["script_actions"])
-                    self.log(f"轉換完成：{len(self.events)} 筆事件")
-                
-                # 恢復參數
-                self.speed_var.set(settings.get("speed", "100"))
-                self.repeat_var.set(settings.get("repeat", "1"))
-                self.repeat_time_var.set(settings.get("repeat_time", "00:00:00"))
-                self.repeat_interval_var.set(settings.get("repeat_interval", "00:00:00"))
                 self.random_interval_var.set(settings.get("random_interval", False))
-                
-                # 讀取視窗資訊（新格式優先）
-                if "window_info" in settings:
-                    self.recorded_window_info = settings["window_info"]
-                    self.log(f"[載入] 視窗資訊:")
-                    self.log(f"  大小: {self.recorded_window_info['size'][0]} x {self.recorded_window_info['size'][1]}")
-                    self.log(f"  DPI: {self.recorded_window_info['dpi_scale']:.2f}x ({int(self.recorded_window_info['dpi_scale'] * 100)}%)")
-                    self.log(f"  解析度: {self.recorded_window_info['screen_resolution'][0]} x {self.recorded_window_info['screen_resolution'][1]}")
-                elif "window_size" in settings:
-                    # 兼容舊格式
-                    self.recorded_window_info = {
-                        "size": tuple(settings["window_size"]),
-                        "position": (0, 0),
-                        "dpi_scale": 1.0,
-                        "screen_resolution": (1920, 1080),
-                        "client_size": tuple(settings["window_size"])
-                    }
-                    self.log(f"[載入] 舊格式視窗資訊（已轉換）")
-                else:
-                    self.recorded_window_info = None
-                
-                # 顯示檔名時去除副檔名
-                display_name = os.path.splitext(script_file)[0]
-                self.log(f"[{format_time(time.time())}] 腳本已載入：{display_name}，共 {len(self.events)} 筆事件。")
-                self.log("【腳本設定已載入】")  # 新增：日誌顯示
-                
-                # 儲存完整檔名到 last_script.txt
-                with open(LAST_SCRIPT_FILE, "w", encoding="utf-8") as f:
-                    f.write(script_file)
-                
-                # 讀取腳本後，計算並顯示總運作時間
-                if self.events:
+            except:
+                self.random_interval_var.set(False)
+            
+            # ✅ 讀取視窗資訊 (新格式優先,兼容舊格式)
+            if "window_info" in settings and isinstance(settings["window_info"], dict):
+                self.recorded_window_info = settings["window_info"]
+                self.log(f"📐 視窗資訊:")
+                self.log(f"   大小: {self.recorded_window_info.get('size', ('N/A', 'N/A'))[0]} x {self.recorded_window_info.get('size', ('N/A', 'N/A'))[1]}")
+                self.log(f"   DPI: {self.recorded_window_info.get('dpi_scale', 1.0):.2f}x ({int(self.recorded_window_info.get('dpi_scale', 1.0) * 100)}%)")
+                self.log(f"   解析度: {self.recorded_window_info.get('screen_resolution', ('N/A', 'N/A'))[0]} x {self.recorded_window_info.get('screen_resolution', ('N/A', 'N/A'))[1]}")
+            elif "window_size" in settings:
+                # 兼容舊格式
+                self.recorded_window_info = {
+                    "size": tuple(settings["window_size"]),
+                    "position": (0, 0),
+                    "dpi_scale": 1.0,
+                    "screen_resolution": (1920, 1080),
+                    "client_size": tuple(settings["window_size"])
+                }
+                self.log(f"舊格式視窗資訊 (已轉換)")
+            else:
+                self.recorded_window_info = None
+                self.log(f"無視窗資訊 (可能為絕對座標腳本)")
+            
+            # 顯示檔名時去除副檔名
+            display_name = os.path.splitext(script_file)[0]
+            self.log(f"腳本已載入: {display_name} ({len(self.events)} 筆事件)")
+            self.log(f"   速度: {self.speed_var.get()}, 重複: {self.repeat_var.get()}")
+            
+            # 儲存到設定檔
+            with open(LAST_SCRIPT_FILE, "w", encoding="utf-8") as f:
+                f.write(script_file)
+            
+            # ✅ 計算並顯示預估時間
+            if self.events and len(self.events) > 0:
+                try:
                     # 單次時間
                     single_time = self.events[-1]['time'] - self.events[0]['time']
                     self.update_countdown_label(single_time)
                     
                     # 計算總運作時間
-                    try:
-                        speed_val = int(self.speed_var.get())
-                        speed = speed_val / 100.0
-                    except:
-                        speed = 1.0
-                    
-                    try:
-                        repeat = int(self.repeat_var.get())
-                    except:
-                        repeat = 1
-                    
+                    speed_val = int(self.speed_var.get())
+                    speed = speed_val / 100.0
+                    repeat = int(self.repeat_var.get())
                     repeat_time_sec = self._parse_time_to_seconds(self.repeat_time_var.get())
                     repeat_interval_sec = self._parse_time_to_seconds(self.repeat_interval_var.get())
                     
-                    # 計算總時間
                     single_adjusted = single_time / speed
-                    if repeat_time_sec > 0:
+                    
+                    if repeat == 0:  # 無限重複
+                        total_time = float('inf') if not repeat_time_sec else repeat_time_sec
+                    elif repeat_time_sec > 0:
                         total_time = repeat_time_sec
                     else:
                         total_time = single_adjusted * repeat + repeat_interval_sec * max(0, repeat - 1)
                     
                     self.update_total_time_label(total_time)
-                else:
+                    
+                    # 顯示時間資訊
+                    if total_time == float('inf'):
+                        self.log(f"單次時間: {single_time:.1f}秒, 總運作: 無限重複")
+                    else:
+                        self.log(f"單次時間: {single_time:.1f}秒, 總運作: {total_time:.1f}秒")
+                except Exception as time_err:
+                    self.log(f"計算時間時發生錯誤: {time_err}")
                     self.update_countdown_label(0)
                     self.update_total_time_label(0)
-            except Exception as ex:
-                self.log(f"載入腳本失敗: {ex}")
+            else:
+                self.update_countdown_label(0)
+                self.update_total_time_label(0)
+                
+        except json.JSONDecodeError as e:
+            self.log(f"載入失敗: JSON 格式錯誤 - {e}")
+            messagebox.showerror("格式錯誤", 
+                               f"腳本檔案格式損壞:\n\n{e}\n\n請使用文字編輯器檢查檔案內容")
+        except Exception as ex:
+            self.log(f"載入腳本失敗: {ex}")
+            import traceback
+            detailed_error = traceback.format_exc()
+            self.log(f"錯誤詳情:\n{detailed_error}")
+            messagebox.showerror("載入失敗", 
+                               f"無法載入腳本:\n\n{ex}\n\n請查看日誌獲取詳細資訊")
+        
+        # 儲存設定
         self.save_config()
 
     def load_script(self):

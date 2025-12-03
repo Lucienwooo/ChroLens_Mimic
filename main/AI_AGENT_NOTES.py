@@ -69,12 +69,13 @@ if os.path.exists(icon_path):
 ```
 
 適用於:
-- text_script_editor.py (文字編輯器)
-- visual_script_editor.py (視覺編輯器)
+- text_script_editor.py (文字指令編輯器 - 主編輯器)
 - about.py (關於視窗)
 - update_dialog.py (更新對話框)
 - 所有自訂 Dialog 和 Toplevel 視窗
-"""
+
+注意：visual_script_editor.py 已移除，現統一使用 text_script_editor.py
+```
 
 # ═══════════════════════════════════════════════════════════════════════════
 # 【自動發布流程說明】
@@ -273,6 +274,8 @@ DEVELOPMENT_NOTES = """
 4. 新增功能後更新本檔案和 docs/index.html
 5. 測試完成後清理臨時檔案
 6. 提交前確認版本號已更新
+7. 禁止在動態日誌中使用任何 emoji（除了技術文檔中用於 AI 閱讀的分類標記）
+8. 只有在版本更新時才產生 .md 文件來比對版本差異，其他情況一律不產生 .md 文件
 """
 
 # ═══════════════════════════════════════════════════════════════════════════

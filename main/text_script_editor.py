@@ -1,7 +1,11 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """
 ChroLens 文字指令式腳本編輯器
 將JSON事件轉換為簡單的文字指令格式
+
+強化功能：
+- 正確處理空白行和僅包含空白字符的行，不影響腳本轉換
+- 支援使用者在指令之間添加空行以提高可讀性
 """
 
 import tkinter as tk
@@ -26,21 +30,23 @@ try:
 except:
     LINE_SEED_FONT_LOADED = False
 
-# 🔧 導入主程式的字體系統
-try:
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    from ChroLens_Mimic import font_tuple
-except:
-    # 如果無法導入，使用預設字體函數
-    def font_tuple(size, weight=None, monospace=False):
-        # 優先使用 LINE Seed 字體
-        if LINE_SEED_FONT_LOADED:
-            fam = "LINE Seed TW"
-        else:
-            fam = "Consolas" if monospace else "Microsoft JhengHei"
-        if weight:
-            return (fam, size, weight)
-        return (fam, size)
+# 🔧 字體系統（獨立定義，避免循環匯入）
+def font_tuple(size, weight=None, monospace=False):
+    """
+    回傳字體元組
+    :param size: 字體大小
+    :param weight: 字體粗細 (可選)
+    :param monospace: 是否使用等寬字體
+    :return: 字體元組
+    """
+    # 優先使用 LINE Seed 字體
+    if LINE_SEED_FONT_LOADED:
+        fam = "LINE Seed TW"
+    else:
+        fam = "Consolas" if monospace else "Microsoft JhengHei"
+    if weight:
+        return (fam, size, weight)
+    return (fam, size)
 
 
 class TextCommandEditor(tk.Toplevel):
@@ -59,7 +65,24 @@ class TextCommandEditor(tk.Toplevel):
         
         # 設定視窗圖標(與主程式相同)
         try:
-            from ChroLens_Mimic import get_icon_path
+            # 避免循環匯入 - 直接定義 get_icon_path 函數
+            def get_icon_path():
+                """取得圖示檔案路徑（打包後和開發環境通用）"""
+                try:
+                    if getattr(sys, 'frozen', False):
+                        return os.path.join(sys._MEIPASS, "umi_奶茶色.ico")
+                    else:
+                        if os.path.exists("umi_奶茶色.ico"):
+                            return "umi_奶茶色.ico"
+                        elif os.path.exists("../pic/umi_奶茶色.ico"):
+                            return "../pic/umi_奶茶色.ico"
+                        elif os.path.exists("../umi_奶茶色.ico"):
+                            return "../umi_奶茶色.ico"
+                        else:
+                            return "umi_奶茶色.ico"
+                except:
+                    return "umi_奶茶色.ico"
+            
             icon_path = get_icon_path()
             if os.path.exists(icon_path):
                 self.iconbitmap(icon_path)
@@ -490,9 +513,9 @@ class TextCommandEditor(tk.Toplevel):
                 ("新增標籤", "#FFC107", None, "#標籤名稱"),
                 ("跳轉標籤", "#FF9800", None, ">>#標籤名稱"),
                 ("條件失敗跳轉", "#FF5722", None, ">>>#標籤名稱"),
-                ("OCR文字判斷", "#00BCD4", None, ">if文字>確認, T=0s000\n>>#找到\n>>>#沒找到"),
-                ("OCR等待文字", "#009688", None, ">等待文字>載入完成, 最長10s, T=0s000"),
-                ("OCR點擊文字", "#4CAF50", None, ">點擊文字>登入, T=0s000"),
+                ("OCR文字判斷", "#00BCD4", None, ">if文字>更改為需判斷文字, T=0s000\n>>#找到\n>>>#沒找到"),
+                ("OCR等待文字", "#009688", None, ">等待文字>更改為需等待文字, 最長10s, T=0s000"),
+                ("OCR點擊文字", "#4CAF50", None, ">點擊文字>更改為需點擊文字, T=0s000"),
                 ("延遲等待", "#795548", None, ">延遲1000ms, T=0s000"),
             ]
         ]
@@ -814,6 +837,11 @@ class TextCommandEditor(tk.Toplevel):
                     label_name = event.get("name", "")
                     lines.append(f"#{label_name}\n")
                 
+                # 分隔符事件
+                elif event_type == "separator":
+                    separator_char = event.get("char", "=")
+                    lines.append(f"{separator_char * 3}\n")
+                
                 elif event_type == "keyboard":
                     key_name = event.get("name", "")
                     
@@ -1033,11 +1061,32 @@ class TextCommandEditor(tk.Toplevel):
         # 第二遍: 解析指令
         i = 0
         pending_label = None  # 暫存標籤,等待下一個事件的時間
+        line_number = 0  # 記錄原始行號，用於保持順序
         while i < len(lines):
             line = lines[i].strip()
+            line_number = i  # 記錄當前行號
             
-            # 跳過註釋和空行
-            if not line or line.startswith("# "):
+            # 跳過註釋（但保留空行，用於增加可讀性）
+            if line.startswith("# "):
+                i += 1
+                continue
+            
+            # 處理分隔符號（=== 或 --- 等）- 保存為特殊事件
+            separator_match = re.match(r'^([=\-_])\1{2,}$', line)
+            if separator_match:
+                separator_char = separator_match.group(1)
+                events.append({
+                    "type": "separator",
+                    "char": separator_char,
+                    "time": start_time,
+                    "_line_number": line_number
+                })
+                i += 1
+                continue
+            
+            # 跳過空行和僅包含空白字符的行（但記錄行號以保持順序）
+            # 強化：使用更嚴格的空白檢查，確保各種空白字符都能被正確處理
+            if not line or line.isspace():
                 i += 1
                 continue
             
@@ -1064,7 +1113,8 @@ class TextCommandEditor(tk.Toplevel):
                     
                     events.append({
                         "type": "region_end",
-                        "time": abs_time
+                        "time": abs_time,
+                        "_line_number": line_number  # 保留行號
                     })
                     i += 1
                     continue
@@ -1075,12 +1125,14 @@ class TextCommandEditor(tk.Toplevel):
                         # 戰鬥指令處理
                         event = self._parse_combat_command_to_json(line, start_time)
                         if event:
+                            event["_line_number"] = line_number  # 保留行號
                             # 如果有待處理的標籤,先加入標籤事件
                             if pending_label:
                                 events.append({
                                     "type": "label",
                                     "name": pending_label,
-                                    "time": event.get("time", start_time)
+                                    "time": event.get("time", start_time),
+                                    "_line_number": line_number - 1  # 標籤在前一行
                                 })
                                 pending_label = None
                             events.append(event)
@@ -1099,15 +1151,18 @@ class TextCommandEditor(tk.Toplevel):
                         # 圖片指令和OCR指令處理
                         event = self._parse_image_command_to_json(line, lines[i+1:i+6], start_time)
                         if event:
+                            event["_line_number"] = line_number  # 保留行號
                             # 如果有待處理的標籤,先加入標籤事件
                             if pending_label:
                                 events.append({
                                     "type": "label",
                                     "name": pending_label,
-                                    "time": event.get("time", start_time)
+                                    "time": event.get("time", start_time),
+                                    "_line_number": line_number - 1  # 標籤在前一行
                                 })
                                 pending_label = None
                             events.append(event)
+                        # 如果解析失敗,繼續嘗試其他解析邏輯(可能是鍵盤/滑鼠指令)
                         i += 1
                         continue
                     
@@ -1140,7 +1195,8 @@ class TextCommandEditor(tk.Toplevel):
                             events.append({
                                 "type": "label",
                                 "name": pending_label,
-                                "time": abs_time
+                                "time": abs_time,
+                                "_line_number": line_number - 1  # 標籤在前一行
                             })
                             pending_label = None
                         
@@ -1157,7 +1213,7 @@ class TextCommandEditor(tk.Toplevel):
                             x, y = int(coords.group(1)), int(coords.group(2))
                             
                             if "移動至" in action:
-                                events.append({"type": "mouse", "event": "move", "x": x, "y": y, "time": abs_time, "in_target": True})
+                                events.append({"type": "mouse", "event": "move", "x": x, "y": y, "time": abs_time, "in_target": True, "_line_number": line_number})
                             elif "點擊" in action or "鍵" in action:
                                 # 解析按鍵類型
                                 button = "right" if "右鍵" in action else "middle" if "中鍵" in action else "left"
@@ -1165,12 +1221,12 @@ class TextCommandEditor(tk.Toplevel):
                                 # 判斷是點擊還是按下/放開
                                 if "點擊" in action:
                                     # 點擊 = 按下 + 放開
-                                    events.append({"type": "mouse", "event": "down", "button": button, "x": x, "y": y, "time": abs_time, "in_target": True})
-                                    events.append({"type": "mouse", "event": "up", "button": button, "x": x, "y": y, "time": abs_time + 0.05, "in_target": True})
+                                    events.append({"type": "mouse", "event": "down", "button": button, "x": x, "y": y, "time": abs_time, "in_target": True, "_line_number": line_number})
+                                    events.append({"type": "mouse", "event": "up", "button": button, "x": x, "y": y, "time": abs_time + 0.05, "in_target": True, "_line_number": line_number})
                                 elif "按下" in action:
-                                    events.append({"type": "mouse", "event": "down", "button": button, "x": x, "y": y, "time": abs_time, "in_target": True})
+                                    events.append({"type": "mouse", "event": "down", "button": button, "x": x, "y": y, "time": abs_time, "in_target": True, "_line_number": line_number})
                                 elif "放開" in action:
-                                    events.append({"type": "mouse", "event": "up", "button": button, "x": x, "y": y, "time": abs_time, "in_target": True})
+                                    events.append({"type": "mouse", "event": "up", "button": button, "x": x, "y": y, "time": abs_time, "in_target": True, "_line_number": line_number})
                         
                         elif action.startswith("按") and "按下" not in action and "按鍵" not in action:
                             # 鍵盤操作（按 = 按下 + 放開）
@@ -1181,7 +1237,8 @@ class TextCommandEditor(tk.Toplevel):
                                 "type": "keyboard",
                                 "event": "down",
                                 "name": key,
-                                "time": abs_time
+                                "time": abs_time,
+                                "_line_number": line_number
                             })
                             
                             # 放開事件
@@ -1189,7 +1246,8 @@ class TextCommandEditor(tk.Toplevel):
                                 "type": "keyboard",
                                 "event": "up",
                                 "name": key,
-                                "time": abs_time + delay_s
+                                "time": abs_time + delay_s,
+                                "_line_number": line_number
                             })
                         
                         elif "按下" in action:
@@ -1199,7 +1257,8 @@ class TextCommandEditor(tk.Toplevel):
                                 "type": "keyboard",
                                 "event": "down",
                                 "name": key,
-                                "time": abs_time
+                                "time": abs_time,
+                                "_line_number": line_number
                             })
                         
                         elif "放開" in action:
@@ -1209,7 +1268,8 @@ class TextCommandEditor(tk.Toplevel):
                                 "type": "keyboard",
                                 "event": "up",
                                 "name": key,
-                                "time": abs_time
+                                "time": abs_time,
+                                "_line_number": line_number
                             })
                 
                 except Exception as e:
@@ -1219,8 +1279,14 @@ class TextCommandEditor(tk.Toplevel):
             
             i += 1
         
-        # 按時間排序
-        events.sort(key=lambda x: x["time"])
+        # 按行號排序（保持原始順序），而不是按時間排序
+        # 這樣可以確保標籤和條件判斷的順序不會被打亂
+        events.sort(key=lambda x: x.get("_line_number", 999999))
+        
+        # 移除臨時的行號標記（清理）
+        for event in events:
+            if "_line_number" in event:
+                del event["_line_number"]
         
         # 使用保存的原始設定，而非硬編碼預設值（修復儲存時覆蓋設定的問題）
         settings = self.original_settings if self.original_settings else {
@@ -1602,9 +1668,10 @@ class TextCommandEditor(tk.Toplevel):
             event["branches"] = self._parse_branches(next_lines)
             return event
         
+        # 如果所有模式都不匹配,返回 None
         return None
     
-    def _parse_branches(self, next_lines: list) -> dict:
+    def _parse_branches(self, next_lines):
         """
         解析分支指令
         :param next_lines: 後續行列表
@@ -1614,7 +1681,11 @@ class TextCommandEditor(tk.Toplevel):
         
         for line in next_lines[:5]:  # 只看接下來5行
             line = line.strip()
-            if not line or line.startswith(">") or line.startswith("#"):
+            # 強化：處理空行和僅包含空白字元的行
+            if not line or line.isspace():
+                continue
+            # 遇到新指令或標籤就停止
+            if line.startswith(">") or line.startswith("#"):
                 break
             
             # 成功分支
@@ -1642,7 +1713,7 @@ class TextCommandEditor(tk.Toplevel):
     
     def _parse_condition_branches(self, next_lines: list) -> dict:
         """
-        解析條件判斷的分支（成功/失敗）
+        解析條件判斷的分支(成功/失敗)
         :param next_lines: 後續行列表
         :return: 分支字典 {'success': {...}, 'failure': {...}}
         """
@@ -1650,8 +1721,10 @@ class TextCommandEditor(tk.Toplevel):
         
         for line in next_lines[:5]:  # 只看接下來5行
             line = line.strip()
-            if not line:
+            # 強化：處理空行和僅包含空白字元的行
+            if not line or line.isspace():
                 continue
+            # 遇到新指令或標籤就停止
             if line.startswith(">") or line.startswith("#"):
                 break
             
@@ -1687,7 +1760,7 @@ class TextCommandEditor(tk.Toplevel):
     
     def _parse_simple_condition_branches(self, next_lines: list) -> dict:
         """
-        解析簡化條件判斷的分支（>> 成功，>>> 失敗）
+        解析簡化條件判斷的分支(>> 成功, >>> 失敗)
         :param next_lines: 後續行列表
         :return: 分支字典 {'success': {...}, 'failure': {...}}
         """
@@ -1696,8 +1769,8 @@ class TextCommandEditor(tk.Toplevel):
         for line in next_lines[:5]:  # 只看接下來5行
             line_stripped = line.strip()
             
-            # 空行跳過
-            if not line_stripped:
+            # 空行和僅包含空白字符的行都跳過（強化處理）
+            if not line_stripped or line_stripped.isspace():
                 continue
             
             # 遇到新指令就停止
@@ -1887,7 +1960,7 @@ class TextCommandEditor(tk.Toplevel):
     
     def _format_branch_action(self, branch: dict) -> str:
         """
-        將分支動作字典轉換為文字格式（簡化版，不帶→符號）
+        將分支動作字典轉換為文字格式(簡化版, 不帶→符號)
         :param branch: 分支字典 {"action": "continue"/"stop"/"jump", "target": "label"}
         :return: 文字格式的分支動作
         """
@@ -2604,18 +2677,23 @@ class TextCommandEditor(tk.Toplevel):
         if self.parent:
             self.parent_geometry = self.parent.geometry()
         
-        # 策略1: 將視窗移至最底層 (lower)
-        self.lower()
-        if self.parent:
-            self.parent.lower()
+        # 策略1: 將視窗移至螢幕外（防止白框遮擋）
+        # 獲取螢幕尺寸
+        screen_width = self.winfo_screenwidth()
+        screen_height = self.winfo_screenheight()
         
-        # 強制更新
+        # 將視窗移到螢幕外右下角
+        self.geometry(f"+{screen_width + 100}+{screen_height + 100}")
+        if self.parent:
+            self.parent.geometry(f"+{screen_width + 200}+{screen_height + 200}")
+        
+        # 強制更新位置
         self.update_idletasks()
         if self.parent:
             self.parent.update_idletasks()
         
         # 策略2: 隱藏視窗 (withdraw 取代 iconify)
-        # 🔥 使用 withdraw 以避免 transient 視窗無法 iconify 的錯誤
+        # 使用 withdraw 以避免 transient 視窗無法 iconify 的錯誤
         self.withdraw()
         if self.parent:
             self.parent.withdraw()
@@ -2625,8 +2703,8 @@ class TextCommandEditor(tk.Toplevel):
         if self.parent:
             self.parent.update_idletasks()
         
-        # 給系統時間完成隱藏(300ms)
-        self.after(300, self._do_capture)
+        # 給系統時間完成隱藏(400ms，增加時間確保完全隱藏)
+        self.after(400, self._do_capture)
     
     def _do_capture(self):
         """執行截圖"""
