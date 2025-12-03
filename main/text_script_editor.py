@@ -493,7 +493,7 @@ class TextCommandEditor(tk.Toplevel):
             # 第一行：圖片相關指令
             [
                 ("圖片辨識", "#9C27B0", self._capture_and_recognize, None),  # 截圖+辨識
-                ("文字辨識", "#8E24AA", self._capture_and_ocr, None),  # 新增：文字辨識（OCR）
+                # ("文字辨識", "#8E24AA", self._capture_and_ocr, None),  # 暫時隱藏：文字辨識（OCR）
                 ("範圍辨識", "#7B1FA2", self._capture_region_for_recognition, None),  # 範圍辨識
                 ("移動至圖片", "#673AB7", None, ">移動至>pic01, T=0s000"),
                 ("點擊圖片", "#3F51B5", None, ">左鍵點擊>pic01, T=0s000"),
