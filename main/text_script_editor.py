@@ -493,11 +493,11 @@ class TextCommandEditor(tk.Toplevel):
             # 第一行：圖片相關指令
             [
                 ("圖片辨識", "#9C27B0", self._capture_and_recognize, None),  # 截圖+辨識
-                ("範圍辨識", "#7B1FA2", self._capture_region_for_recognition, None),  # 新增：範圍辨識
+                ("文字辨識", "#8E24AA", self._capture_and_ocr, None),  # 新增：文字辨識（OCR）
+                ("範圍辨識", "#7B1FA2", self._capture_region_for_recognition, None),  # 範圍辨識
                 ("移動至圖片", "#673AB7", None, ">移動至>pic01, T=0s000"),
                 ("點擊圖片", "#3F51B5", None, ">左鍵點擊>pic01, T=0s000"),
                 ("條件判斷", "#2196F3", None, ">if>pic01, T=0s000\n>>#標籤\n>>>#標籤"),
-                ("找圖迴圈", "#E91E63", None, "#找圖\n>if>pic01, T=0s000\n>>#點擊*3\n>>>#找圖*7\n\n#點擊\n>左鍵點擊>pic01, T=0s000"),
             ],
             # 第二行：滑鼠和鍵盤指令
             [
@@ -3010,6 +3010,321 @@ class TextCommandEditor(tk.Toplevel):
             
         except Exception as e:
             self._show_message("錯誤", f"插入指令失敗：{e}", "error")
+    
+    def _capture_and_ocr(self):
+        """截圖並進行文字辨識（OCR），顯示結果並可插入指令"""
+        # 儲存視窗狀態
+        self.editor_geometry = self.geometry()
+        if self.parent:
+            self.parent_geometry = self.parent.geometry()
+        
+        # 隱藏視窗
+        screen_width = self.winfo_screenwidth()
+        screen_height = self.winfo_screenheight()
+        
+        self.geometry(f"+{screen_width + 100}+{screen_height + 100}")
+        if self.parent:
+            self.parent.geometry(f"+{screen_width + 200}+{screen_height + 200}")
+        
+        self.update_idletasks()
+        if self.parent:
+            self.parent.update_idletasks()
+        
+        self.withdraw()
+        if self.parent:
+            self.parent.withdraw()
+        
+        self.update_idletasks()
+        if self.parent:
+            self.parent.update_idletasks()
+        
+        # 延遲後執行截圖
+        self.after(400, self._do_ocr_capture)
+    
+    def _do_ocr_capture(self):
+        """執行 OCR 截圖"""
+        try:
+            capture_win = ScreenCaptureSelector(self, self._on_ocr_capture_complete)
+            capture_win.wait_window()
+        except Exception as e:
+            self._show_message("錯誤", f"截圖失敗：{e}", "error")
+            self._restore_windows()
+    
+    def _on_ocr_capture_complete(self, image_region):
+        """OCR 截圖完成回調"""
+        self._restore_windows()
+        
+        if image_region is None:
+            return
+        
+        try:
+            x1, y1, x2, y2 = image_region
+            screenshot = ImageGrab.grab(bbox=(x1, y1, x2, y2))
+            
+            # 執行 OCR 辨識
+            self._perform_ocr_and_show_result(screenshot)
+            
+        except Exception as e:
+            self._show_message("錯誤", f"OCR 辨識失敗：{e}", "error")
+    
+    def _perform_ocr_and_show_result(self, screenshot):
+        """執行 OCR 並顯示結果對話框"""
+        try:
+            import pytesseract
+            
+            # 創建結果對話框
+            dialog = tk.Toplevel(self)
+            dialog.title("文字辨識結果 (OCR)")
+            dialog.geometry("600x700")
+            dialog.resizable(True, True)
+            dialog.attributes('-topmost', True)
+            dialog.transient(self)
+            dialog.grab_set()
+            
+            # 主框架
+            main_frame = tk.Frame(dialog, bg="white", padx=15, pady=15)
+            main_frame.pack(fill="both", expand=True)
+            
+            # 標題
+            title_label = tk.Label(
+                main_frame,
+                text="📝 文字辨識結果",
+                font=font_tuple(14, "bold"),
+                bg="white",
+                fg="#333333"
+            )
+            title_label.pack(pady=(0, 10))
+            
+            # 圖片預覽區
+            preview_frame = tk.LabelFrame(
+                main_frame,
+                text="截圖預覽",
+                font=font_tuple(9, "bold"),
+                bg="white",
+                fg="#555555"
+            )
+            preview_frame.pack(fill="x", pady=(0, 10))
+            
+            # 縮放圖片以適應預覽
+            max_width, max_height = 550, 200
+            img_width, img_height = screenshot.size
+            ratio = min(max_width / img_width, max_height / img_height, 1.0)
+            new_size = (int(img_width * ratio), int(img_height * ratio))
+            preview_img = screenshot.resize(new_size, Image.Resampling.LANCZOS)
+            photo = ImageTk.PhotoImage(preview_img)
+            
+            preview_label = tk.Label(preview_frame, image=photo, bg="white")
+            preview_label.image = photo  # 保持引用
+            preview_label.pack(padx=5, pady=5)
+            
+            # 辨識結果區
+            result_frame = tk.LabelFrame(
+                main_frame,
+                text="辨識結果",
+                font=font_tuple(9, "bold"),
+                bg="white",
+                fg="#555555"
+            )
+            result_frame.pack(fill="both", expand=True, pady=(0, 10))
+            
+            # 辨識進度提示
+            progress_label = tk.Label(
+                result_frame,
+                text="正在辨識中，請稍候...",
+                font=font_tuple(10),
+                bg="white",
+                fg="#666666"
+            )
+            progress_label.pack(pady=20)
+            
+            # 結果文字框（初始隱藏）
+            result_text = scrolledtext.ScrolledText(
+                result_frame,
+                font=font_tuple(11, monospace=True),
+                wrap="word",
+                height=8,
+                bg="#f5f5f5",
+                fg="#333333"
+            )
+            
+            # 按鈕區
+            button_frame = tk.Frame(main_frame, bg="white")
+            button_frame.pack(fill="x", pady=(10, 0))
+            
+            result_data = {"text": ""}
+            
+            def insert_if_text():
+                """插入 if文字 指令"""
+                text = result_data["text"].strip()
+                if text:
+                    current_time = self._get_next_available_time()
+                    command = f">if文字>{text}, T={current_time}\n>>#找到\n>>>#沒找到\n"
+                    self.text_editor.insert(tk.INSERT, command)
+                    self._update_status(f"已插入 OCR 條件判斷：{text}", "success")
+                    dialog.destroy()
+            
+            def insert_wait_text():
+                """插入 等待文字 指令"""
+                text = result_data["text"].strip()
+                if text:
+                    current_time = self._get_next_available_time()
+                    command = f">等待文字>{text}, 最長10s, T={current_time}\n"
+                    self.text_editor.insert(tk.INSERT, command)
+                    self._update_status(f"已插入 OCR 等待文字：{text}", "success")
+                    dialog.destroy()
+            
+            def insert_click_text():
+                """插入 點擊文字 指令"""
+                text = result_data["text"].strip()
+                if text:
+                    current_time = self._get_next_available_time()
+                    command = f">點擊文字>{text}, T={current_time}\n"
+                    self.text_editor.insert(tk.INSERT, command)
+                    self._update_status(f"已插入 OCR 點擊文字：{text}", "success")
+                    dialog.destroy()
+            
+            def copy_to_clipboard():
+                """複製到剪貼簿"""
+                text = result_data["text"].strip()
+                if text:
+                    dialog.clipboard_clear()
+                    dialog.clipboard_append(text)
+                    self._update_status("已複製到剪貼簿", "success")
+            
+            # 按鈕（初始禁用，等待辨識完成）
+            btn_if = tk.Button(
+                button_frame,
+                text="插入條件判斷",
+                font=font_tuple(9, "bold"),
+                bg="#00BCD4",
+                fg="white",
+                padx=10,
+                pady=5,
+                cursor="hand2",
+                state="disabled",
+                command=insert_if_text
+            )
+            btn_if.pack(side="left", padx=3)
+            
+            btn_wait = tk.Button(
+                button_frame,
+                text="插入等待文字",
+                font=font_tuple(9, "bold"),
+                bg="#009688",
+                fg="white",
+                padx=10,
+                pady=5,
+                cursor="hand2",
+                state="disabled",
+                command=insert_wait_text
+            )
+            btn_wait.pack(side="left", padx=3)
+            
+            btn_click = tk.Button(
+                button_frame,
+                text="插入點擊文字",
+                font=font_tuple(9, "bold"),
+                bg="#4CAF50",
+                fg="white",
+                padx=10,
+                pady=5,
+                cursor="hand2",
+                state="disabled",
+                command=insert_click_text
+            )
+            btn_click.pack(side="left", padx=3)
+            
+            btn_copy = tk.Button(
+                button_frame,
+                text="複製文字",
+                font=font_tuple(9, "bold"),
+                bg="#FF9800",
+                fg="white",
+                padx=10,
+                pady=5,
+                cursor="hand2",
+                state="disabled",
+                command=copy_to_clipboard
+            )
+            btn_copy.pack(side="left", padx=3)
+            
+            btn_close = tk.Button(
+                button_frame,
+                text="關閉",
+                font=font_tuple(9),
+                bg="#9E9E9E",
+                fg="white",
+                padx=15,
+                pady=5,
+                cursor="hand2",
+                command=dialog.destroy
+            )
+            btn_close.pack(side="right", padx=3)
+            
+            # 在背景執行 OCR
+            def do_ocr():
+                try:
+                    # 嘗試多種 OCR 配置
+                    configs = [
+                        ('基本辨識', ''),
+                        ('單行模式', '--psm 7'),
+                        ('單字模式', '--psm 8'),
+                        ('限定字符', '--psm 7 --oem 3 -c tessedit_char_whitelist=0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'),
+                    ]
+                    
+                    results = []
+                    for name, config in configs:
+                        try:
+                            text = pytesseract.image_to_string(screenshot, lang='eng', config=config).strip()
+                            if text:
+                                results.append(f"【{name}】\n{text}\n")
+                        except:
+                            pass
+                    
+                    if results:
+                        final_text = "\n".join(results)
+                        # 取第一個結果作為主要結果
+                        main_result = pytesseract.image_to_string(screenshot, lang='eng', config='--psm 7').strip()
+                        result_data["text"] = main_result
+                    else:
+                        final_text = "無法辨識文字"
+                        result_data["text"] = ""
+                    
+                    # 更新 UI（在主線程）
+                    dialog.after(0, lambda: update_ui(final_text))
+                    
+                except Exception as e:
+                    dialog.after(0, lambda: update_ui(f"辨識失敗：{e}"))
+            
+            def update_ui(text):
+                """更新 UI 顯示辨識結果"""
+                progress_label.pack_forget()
+                result_text.pack(fill="both", expand=True, padx=5, pady=5)
+                result_text.insert("1.0", text)
+                result_text.config(state="disabled")
+                
+                # 啟用按鈕
+                if result_data["text"]:
+                    btn_if.config(state="normal")
+                    btn_wait.config(state="normal")
+                    btn_click.config(state="normal")
+                    btn_copy.config(state="normal")
+            
+            # 啟動 OCR 線程
+            import threading
+            ocr_thread = threading.Thread(target=do_ocr, daemon=True)
+            ocr_thread.start()
+            
+            # 置中顯示
+            dialog.update_idletasks()
+            x = (dialog.winfo_screenwidth() - dialog.winfo_width()) // 2
+            y = (dialog.winfo_screenheight() - dialog.winfo_height()) // 2
+            dialog.geometry(f"+{x}+{y}")
+            
+        except ImportError:
+            self._show_message("錯誤", "未安裝 pytesseract\n請執行: pip install pytesseract", "error")
+        except Exception as e:
+            self._show_message("錯誤", f"OCR 處理失敗：{e}", "error")
     
     def _get_next_available_time(self):
         """獲取下一個可用的時間戳記"""
