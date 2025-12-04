@@ -269,8 +269,19 @@ class TextCommandEditor(tk.Toplevel):
         self.text_editor.tag_config("syntax_flow", foreground="#FF5555")        # 紅色 - 流程控制
         self.text_editor.tag_config("syntax_picname", foreground="#F1FA8C")     # 黃色 - 圖片名稱
         
+        # ✨ 新增：軌跡摺疊相關標籤和配置
+        self.text_editor.tag_config("trajectory_summary", foreground="#00BFFF", font=font_tuple(10, "bold"))
+        self.text_editor.tag_config("trajectory_hidden", elide=True)  # elide=True 會隱藏文字
+        self.text_editor.tag_config("trajectory_clickable", foreground="#00BFFF", underline=1)
+        
+        # 追蹤摺疊狀態 {行號: 是否已摺疊}
+        self.trajectory_fold_state = {}
+        
         # 綁定內容變更事件以觸發語法高亮
         self.text_editor.bind("<<Modified>>", self._on_text_modified)
+        
+        # 綁定滑鼠點擊事件以處理摺疊/展開
+        self.text_editor.bind("<Button-1>", self._on_editor_click)
         
         # 綁定右鍵選單
         self.text_editor.bind("<Button-3>", self._show_context_menu)
@@ -476,6 +487,80 @@ class TextCommandEditor(tk.Toplevel):
         dialog.wait_window()
         return result[0]
     
+    def _on_editor_click(self, event):
+        """處理編輯器點擊事件（用於軌跡展開/收合）"""
+        try:
+            # 獲取點擊位置的索引
+            index = self.text_editor.index(f"@{event.x},{event.y}")
+            line_start = self.text_editor.index(f"{index} linestart")
+            line_end = self.text_editor.index(f"{index} lineend")
+            line_text = self.text_editor.get(line_start, line_end)
+            
+            # 檢查是否點擊了軌跡摘要行
+            if line_text.startswith("# [軌跡]"):
+                line_num = int(index.split('.')[0])
+                self._toggle_trajectory_fold(line_num)
+                return "break"  # 阻止預設行為
+        except Exception as e:
+            pass  # 忽略錯誤，不影響正常編輯
+    
+    def _toggle_trajectory_fold(self, summary_line):
+        """切換指定軌跡的摺疊狀態"""
+        try:
+            # 找到對應的軌跡區塊
+            start_line = summary_line + 1
+            end_line = None
+            
+            # 搜尋軌跡結束標記
+            total_lines = int(self.text_editor.index('end-1c').split('.')[0])
+            for i in range(start_line, total_lines + 1):
+                line_text = self.text_editor.get(f"{i}.0", f"{i}.0 lineend")
+                if line_text.strip() == "# [軌跡結束]":
+                    end_line = i
+                    break
+            
+            if not end_line:
+                return  # 找不到結束標記
+            
+            # 切換摺疊狀態
+            is_folded = self.trajectory_fold_state.get(summary_line, False)
+            
+            if is_folded:
+                # 展開：移除 elide 標籤
+                self.text_editor.tag_remove("trajectory_hidden", f"{start_line}.0", f"{end_line + 1}.0")
+                # 更新摘要文字為 [收合]
+                self._update_trajectory_summary_text(summary_line, "[收合]")
+                self.trajectory_fold_state[summary_line] = False
+            else:
+                # 收合：添加 elide 標籤
+                self.text_editor.tag_add("trajectory_hidden", f"{start_line}.0", f"{end_line + 1}.0")
+                # 更新摘要文字為 [展開]
+                self._update_trajectory_summary_text(summary_line, "[展開]")
+                self.trajectory_fold_state[summary_line] = True
+                
+        except Exception as e:
+            print(f"切換軌跡摺疊失敗: {e}")
+    
+    def _update_trajectory_summary_text(self, line_num, action_text):
+        """更新軌跡摘要行的展開/收合文字"""
+        try:
+            line_start = f"{line_num}.0"
+            line_end = f"{line_num}.0 lineend"
+            line_text = self.text_editor.get(line_start, line_end)
+            
+            # 替換 [展開] 或 [收合]
+            import re
+            new_text = re.sub(r'\[(展開|收合)\]', f'[{action_text}]', line_text)
+            
+            # 更新文字
+            self.text_editor.delete(line_start, line_end)
+            self.text_editor.insert(line_start, new_text)
+            
+            # 重新套用樣式
+            self.text_editor.tag_add("trajectory_clickable", line_start, line_end)
+        except Exception as e:
+            print(f"更新摘要文字失敗: {e}")
+    
     def _update_status(self, text, status_type="info"):
         """更新狀態列，支持不同類型的狀態顯示"""
         status_colors = {
@@ -490,17 +575,32 @@ class TextCommandEditor(tk.Toplevel):
     
     def _toggle_trajectory_display(self):
         """切換軌跡顯示模式（簡化/完整）"""
+        # 清空摺疊狀態
+        self.trajectory_fold_state = {}
         # 重新載入腳本以套用新的顯示模式
         self._load_script()
     
+    def _auto_fold_all_trajectories(self):
+        """自動摺疊所有軌跡區塊"""
+        try:
+            content = self.text_editor.get("1.0", "end")
+            lines = content.split('\n')
+            
+            for i, line in enumerate(lines, 1):
+                if line.startswith("# [軌跡]") and "[展開]" in line:
+                    # 找到軌跡摘要行，觸發摺疊
+                    self._toggle_trajectory_fold(i)
+        except Exception as e:
+            print(f"自動摺疊失敗: {e}")
+    
     def _simplify_trajectory_display(self, lines: list) -> list:
-        """簡化軌跡顯示：將連續的移動指令折疊為摘要行
+        """簡化軌跡顯示：將連續的移動指令折疊為可展開的摘要行
         
         Args:
             lines: 原始文字指令列表
             
         Returns:
-            簡化後的文字指令列表
+            簡化後的文字指令列表（預設摺疊）
         """
         if not self.simplify_display_var.get():
             return lines  # 不簡化，返回原始內容
@@ -521,9 +621,9 @@ class TextCommandEditor(tk.Toplevel):
             else:
                 # 非移動指令，處理累積的軌跡
                 if len(trajectory_buffer) > 3:  # 只簡化超過3個點的軌跡
-                    # 提取起點和終點座標
-                    start_match = re.search(r'>移動至\((\d+),(\d+)\)', trajectory_buffer[0])
-                    end_match = re.search(r'>移動至\((\d+),(\d+)\)', trajectory_buffer[-1])
+                    # 提取起點和終點座標（支援負數）
+                    start_match = re.search(r'>移動至\((-?\d+),(-?\d+)\)', trajectory_buffer[0])
+                    end_match = re.search(r'>移動至\((-?\d+),(-?\d+)\)', trajectory_buffer[-1])
                     end_time_match = re.search(r'T=(\d+s\d+)', trajectory_buffer[-1])
                     
                     if start_match and end_match and end_time_match:
@@ -537,14 +637,14 @@ class TextCommandEditor(tk.Toplevel):
                         end_seconds = self._parse_time(end_time)
                         duration = end_seconds - start_seconds
                         
-                        # 生成摘要行
+                        # 生成摘要行（可點擊展開）
                         summary = f"# [軌跡] {start_pos}→{end_pos} 共{point_count}點 {duration:.1f}秒 [展開]\n"
                         simplified.append(summary)
                         
-                        # 將原始軌跡存儲為隱藏註解（用於展開）
+                        # 存儲軌跡詳細內容（預設隱藏）
                         simplified.append(f"# [軌跡開始]\n")
                         for traj_line in trajectory_buffer:
-                            simplified.append(f"# {traj_line}")
+                            simplified.append(traj_line)  # 不加 # 前綴，保持原始指令
                         simplified.append(f"# [軌跡結束]\n")
                 else:
                     # 軌跡太短，保留原樣
@@ -556,8 +656,8 @@ class TextCommandEditor(tk.Toplevel):
         
         # 處理結尾的軌跡
         if len(trajectory_buffer) > 3:
-            start_match = re.search(r'>移動至\((\d+),(\d+)\)', trajectory_buffer[0])
-            end_match = re.search(r'>移動至\((\d+),(\d+)\)', trajectory_buffer[-1])
+            start_match = re.search(r'>移動至\((-?\d+),(-?\d+)\)', trajectory_buffer[0])
+            end_match = re.search(r'>移動至\((-?\d+),(-?\d+)\)', trajectory_buffer[-1])
             end_time_match = re.search(r'T=(\d+s\d+)', trajectory_buffer[-1])
             
             if start_match and end_match and end_time_match:
@@ -575,7 +675,7 @@ class TextCommandEditor(tk.Toplevel):
                 
                 simplified.append(f"# [軌跡開始]\n")
                 for traj_line in trajectory_buffer:
-                    simplified.append(f"# {traj_line}")
+                    simplified.append(traj_line)  # 不加 # 前綴，保持原始指令
                 simplified.append(f"# [軌跡結束]\n")
         else:
             simplified.extend(trajectory_buffer)
@@ -674,6 +774,90 @@ class TextCommandEditor(tk.Toplevel):
             # 設定列權重，讓按鈕平均分配空間
             for col in range(len(row_buttons)):
                 button_container.columnconfigure(col, weight=1)
+        
+        # ✅ v2.7.1+ 新增：進階指令按鈕（可展開/收合）
+        self._create_advanced_commands(cmd_frame)
+    
+    def _create_advanced_commands(self, parent):
+        """創建進階指令區域（可展開/收合）"""
+        # 展開/收合按鈕
+        self._advanced_expanded = False
+        self._advanced_toggle_btn = tk.Button(
+            parent,
+            text="▼ 進階指令（變數/循環/隨機/計數器）",
+            bg="#37474F",
+            fg="#FFFFFF",
+            font=font_tuple(8, "bold"),
+            relief="flat",
+            cursor="hand2",
+            command=self._toggle_advanced_commands
+        )
+        self._advanced_toggle_btn.pack(fill="x", padx=10, pady=(5, 0))
+        
+        # 進階指令容器（初始隱藏）
+        self._advanced_frame = tk.Frame(parent, bg="#2b2b2b")
+        
+        # 進階指令按鈕（四行）
+        advanced_rows = [
+            # 第一行：變數系統
+            [
+                ("設定變數", "#6A1B9A", None, ">設定變數>count, 0, T=0s000"),
+                ("變數加1", "#7B1FA2", None, ">變數加1>count, T=0s000"),
+                ("變數減1", "#8E24AA", None, ">變數減1>count, T=0s000"),
+                ("變數條件", "#9C27B0", None, ">if變數>count, >=, 10, T=0s000\n>>#成功\n>>>#失敗"),
+            ],
+            # 第二行：循環控制
+            [
+                ("重複N次", "#1565C0", None, ">重複>10次, T=0s000\n  # 在此處添加要重複的指令\n>重複結束, T=0s000"),
+                ("條件循環", "#1976D2", None, ">當圖片存在>loading, T=0s000\n  # 在此處添加循環內的指令\n>循環結束, T=0s000"),
+            ],
+            # 第三行：多條件與隨機
+            [
+                ("全部圖片存在", "#00695C", None, ">if全部存在>pic01,pic02,pic03, T=0s000\n>>#全部找到\n>>>#缺少某個"),
+                ("任一圖片存在", "#00796B", None, ">if任一存在>pic01,pic02,pic03, T=0s000\n>>#找到其中一個\n>>>#全部都沒有"),
+                ("隨機延遲", "#388E3C", None, ">隨機延遲>100ms,500ms, T=0s000"),
+                ("隨機分支", "#4CAF50", None, ">隨機執行>30%, T=0s000\n>>#執行A\n>>>#執行B"),
+            ],
+            # 第四行：計數器與計時器
+            [
+                ("計數器觸發", "#E65100", None, ">計數器>找圖失敗, 3次後, T=0s000\n>>#下一步"),
+                ("計時器觸發", "#F57C00", None, ">計時器>等待載入, 60秒後, T=0s000\n>>#超時處理"),
+                ("重置計數器", "#FF6F00", None, ">重置計數器>找圖失敗, T=0s000"),
+                ("重置計時器", "#FF9800", None, ">重置計時器>等待載入, T=0s000"),
+            ]
+        ]
+        
+        for row_idx, row_buttons in enumerate(advanced_rows):
+            for col_idx, (text, color, command, template) in enumerate(row_buttons):
+                btn = tk.Button(
+                    self._advanced_frame,
+                    text=text,
+                    bg=color,
+                    fg="white",
+                    font=font_tuple(8, "bold"),
+                    padx=8,
+                    pady=3,
+                    relief="raised",
+                    bd=2,
+                    cursor="hand2",
+                    command=lambda t=template: self._insert_command_template(t)
+                )
+                btn.grid(row=row_idx, column=col_idx, padx=2, pady=2, sticky="ew")
+            
+            # 設定列權重
+            for col in range(len(row_buttons)):
+                self._advanced_frame.columnconfigure(col, weight=1)
+    
+    def _toggle_advanced_commands(self):
+        """展開/收合進階指令區域"""
+        self._advanced_expanded = not self._advanced_expanded
+        
+        if self._advanced_expanded:
+            self._advanced_toggle_btn.config(text="▲ 進階指令（變數/循環/隨機/計數器）")
+            self._advanced_frame.pack(fill="x", padx=10, pady=(5, 5))
+        else:
+            self._advanced_toggle_btn.config(text="▼ 進階指令（變數/循環/隨機/計數器）")
+            self._advanced_frame.pack_forget()
     
     def _insert_command_template(self, template):
         """插入指令模板到編輯器"""
@@ -889,6 +1073,10 @@ class TextCommandEditor(tk.Toplevel):
                 # 載入後套用語法高亮
                 self._apply_syntax_highlighting()
                 
+                # ✨ 自動摺疊所有軌跡（如果啟用簡化顯示）
+                if self.simplify_display_var.get():
+                    self.after(100, self._auto_fold_all_trajectories)
+                
                 self._update_status(
                     f"已載入: {os.path.basename(self.script_path)} ({len(data.get('events', []))}筆事件)",
                     "success"
@@ -1091,9 +1279,15 @@ class TextCommandEditor(tk.Toplevel):
                     on_failure = event.get("on_failure", {})
                     show_border = event.get("show_border", False)
                     region = event.get("region", None)
+                    is_pure_recognize = event.get("is_pure_recognize", False)
                     
-                    # 使用新的簡化格式：>if>pic01, T=xxx
-                    cmd = f">if>{pic_name}"
+                    # ✨ 如果是純辨識（從>>辨識>轉換來的），輸出為辨識格式
+                    if is_pure_recognize:
+                        cmd = f">辨識>{pic_name}"
+                    else:
+                        # 使用新的簡化格式：>if>pic01, T=xxx
+                        cmd = f">if>{pic_name}"
+                    
                     if show_border:
                         cmd += ", 邊框"
                     if region:
@@ -1130,6 +1324,157 @@ class TextCommandEditor(tk.Toplevel):
                     combat_line = self._format_combat_event(event)
                     if combat_line:
                         lines.append(f">{combat_line}, T={time_str}\n")
+                
+                # ==================== v2.7.1+ 新增事件類型格式化 ====================
+                
+                # 變數設定
+                elif event_type == "set_variable":
+                    name = event.get("name", "")
+                    value = event.get("value", 0)
+                    lines.append(f">設定變數>{name}, {value}, T={time_str}\n")
+                
+                # 變數運算
+                elif event_type == "variable_operation":
+                    name = event.get("name", "")
+                    operation = event.get("operation", "add")
+                    if operation == "add":
+                        lines.append(f">變數加1>{name}, T={time_str}\n")
+                    elif operation == "subtract":
+                        lines.append(f">變數減1>{name}, T={time_str}\n")
+                
+                # 變數條件判斷
+                elif event_type == "if_variable":
+                    name = event.get("name", "")
+                    operator = event.get("operator", "==")
+                    value = event.get("value", 0)
+                    on_success = event.get("on_success", {})
+                    on_failure = event.get("on_failure", {})
+                    
+                    lines.append(f">if變數>{name}, {operator}, {value}, T={time_str}\n")
+                    
+                    if on_success:
+                        success_action = self._format_branch_action(on_success)
+                        if success_action or on_success.get("action") != "continue":
+                            lines.append(f">>{success_action}\n")
+                    
+                    if on_failure:
+                        failure_action = self._format_branch_action(on_failure)
+                        if failure_action or on_failure.get("action") != "continue":
+                            lines.append(f">>>{failure_action}\n")
+                
+                # 循環開始
+                elif event_type == "loop_start":
+                    loop_type = event.get("loop_type", "repeat")
+                    if loop_type == "repeat":
+                        max_count = event.get("max_count", 1)
+                        lines.append(f">重複>{max_count}次, T={time_str}\n")
+                    elif loop_type == "while":
+                        condition = event.get("condition", {})
+                        if condition.get("type") == "image_exists":
+                            image = condition.get("image", "")
+                            lines.append(f">當圖片存在>{image}, T={time_str}\n")
+                
+                # 循環結束
+                elif event_type == "loop_end":
+                    lines.append(f">循環結束, T={time_str}\n")
+                
+                # 多條件判斷（AND）
+                elif event_type == "if_all_images_exist":
+                    images = event.get("images", [])
+                    images_str = ",".join(images)
+                    on_success = event.get("on_success", {})
+                    on_failure = event.get("on_failure", {})
+                    
+                    lines.append(f">if全部存在>{images_str}, T={time_str}\n")
+                    
+                    if on_success:
+                        success_action = self._format_branch_action(on_success)
+                        if success_action or on_success.get("action") != "continue":
+                            lines.append(f">>{success_action}\n")
+                    
+                    if on_failure:
+                        failure_action = self._format_branch_action(on_failure)
+                        if failure_action or on_failure.get("action") != "continue":
+                            lines.append(f">>>{failure_action}\n")
+                
+                # 多條件判斷（OR）
+                elif event_type == "if_any_image_exists":
+                    images = event.get("images", [])
+                    images_str = ",".join(images)
+                    on_success = event.get("on_success", {})
+                    on_failure = event.get("on_failure", {})
+                    
+                    lines.append(f">if任一存在>{images_str}, T={time_str}\n")
+                    
+                    if on_success:
+                        success_action = self._format_branch_action(on_success)
+                        if success_action or on_success.get("action") != "continue":
+                            lines.append(f">>{success_action}\n")
+                    
+                    if on_failure:
+                        failure_action = self._format_branch_action(on_failure)
+                        if failure_action or on_failure.get("action") != "continue":
+                            lines.append(f">>>{failure_action}\n")
+                
+                # 隨機延遲
+                elif event_type == "random_delay":
+                    min_ms = event.get("min_ms", 100)
+                    max_ms = event.get("max_ms", 500)
+                    lines.append(f">隨機延遲>{min_ms}ms,{max_ms}ms, T={time_str}\n")
+                
+                # 隨機分支
+                elif event_type == "random_branch":
+                    probability = event.get("probability", 50)
+                    on_success = event.get("on_success", {})
+                    on_failure = event.get("on_failure", {})
+                    
+                    lines.append(f">隨機執行>{probability}%, T={time_str}\n")
+                    
+                    if on_success:
+                        success_action = self._format_branch_action(on_success)
+                        if success_action or on_success.get("action") != "continue":
+                            lines.append(f">>{success_action}\n")
+                    
+                    if on_failure:
+                        failure_action = self._format_branch_action(on_failure)
+                        if failure_action or on_failure.get("action") != "continue":
+                            lines.append(f">>>{failure_action}\n")
+                
+                # 計數器觸發
+                elif event_type == "counter_trigger":
+                    action_id = event.get("action_id", "")
+                    count = event.get("count", 3)
+                    on_trigger = event.get("on_trigger", {})
+                    
+                    lines.append(f">計數器>{action_id}, {count}次後, T={time_str}\n")
+                    
+                    if on_trigger:
+                        trigger_action = self._format_branch_action(on_trigger)
+                        if trigger_action or on_trigger.get("action") != "continue":
+                            lines.append(f">>{trigger_action}\n")
+                
+                # 計時器觸發
+                elif event_type == "timer_trigger":
+                    action_id = event.get("action_id", "")
+                    duration = event.get("duration", 60)
+                    on_trigger = event.get("on_trigger", {})
+                    
+                    lines.append(f">計時器>{action_id}, {duration}秒後, T={time_str}\n")
+                    
+                    if on_trigger:
+                        trigger_action = self._format_branch_action(on_trigger)
+                        if trigger_action or on_trigger.get("action") != "continue":
+                            lines.append(f">>{trigger_action}\n")
+                
+                # 重置計數器
+                elif event_type == "reset_counter":
+                    action_id = event.get("action_id", "")
+                    lines.append(f">重置計數器>{action_id}, T={time_str}\n")
+                
+                # 重置計時器
+                elif event_type == "reset_timer":
+                    action_id = event.get("action_id", "")
+                    lines.append(f">重置計時器>{action_id}, T={time_str}\n")
             
             except Exception as event_error:
                 # 異常事件跳過，記錄錯誤
@@ -1309,6 +1654,30 @@ class TextCommandEditor(tk.Toplevel):
                             continue
                         # ✅ 修正：如果解析失敗（event為None），不跳過，繼續執行下方的標準解析邏輯
                     
+                    # ✅ v2.7.1+ 新增：進階指令解析
+                    if any(keyword in line for keyword in [
+                        "設定變數>", "變數加1>", "變數減1>", "if變數>",
+                        "重複>", "當圖片存在>", "循環結束", "重複結束",
+                        "if全部存在>", "if任一存在>",
+                        "隨機延遲>", "隨機執行>",
+                        "計數器>", "計時器>", "重置計數器>", "重置計時器>"
+                    ]):
+                        # 進階指令處理
+                        event = self._parse_advanced_command_to_json(line, lines[i+1:i+6], start_time)
+                        if event:
+                            event["_line_number"] = line_number
+                            if pending_label:
+                                events.append({
+                                    "type": "label",
+                                    "name": pending_label,
+                                    "time": event.get("time", start_time),
+                                    "_line_number": line_number - 1
+                                })
+                                pending_label = None
+                            events.append(event)
+                            i += 1
+                            continue
+                    
                     # 移除 ">" 並智能分割（保護括號內的逗號）
                     line_content = line[1:]
                     
@@ -1349,8 +1718,8 @@ class TextCommandEditor(tk.Toplevel):
                         
                         # 解析動作類型
                         # 優先檢查滑鼠操作（避免誤判為鍵盤操作）
-                        # 修復：先嘗試提取座標，如果成功就是滑鼠操作
-                        coords = re.search(r'\((\d+),(\d+)\)', action)
+                        # 修復：先嘗試提取座標，支援負數座標
+                        coords = re.search(r'\((-?\d+),(-?\d+)\)', action)
                         if coords:
                             # 確定是滑鼠操作（有座標）
                             x, y = int(coords.group(1)), int(coords.group(2))
@@ -1475,19 +1844,19 @@ class TextCommandEditor(tk.Toplevel):
         :return: JSON事件字典
         """
         # 辨識圖片指令（新格式：>辨識>pic01, 邊框, 範圍(x1,y1,x2,y2), T=0s100）
-        recognize_pattern = r'>辨識>([^,]+)(?:,\s*([^T]+))?,\s*T=(\d+)s(\d+)'
+        recognize_pattern = r'>辨識>(.+?)(?:,\s*T=(\d+)s(\d+))'
         match = re.match(recognize_pattern, command_line)
         if match:
-            pic_name = match.group(1).strip()
-            options_str = match.group(2).strip() if match.group(2) else ""
-            seconds = int(match.group(3))
-            millis = int(match.group(4))
+            # 分離圖片名稱和選項
+            content = match.group(1).strip()
+            seconds = int(match.group(2))
+            millis = int(match.group(3))
             abs_time = start_time + seconds + millis / 1000.0
             
-            # 解析選項
-            show_border = '邊框' in options_str
+            # 解析選項（邊框、範圍）
+            show_border = '邊框' in content
             region = None
-            region_match = re.search(r'範圍\((\d+),(\d+),(\d+),(\d+)\)', options_str)
+            region_match = re.search(r'範圍\((\d+),(\d+),(\d+),(\d+)\)', content)
             if region_match:
                 region = (
                     int(region_match.group(1)),
@@ -1495,6 +1864,15 @@ class TextCommandEditor(tk.Toplevel):
                     int(region_match.group(3)),
                     int(region_match.group(4))
                 )
+            
+            # 移除選項後取得圖片名稱
+            pic_name = content
+            if '邊框' in pic_name:
+                pic_name = pic_name.replace('邊框', '').strip()
+            if region_match:
+                pic_name = pic_name.replace(region_match.group(0), '').strip()
+            # 移除多餘的逗號和空白
+            pic_name = pic_name.rstrip(',').strip()
             
             # 查找對應的圖片檔案
             image_file = self._find_pic_image_file(pic_name)
@@ -1511,7 +1889,8 @@ class TextCommandEditor(tk.Toplevel):
                     "confidence": 0.7,
                     "on_success": branches.get('success'),
                     "on_failure": branches.get('failure'),
-                    "time": abs_time
+                    "time": abs_time,
+                    "is_pure_recognize": False  # ✨ 標記不是純辨識
                 }
                 if show_border:
                     result["show_border"] = True
@@ -1525,26 +1904,26 @@ class TextCommandEditor(tk.Toplevel):
                 "image": pic_name,
                 "image_file": image_file,
                 "confidence": 0.7,
-                "time": abs_time
+                "time": abs_time,
+                "is_pure_recognize": True  # ✨ 標記為純辨識，不是條件判斷
             }
             if show_border:
                 result["show_border"] = True
             if region:
                 result["region"] = region
             return result        # 移動至圖片指令（>移動至>pic01, 邊框, 範圍(x1,y1,x2,y2), T=1s000）
-        move_pattern = r'>移動至>([^,]+)(?:,\s*([^T]+))?,\s*T=(\d+)s(\d+)'
+        move_pattern = r'>移動至>(.+?)(?:,\s*T=(\d+)s(\d+))'
         match = re.match(move_pattern, command_line)
         if match:
-            pic_name = match.group(1).strip()
-            options_str = match.group(2).strip() if match.group(2) else ""
-            seconds = int(match.group(3))
-            millis = int(match.group(4))
+            content = match.group(1).strip()
+            seconds = int(match.group(2))
+            millis = int(match.group(3))
             abs_time = start_time + seconds + millis / 1000.0
             
             # 解析選項
-            show_border = '邊框' in options_str
+            show_border = '邊框' in content
             region = None
-            region_match = re.search(r'範圍\((\d+),(\d+),(\d+),(\d+)\)', options_str)
+            region_match = re.search(r'範圍\((\d+),(\d+),(\d+),(\d+)\)', content)
             if region_match:
                 region = (
                     int(region_match.group(1)),
@@ -1552,6 +1931,14 @@ class TextCommandEditor(tk.Toplevel):
                     int(region_match.group(3)),
                     int(region_match.group(4))
                 )
+            
+            # 移除選項後取得圖片名稱
+            pic_name = content
+            if '邊框' in pic_name:
+                pic_name = pic_name.replace('邊框', '').strip()
+            if region_match:
+                pic_name = pic_name.replace(region_match.group(0), '').strip()
+            pic_name = pic_name.rstrip(',').strip()
             
             # 查找對應的圖片檔案
             image_file = self._find_pic_image_file(pic_name)
@@ -1568,20 +1955,19 @@ class TextCommandEditor(tk.Toplevel):
             if region:
                 result["region"] = region
             return result        # 點擊圖片指令（>左鍵點擊>pic01, 邊框, 範圍(x1,y1,x2,y2), T=1s200）
-        click_pattern = r'>(左鍵|右鍵)點擊>([^,]+)(?:,\s*([^T]+))?,\s*T=(\d+)s(\d+)'
+        click_pattern = r'>(左鍵|右鍵)點擊>(.+?)(?:,\s*T=(\d+)s(\d+))'
         match = re.match(click_pattern, command_line)
         if match:
             button = "left" if match.group(1) == "左鍵" else "right"
-            pic_name = match.group(2).strip()
-            options_str = match.group(3).strip() if match.group(3) else ""
-            seconds = int(match.group(4))
-            millis = int(match.group(5))
+            content = match.group(2).strip()
+            seconds = int(match.group(3))
+            millis = int(match.group(4))
             abs_time = start_time + seconds + millis / 1000.0
             
             # 解析選項
-            show_border = '邊框' in options_str
+            show_border = '邊框' in content
             region = None
-            region_match = re.search(r'範圍\((\d+),(\d+),(\d+),(\d+)\)', options_str)
+            region_match = re.search(r'範圍\((\d+),(\d+),(\d+),(\d+)\)', content)
             if region_match:
                 region = (
                     int(region_match.group(1)),
@@ -1589,6 +1975,14 @@ class TextCommandEditor(tk.Toplevel):
                     int(region_match.group(3)),
                     int(region_match.group(4))
                 )
+            
+            # 移除選項後取得圖片名稱
+            pic_name = content
+            if '邊框' in pic_name:
+                pic_name = pic_name.replace('邊框', '').strip()
+            if region_match:
+                pic_name = pic_name.replace(region_match.group(0), '').strip()
+            pic_name = pic_name.rstrip(',').strip()
             
             # 查找對應的圖片檔案
             image_file = self._find_pic_image_file(pic_name)
@@ -1607,19 +2001,18 @@ class TextCommandEditor(tk.Toplevel):
             if region:
                 result["region"] = region
             return result        # 新格式條件判斷：>if>pic01, 邊框, 範圍(x1,y1,x2,y2), T=0s100
-        if_simple_pattern = r'>if>([^,]+)(?:,\s*([^T]+))?,\s*T=(\d+)s(\d+)'
+        if_simple_pattern = r'>if>(.+?)(?:,\s*T=(\d+)s(\d+))'
         match = re.match(if_simple_pattern, command_line)
         if match:
-            pic_name = match.group(1).strip()
-            options_str = match.group(2).strip() if match.group(2) else ""
-            seconds = int(match.group(3))
-            millis = int(match.group(4))
+            content = match.group(1).strip()
+            seconds = int(match.group(2))
+            millis = int(match.group(3))
             abs_time = start_time + seconds + millis / 1000.0
             
             # 解析選項
-            show_border = '邊框' in options_str
+            show_border = '邊框' in content
             region = None
-            region_match = re.search(r'範圍\((\d+),(\d+),(\d+),(\d+)\)', options_str)
+            region_match = re.search(r'範圍\((\d+),(\d+),(\d+),(\d+)\)', content)
             if region_match:
                 region = (
                     int(region_match.group(1)),
@@ -1627,6 +2020,14 @@ class TextCommandEditor(tk.Toplevel):
                     int(region_match.group(3)),
                     int(region_match.group(4))
                 )
+            
+            # 移除選項後取得圖片名稱
+            pic_name = content
+            if '邊框' in pic_name:
+                pic_name = pic_name.replace('邊框', '').strip()
+            if region_match:
+                pic_name = pic_name.replace(region_match.group(0), '').strip()
+            pic_name = pic_name.rstrip(',').strip()
             
             # 查找對應的圖片檔案
             image_file = self._find_pic_image_file(pic_name)
@@ -1656,10 +2057,10 @@ class TextCommandEditor(tk.Toplevel):
             return result
         
         # 新增：如果存在圖片（條件判斷）>如果存在>pic01, T=0s100
-        if_exists_pattern = r'>如果存在>([^,]+),\s*T=(\d+)s(\d+)'
+        if_exists_pattern = r'>如果存在>(.+?)(?:,\s*T=(\d+)s(\d+))'
         match = re.match(if_exists_pattern, command_line)
         if match:
-            pic_name = match.group(1).strip()
+            pic_name = match.group(1).strip().rstrip(',').strip()
             seconds = int(match.group(2))
             millis = int(match.group(3))
             abs_time = start_time + seconds + millis / 1000.0
@@ -1683,10 +2084,10 @@ class TextCommandEditor(tk.Toplevel):
         # ==================== OCR 文字辨識指令 ====================
         
         # OCR 條件判斷：>if文字>確認, T=0s000
-        ocr_if_pattern = r'>if文字>([^,]+),\s*T=(\d+)s(\d+)'
+        ocr_if_pattern = r'>if文字>(.+?)(?:,\s*T=(\d+)s(\d+))'
         match = re.match(ocr_if_pattern, command_line)
         if match:
-            target_text = match.group(1).strip()
+            target_text = match.group(1).strip().rstrip(',').strip()
             seconds = int(match.group(2))
             millis = int(match.group(3))
             abs_time = start_time + seconds + millis / 1000.0
@@ -1711,7 +2112,7 @@ class TextCommandEditor(tk.Toplevel):
             }
         
         # 等待文字出現：>等待文字>確認, 最長10s, T=0s000
-        ocr_wait_pattern = r'>等待文字>([^,]+),\s*最長(\d+(?:\.\d+)?)[sS],\s*T=(\d+)s(\d+)'
+        ocr_wait_pattern = r'>等待文字>(.+?),\s*最長(\d+(?:\.\d+)?)[sS],\s*T=(\d+)s(\d+)'
         match = re.match(ocr_wait_pattern, command_line)
         if match:
             target_text = match.group(1).strip()
@@ -1729,10 +2130,10 @@ class TextCommandEditor(tk.Toplevel):
             }
         
         # 點擊文字位置：>點擊文字>登入, T=0s000
-        ocr_click_pattern = r'>點擊文字>([^,]+),\s*T=(\d+)s(\d+)'
+        ocr_click_pattern = r'>點擊文字>(.+?)(?:,\s*T=(\d+)s(\d+))'
         match = re.match(ocr_click_pattern, command_line)
         if match:
-            target_text = match.group(1).strip()
+            target_text = match.group(1).strip().rstrip(',').strip()
             seconds = int(match.group(2))
             millis = int(match.group(3))
             abs_time = start_time + seconds + millis / 1000.0
@@ -2026,6 +2427,334 @@ class TextCommandEditor(tk.Toplevel):
         # 繼續
         if action == "繼續":
             return {"action": "continue"}
+    
+    def _parse_advanced_command_to_json(self, command_line: str, next_lines: list, start_time: float) -> dict:
+        """
+        解析進階指令（v2.7.1+ 新增）
+        支援：變數、循環、多條件、隨機、計數器、計時器
+        """
+        # ==================== 變數系統 ====================
+        
+        # 設定變數：>設定變數>count, 0, T=0s000
+        pattern = r'>設定變數>(.+?),\s*(.+?)(?:,\s*T=(\d+)s(\d+))'
+        match = re.match(pattern, command_line)
+        if match:
+            name = match.group(1).strip()
+            value = match.group(2).strip()
+            seconds = int(match.group(3))
+            millis = int(match.group(4))
+            abs_time = start_time + seconds + millis / 1000.0
+            
+            # 嘗試轉換為數字
+            try:
+                if '.' in value:
+                    value = float(value)
+                else:
+                    value = int(value)
+            except ValueError:
+                pass  # 保持字串
+            
+            return {
+                "type": "set_variable",
+                "name": name,
+                "value": value,
+                "time": abs_time
+            }
+        
+        # 變數加1：>變數加1>count, T=0s000
+        pattern = r'>變數加1>(.+?)(?:,\s*T=(\d+)s(\d+))'
+        match = re.match(pattern, command_line)
+        if match:
+            name = match.group(1).strip()
+            seconds = int(match.group(2))
+            millis = int(match.group(3))
+            abs_time = start_time + seconds + millis / 1000.0
+            
+            return {
+                "type": "variable_operation",
+                "name": name,
+                "operation": "add",
+                "value": 1,
+                "time": abs_time
+            }
+        
+        # 變數減1：>變數減1>count, T=0s000
+        pattern = r'>變數減1>(.+?)(?:,\s*T=(\d+)s(\d+))'
+        match = re.match(pattern, command_line)
+        if match:
+            name = match.group(1).strip()
+            seconds = int(match.group(2))
+            millis = int(match.group(3))
+            abs_time = start_time + seconds + millis / 1000.0
+            
+            return {
+                "type": "variable_operation",
+                "name": name,
+                "operation": "subtract",
+                "value": 1,
+                "time": abs_time
+            }
+        
+        # 變數條件：>if變數>count, >=, 10, T=0s000
+        pattern = r'>if變數>(.+?),\s*(==|!=|>|>=|<|<=),\s*(.+?)(?:,\s*T=(\d+)s(\d+))'
+        match = re.match(pattern, command_line)
+        if match:
+            name = match.group(1).strip()
+            operator = match.group(2).strip()
+            value = match.group(3).strip()
+            seconds = int(match.group(4))
+            millis = int(match.group(5))
+            abs_time = start_time + seconds + millis / 1000.0
+            
+            # 嘗試轉換為數字
+            try:
+                if '.' in value:
+                    value = float(value)
+                else:
+                    value = int(value)
+            except ValueError:
+                pass
+            
+            branches = self._parse_simple_condition_branches(next_lines)
+            if "success" not in branches:
+                branches["success"] = {"action": "continue"}
+            if "failure" not in branches:
+                branches["failure"] = {"action": "continue"}
+            
+            return {
+                "type": "if_variable",
+                "name": name,
+                "operator": operator,
+                "value": value,
+                "on_success": branches.get('success'),
+                "on_failure": branches.get('failure'),
+                "time": abs_time
+            }
+        
+        # ==================== 循環控制 ====================
+        
+        # 重複N次：>重複>10次, T=0s000
+        pattern = r'>重複>(\d+)次(?:,\s*T=(\d+)s(\d+))'
+        match = re.match(pattern, command_line)
+        if match:
+            count = int(match.group(1))
+            seconds = int(match.group(2))
+            millis = int(match.group(3))
+            abs_time = start_time + seconds + millis / 1000.0
+            
+            return {
+                "type": "loop_start",
+                "loop_type": "repeat",
+                "max_count": count,
+                "time": abs_time
+            }
+        
+        # 條件循環（當圖片存在）：>當圖片存在>loading, T=0s000
+        pattern = r'>當圖片存在>(.+?)(?:,\s*T=(\d+)s(\d+))'
+        match = re.match(pattern, command_line)
+        if match:
+            image = match.group(1).strip()
+            seconds = int(match.group(2))
+            millis = int(match.group(3))
+            abs_time = start_time + seconds + millis / 1000.0
+            
+            return {
+                "type": "loop_start",
+                "loop_type": "while",
+                "condition": {
+                    "type": "image_exists",
+                    "image": image
+                },
+                "time": abs_time
+            }
+        
+        # 循環結束：>循環結束, T=0s000 或 >重複結束, T=0s000
+        if "循環結束" in command_line or "重複結束" in command_line:
+            pattern = r'(?:,\s*T=(\d+)s(\d+))'
+            match = re.search(pattern, command_line)
+            if match:
+                seconds = int(match.group(1))
+                millis = int(match.group(2))
+                abs_time = start_time + seconds + millis / 1000.0
+            else:
+                abs_time = start_time
+            
+            return {
+                "type": "loop_end",
+                "time": abs_time
+            }
+        
+        # ==================== 多條件判斷 ====================
+        
+        # 全部圖片存在（AND）：>if全部存在>pic01,pic02,pic03, T=0s000
+        pattern = r'>if全部存在>(.+?)(?:,\s*T=(\d+)s(\d+))'
+        match = re.match(pattern, command_line)
+        if match:
+            images_str = match.group(1).strip()
+            images = [img.strip() for img in images_str.split(',')]
+            seconds = int(match.group(2))
+            millis = int(match.group(3))
+            abs_time = start_time + seconds + millis / 1000.0
+            
+            branches = self._parse_simple_condition_branches(next_lines)
+            if "success" not in branches:
+                branches["success"] = {"action": "continue"}
+            if "failure" not in branches:
+                branches["failure"] = {"action": "continue"}
+            
+            return {
+                "type": "if_all_images_exist",
+                "images": images,
+                "confidence": 0.75,
+                "on_success": branches.get('success'),
+                "on_failure": branches.get('failure'),
+                "time": abs_time
+            }
+        
+        # 任一圖片存在（OR）：>if任一存在>pic01,pic02,pic03, T=0s000
+        pattern = r'>if任一存在>(.+?)(?:,\s*T=(\d+)s(\d+))'
+        match = re.match(pattern, command_line)
+        if match:
+            images_str = match.group(1).strip()
+            images = [img.strip() for img in images_str.split(',')]
+            seconds = int(match.group(2))
+            millis = int(match.group(3))
+            abs_time = start_time + seconds + millis / 1000.0
+            
+            branches = self._parse_simple_condition_branches(next_lines)
+            if "success" not in branches:
+                branches["success"] = {"action": "continue"}
+            if "failure" not in branches:
+                branches["failure"] = {"action": "continue"}
+            
+            return {
+                "type": "if_any_image_exists",
+                "images": images,
+                "confidence": 0.75,
+                "on_success": branches.get('success'),
+                "on_failure": branches.get('failure'),
+                "time": abs_time
+            }
+        
+        # ==================== 隨機功能 ====================
+        
+        # 隨機延遲：>隨機延遲>100ms,500ms, T=0s000
+        pattern = r'>隨機延遲>(\d+)ms,(\d+)ms(?:,\s*T=(\d+)s(\d+))'
+        match = re.match(pattern, command_line)
+        if match:
+            min_ms = int(match.group(1))
+            max_ms = int(match.group(2))
+            seconds = int(match.group(3))
+            millis = int(match.group(4))
+            abs_time = start_time + seconds + millis / 1000.0
+            
+            return {
+                "type": "random_delay",
+                "min_ms": min_ms,
+                "max_ms": max_ms,
+                "time": abs_time
+            }
+        
+        # 隨機分支：>隨機執行>30%, T=0s000
+        pattern = r'>隨機執行>(\d+)%(?:,\s*T=(\d+)s(\d+))'
+        match = re.match(pattern, command_line)
+        if match:
+            probability = int(match.group(1))
+            seconds = int(match.group(2))
+            millis = int(match.group(3))
+            abs_time = start_time + seconds + millis / 1000.0
+            
+            branches = self._parse_simple_condition_branches(next_lines)
+            if "success" not in branches:
+                branches["success"] = {"action": "continue"}
+            if "failure" not in branches:
+                branches["failure"] = {"action": "continue"}
+            
+            return {
+                "type": "random_branch",
+                "probability": probability,
+                "on_success": branches.get('success'),
+                "on_failure": branches.get('failure'),
+                "time": abs_time
+            }
+        
+        # ==================== 計數器與計時器 ====================
+        
+        # 計數器觸發：>計數器>找圖失敗, 3次後, T=0s000
+        pattern = r'>計數器>(.+?),\s*(\d+)次後(?:,\s*T=(\d+)s(\d+))'
+        match = re.match(pattern, command_line)
+        if match:
+            action_id = match.group(1).strip()
+            count = int(match.group(2))
+            seconds = int(match.group(3))
+            millis = int(match.group(4))
+            abs_time = start_time + seconds + millis / 1000.0
+            
+            branches = self._parse_simple_condition_branches(next_lines)
+            on_trigger = branches.get('success', {"action": "continue"})
+            
+            return {
+                "type": "counter_trigger",
+                "action_id": action_id,
+                "count": count,
+                "on_trigger": on_trigger,
+                "reset_on_trigger": True,
+                "time": abs_time
+            }
+        
+        # 計時器觸發：>計時器>等待載入, 60秒後, T=0s000
+        pattern = r'>計時器>(.+?),\s*(\d+)秒後(?:,\s*T=(\d+)s(\d+))'
+        match = re.match(pattern, command_line)
+        if match:
+            action_id = match.group(1).strip()
+            duration = int(match.group(2))
+            seconds = int(match.group(3))
+            millis = int(match.group(4))
+            abs_time = start_time + seconds + millis / 1000.0
+            
+            branches = self._parse_simple_condition_branches(next_lines)
+            on_trigger = branches.get('success', {"action": "continue"})
+            
+            return {
+                "type": "timer_trigger",
+                "action_id": action_id,
+                "duration": duration,
+                "on_trigger": on_trigger,
+                "reset_on_trigger": True,
+                "time": abs_time
+            }
+        
+        # 重置計數器：>重置計數器>找圖失敗, T=0s000
+        pattern = r'>重置計數器>(.+?)(?:,\s*T=(\d+)s(\d+))'
+        match = re.match(pattern, command_line)
+        if match:
+            action_id = match.group(1).strip()
+            seconds = int(match.group(2))
+            millis = int(match.group(3))
+            abs_time = start_time + seconds + millis / 1000.0
+            
+            return {
+                "type": "reset_counter",
+                "action_id": action_id,
+                "time": abs_time
+            }
+        
+        # 重置計時器：>重置計時器>等待載入, T=0s000
+        pattern = r'>重置計時器>(.+?)(?:,\s*T=(\d+)s(\d+))'
+        match = re.match(pattern, command_line)
+        if match:
+            action_id = match.group(1).strip()
+            seconds = int(match.group(2))
+            millis = int(match.group(3))
+            abs_time = start_time + seconds + millis / 1000.0
+            
+            return {
+                "type": "reset_timer",
+                "action_id": action_id,
+                "time": abs_time
+            }
+        
+        return None
     
     def _parse_combat_command_to_json(self, command_line: str, start_time: float) -> dict:
         """
@@ -2414,23 +3143,36 @@ class TextCommandEditor(tk.Toplevel):
     
     
     def _on_text_modified(self, event=None):
-        """文字內容修改時觸發語法高亮"""
+        """文字內容修改時觸發語法高亮（優化版：防抖動處理）"""
         # 重置 modified 標誌
         self.text_editor.edit_modified(False)
-        # 延遲執行語法高亮以提高效能
-        self.after(50, self._apply_syntax_highlighting)
+        
+        # ✨ 使用防抖動機制：取消之前的延遲任務
+        if hasattr(self, '_highlight_after_id'):
+            self.after_cancel(self._highlight_after_id)
+        
+        # 延遲執行語法高亮以提高效能（延長至150ms避免卡頓）
+        self._highlight_after_id = self.after(150, self._apply_syntax_highlighting)
     
     def _apply_syntax_highlighting(self):
-        """套用語法高亮 (Dracula 配色)"""
+        """套用語法高亮 (Dracula 配色) - 優化版"""
         try:
-            # 移除所有現有標籤
+            # ✨ 效能優化：僅處理可見區域前後各50行
+            visible_start = self.text_editor.index("@0,0")
+            visible_end = self.text_editor.index(f"@0,{self.text_editor.winfo_height()}")
+            
+            # 擴展範圍以包含上下文
+            start_line = max(1, int(visible_start.split('.')[0]) - 50)
+            end_line = int(visible_end.split('.')[0]) + 50
+            
+            # 移除舊標籤（僅在處理範圍內）
             for tag in ["syntax_symbol", "syntax_time", "syntax_label", "syntax_keyboard",
                        "syntax_mouse", "syntax_image", "syntax_condition", "syntax_ocr",
                        "syntax_delay", "syntax_flow", "syntax_picname"]:
-                self.text_editor.tag_remove(tag, "1.0", tk.END)
+                self.text_editor.tag_remove(tag, f"{start_line}.0", f"{end_line}.end")
             
-            # 獲取所有文字內容
-            content = self.text_editor.get("1.0", tk.END)
+            # 獲取處理範圍的文字內容
+            content = self.text_editor.get(f"{start_line}.0", f"{end_line}.end")
             
             # 定義需要高亮的模式 (Dracula 配色方案)
             # 流程控制 (紅色) - 優先順序最高
@@ -2517,9 +3259,10 @@ class TextCommandEditor(tk.Toplevel):
                           patterns_image + patterns_picname + patterns_time + 
                           patterns_label + patterns_symbol)
             
-            # 逐行處理
+            # 逐行處理（調整行號以配合範圍）
             lines = content.split('\n')
-            for line_num, line in enumerate(lines, start=1):
+            for offset, line in enumerate(lines):
+                line_num = start_line + offset
                 for pattern, tag in all_patterns:
                     for match in re.finditer(pattern, line):
                         start_idx = f"{line_num}.{match.start()}"

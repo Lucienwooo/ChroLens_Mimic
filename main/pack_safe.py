@@ -42,7 +42,7 @@ class SafePacker:
                         return version
         except Exception as e:
             print(f"無法讀取版本號: {e}")
-            return "2.6.7"
+            return "2.7.1"
     
     def clean_old_files(self):
         """清理舊的打包檔案"""
@@ -149,7 +149,7 @@ class SafePacker:
             print(f"找不到輸出目錄: {self.output_dir}")
             sys.exit(1)
         
-        zip_name = f"ChroLens_Mimic_{self.version}_safe.zip"
+        zip_name = f"ChroLens_Mimic_{self.version}.zip"
         zip_path = self.dist_dir / zip_name
         
         print(f"  壓縮為: {zip_name}")

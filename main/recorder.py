@@ -64,6 +64,19 @@ class CoreRecorder:
         # ✅ 貝茲曲線滑鼠移動器
         self._bezier_mover = BezierMouseMover() if BEZIER_AVAILABLE else None
         self._use_bezier = False  # 預設關閉（保持向下相容）
+        
+        # ✅ v2.7.1+ 新增：變數系統和執行狀態
+        self._variables = {}  # 變數儲存 {name: value}
+        self._loop_stack = []  # 循環堆疊 [{type, start_index, counter, max_count}]
+        self._retry_count = 0  # 重試計數器
+        self._timeout_start = None  # 超時計時開始時間
+        self._timeout_duration = None  # 超時時長（秒）
+        self._action_retry_count = {}  # 動作重試計數 {action_id: count}
+        self._action_start_time = {}  # 動作開始時間 {action_id: timestamp}
+        self._current_try_action = None  # 當前嘗試的動作ID
+        self._current_try_max = 0  # 當前嘗試的最大次數
+        self._current_try_success = None  # 當前嘗試成功的分支
+        self._current_try_failure = None  # 當前嘗試失敗的分支
     
     def _log(self, msg: str, level: str = "info"):
         """統一日誌輸出（相容新舊格式）
@@ -416,19 +429,18 @@ class CoreRecorder:
                 self.logger(f"[警告] pynput.mouse.Listener 啟動失敗（可能需要管理員權限）: {e}")
                 # 如果 listener 失敗，仍然可以記錄移動
 
-            # 記錄初始位置（如果未隱藏軌跡）
-            if not (hasattr(self, 'hide_trajectory') and self.hide_trajectory):
-                now = time.time()
-                in_target = self._is_point_in_target_window(last_pos[0], last_pos[1])
-                event = {
-                    'type': 'mouse',
-                    'event': 'move',
-                    'x': last_pos[0],
-                    'y': last_pos[1],
-                    'time': now,
-                    'in_target': in_target
-                }
-                self._mouse_events.append(event)
+            # 記錄初始位置
+            now = time.time()
+            in_target = self._is_point_in_target_window(last_pos[0], last_pos[1])
+            event = {
+                'type': 'mouse',
+                'event': 'move',
+                'x': last_pos[0],
+                'y': last_pos[1],
+                'time': now,
+                'in_target': in_target
+            }
+            self._mouse_events.append(event)
 
             # 持續記錄滑鼠移動
             while self.recording:
@@ -436,12 +448,6 @@ class CoreRecorder:
                     now = time.time()
                     pos = mouse_ctrl.position
                     if pos != last_pos:
-                        # 如果啟用「隱藏軌跡」，完全跳過滑鼠移動記錄
-                        if hasattr(self, 'hide_trajectory') and self.hide_trajectory:
-                            last_pos = pos  # 更新位置但不記錄任何移動
-                            time.sleep(0.01)
-                            continue
-                        
                         # 記錄所有移動，但標記是否在目標視窗內
                         in_target = self._is_point_in_target_window(pos[0], pos[1])
                         event = {
@@ -1674,6 +1680,234 @@ class CoreRecorder:
                     
             except Exception as e:
                 self.logger(f"多圖辨識執行失敗: {e}")
+        
+        # ==================== v2.7.1+ 新增事件類型 ====================
+        
+        # 變數設定
+        elif event['type'] == 'set_variable':
+            name = event.get('name', '')
+            value = event.get('value', 0)
+            self._set_variable(name, value)
+        
+        # 變數運算
+        elif event['type'] == 'variable_operation':
+            name = event.get('name', '')
+            operation = event.get('operation', 'add')  # add/subtract/multiply/divide
+            value = event.get('value', 1)
+            self._variable_operation(name, operation, value)
+        
+        # 變數條件判斷
+        elif event['type'] == 'if_variable':
+            name = event.get('name', '')
+            operator = event.get('operator', '==')
+            value = event.get('value', 0)
+            on_success = event.get('on_success')
+            on_failure = event.get('on_failure')
+            
+            result = self._check_variable_condition(name, operator, value)
+            self.logger(f"[變數條件] {name} {operator} {value} = {result}")
+            
+            if result and on_success:
+                return self._handle_branch_action(on_success)
+            elif not result and on_failure:
+                return self._handle_branch_action(on_failure)
+        
+        # 多條件判斷（AND）
+        elif event['type'] == 'if_all_images_exist':
+            try:
+                images = event.get('images', [])
+                confidence = event.get('confidence', 0.75)
+                on_success = event.get('on_success')
+                on_failure = event.get('on_failure')
+                
+                self.logger(f"[多條件AND] 檢查 {len(images)} 張圖片是否全部存在")
+                
+                all_found = True
+                for img_name in images:
+                    pos = self.find_image_on_screen(img_name, threshold=confidence, fast_mode=True)
+                    if not pos:
+                        self.logger(f"[多條件AND] ✖ 缺少: {img_name}")
+                        all_found = False
+                        break
+                    else:
+                        self.logger(f"[多條件AND] ✓ 找到: {img_name}")
+                
+                if all_found:
+                    self.logger(f"[多條件AND] ✅ 全部找到")
+                    if on_success:
+                        return self._handle_branch_action(on_success)
+                else:
+                    if on_failure:
+                        return self._handle_branch_action(on_failure)
+                        
+            except Exception as e:
+                self.logger(f"多條件AND判斷失敗: {e}")
+        
+        # 多條件判斷（OR）
+        elif event['type'] == 'if_any_image_exists':
+            try:
+                images = event.get('images', [])
+                confidence = event.get('confidence', 0.75)
+                on_success = event.get('on_success')
+                on_failure = event.get('on_failure')
+                found_image = event.get('found_image_var', '')  # 儲存找到的圖片名稱到變數
+                
+                self.logger(f"[多條件OR] 檢查 {len(images)} 張圖片是否有任一存在")
+                
+                found = None
+                for img_name in images:
+                    pos = self.find_image_on_screen(img_name, threshold=confidence, fast_mode=True)
+                    if pos:
+                        self.logger(f"[多條件OR] ✅ 找到: {img_name}")
+                        found = img_name
+                        if found_image:
+                            self._set_variable(found_image, img_name)
+                        break
+                
+                if found:
+                    if on_success:
+                        return self._handle_branch_action(on_success)
+                else:
+                    self.logger(f"[多條件OR] ✖ 全部未找到")
+                    if on_failure:
+                        return self._handle_branch_action(on_failure)
+                        
+            except Exception as e:
+                self.logger(f"多條件OR判斷失敗: {e}")
+        
+        # 循環開始
+        elif event['type'] == 'loop_start':
+            loop_type = event.get('loop_type', 'repeat')  # repeat/while/for
+            max_count = event.get('max_count', 1)
+            condition = event.get('condition', {})  # for while loop
+            
+            self._loop_stack.append({
+                'type': loop_type,
+                'start_index': self._current_play_index,
+                'counter': 0,
+                'max_count': max_count,
+                'condition': condition
+            })
+            self.logger(f"[循環開始] 類型={loop_type}, 次數={max_count}")
+        
+        # 循環結束
+        elif event['type'] == 'loop_end':
+            if self._loop_stack:
+                loop_info = self._loop_stack[-1]
+                loop_info['counter'] += 1
+                
+                should_continue = False
+                
+                if loop_info['type'] == 'repeat':
+                    should_continue = loop_info['counter'] < loop_info['max_count']
+                elif loop_info['type'] == 'while':
+                    # 檢查條件
+                    condition = loop_info['condition']
+                    if condition.get('type') == 'image_exists':
+                        img_name = condition.get('image', '')
+                        pos = self.find_image_on_screen(img_name, threshold=0.75, fast_mode=True)
+                        should_continue = bool(pos)
+                
+                if should_continue:
+                    self.logger(f"[循環] 繼續循環 ({loop_info['counter']}/{loop_info['max_count']})")
+                    self._current_play_index = loop_info['start_index']
+                    return ('jump_index', loop_info['start_index'])
+                else:
+                    self.logger(f"[循環結束] 已完成 {loop_info['counter']} 次")
+                    self._loop_stack.pop()
+        
+        # 隨機延遲
+        elif event['type'] == 'random_delay':
+            import random
+            min_ms = event.get('min_ms', 100)
+            max_ms = event.get('max_ms', 500)
+            delay = random.randint(min_ms, max_ms) / 1000.0
+            self.logger(f"[隨機延遲] {delay:.3f}s")
+            time.sleep(delay)
+        
+        # 隨機分支
+        elif event['type'] == 'random_branch':
+            import random
+            probability = event.get('probability', 50)  # 0-100
+            on_success = event.get('on_success')
+            on_failure = event.get('on_failure')
+            
+            roll = random.randint(1, 100)
+            success = roll <= probability
+            
+            self.logger(f"[隨機分支] 概率={probability}%, 擲骰={roll}, 結果={'成功' if success else '失敗'}")
+            
+            if success and on_success:
+                return self._handle_branch_action(on_success)
+            elif not success and on_failure:
+                return self._handle_branch_action(on_failure)
+        
+        # 嘗試執行（帶重試）
+        elif event['type'] == 'try_action':
+            action_id = event.get('action_id', 'default')
+            max_retries = event.get('max_retries', 3)
+            on_success = event.get('on_success')
+            on_failure = event.get('on_failure')
+            
+            retry_count = self._get_action_retry_count(action_id)
+            self.logger(f"[嘗試執行] {action_id} (第{retry_count + 1}次/最多{max_retries}次)")
+            
+            # 這裡需要配合下一個動作使用，標記為嘗試模式
+            self._current_try_action = action_id
+            self._current_try_max = max_retries
+            self._current_try_success = on_success
+            self._current_try_failure = on_failure
+        
+        # 計數器觸發
+        elif event['type'] == 'counter_trigger':
+            action_id = event.get('action_id', '')
+            count = event.get('count', 3)
+            on_trigger = event.get('on_trigger')
+            reset_on_trigger = event.get('reset_on_trigger', True)
+            
+            current_count = self._increment_action_retry(action_id)
+            self.logger(f"[計數器] {action_id}: {current_count}/{count}")
+            
+            if current_count >= count:
+                self.logger(f"[計數器觸發] {action_id} 達到 {count} 次")
+                if reset_on_trigger:
+                    self._reset_action_retry(action_id)
+                if on_trigger:
+                    return self._handle_branch_action(on_trigger)
+        
+        # 計時器觸發
+        elif event['type'] == 'timer_trigger':
+            action_id = event.get('action_id', '')
+            duration = event.get('duration', 60)  # 秒
+            on_trigger = event.get('on_trigger')
+            reset_on_trigger = event.get('reset_on_trigger', True)
+            
+            # 首次執行時開始計時
+            if action_id not in self._action_start_time:
+                self._start_action_timer(action_id)
+                self.logger(f"[計時器] {action_id} 開始計時")
+            
+            elapsed = self._get_action_elapsed_time(action_id)
+            self.logger(f"[計時器] {action_id}: {elapsed:.1f}s/{duration}s")
+            
+            if elapsed >= duration:
+                self.logger(f"[計時器觸發] {action_id} 達到 {duration} 秒")
+                if reset_on_trigger:
+                    self._reset_action_timer(action_id)
+                if on_trigger:
+                    return self._handle_branch_action(on_trigger)
+        
+        # 重置計數器
+        elif event['type'] == 'reset_counter':
+            action_id = event.get('action_id', '')
+            self._reset_action_retry(action_id)
+            self.logger(f"[重置計數器] {action_id}")
+        
+        # 重置計時器
+        elif event['type'] == 'reset_timer':
+            action_id = event.get('action_id', '')
+            self._reset_action_timer(action_id)
+            self.logger(f"[重置計時器] {action_id}")
 
     def _handle_branch_action(self, action_config):
         """處理分支動作（繼續/停止/跳轉）
@@ -1696,6 +1930,113 @@ class CoreRecorder:
             elif action == 'jump':
                 target = action_config.get('target', '')
                 repeat_count = action_config.get('repeat_count', 1)
+                self.logger(f"[分支] 跳轉至標籤: {target}, 重複{repeat_count}次")
+                return ('jump', target, repeat_count)
+            
+            else:  # continue
+                self.logger("[分支] 繼續執行")
+                return None
+                
+        except Exception as e:
+            self.logger(f"分支動作處理失敗: {e}")
+            return None
+    
+    # ==================== v2.7.1+ 變數系統 ====================
+    
+    def _set_variable(self, name, value):
+        """設定變數"""
+        try:
+            # 嘗試轉換為數字
+            if isinstance(value, str):
+                if '.' in value:
+                    value = float(value)
+                else:
+                    try:
+                        value = int(value)
+                    except ValueError:
+                        pass  # 保持字串
+            self._variables[name] = value
+            self.logger(f"[變數] {name} = {value}")
+        except Exception as e:
+            self.logger(f"設定變數失敗: {e}")
+    
+    def _get_variable(self, name, default=0):
+        """取得變數值"""
+        return self._variables.get(name, default)
+    
+    def _variable_operation(self, name, operation, value=1):
+        """變數運算（加減乘除）"""
+        try:
+            current = self._get_variable(name, 0)
+            if operation == 'add':
+                self._variables[name] = current + value
+            elif operation == 'subtract':
+                self._variables[name] = current - value
+            elif operation == 'multiply':
+                self._variables[name] = current * value
+            elif operation == 'divide':
+                self._variables[name] = current / value if value != 0 else current
+            self.logger(f"[變數] {name} {operation} {value} = {self._variables[name]}")
+        except Exception as e:
+            self.logger(f"變數運算失敗: {e}")
+    
+    def _check_variable_condition(self, name, operator, value):
+        """檢查變數條件"""
+        try:
+            var_value = self._get_variable(name, 0)
+            # 確保類型一致
+            if isinstance(var_value, (int, float)) and isinstance(value, str):
+                if '.' in value:
+                    value = float(value)
+                else:
+                    value = int(value)
+            
+            if operator == '==':
+                return var_value == value
+            elif operator == '!=':
+                return var_value != value
+            elif operator == '>':
+                return var_value > value
+            elif operator == '>=':
+                return var_value >= value
+            elif operator == '<':
+                return var_value < value
+            elif operator == '<=':
+                return var_value <= value
+            else:
+                self.logger(f"未知的運算符: {operator}")
+                return False
+        except Exception as e:
+            self.logger(f"變數條件檢查失敗: {e}")
+            return False
+    
+    def _increment_action_retry(self, action_id):
+        """增加動作重試計數"""
+        self._action_retry_count[action_id] = self._action_retry_count.get(action_id, 0) + 1
+        return self._action_retry_count[action_id]
+    
+    def _reset_action_retry(self, action_id):
+        """重置動作重試計數"""
+        self._action_retry_count[action_id] = 0
+    
+    def _get_action_retry_count(self, action_id):
+        """取得動作重試計數"""
+        return self._action_retry_count.get(action_id, 0)
+    
+    def _start_action_timer(self, action_id):
+        """開始動作計時"""
+        self._action_start_time[action_id] = time.time()
+    
+    def _get_action_elapsed_time(self, action_id):
+        """取得動作經過時間（秒）"""
+        if action_id in self._action_start_time:
+            return time.time() - self._action_start_time[action_id]
+        return 0
+    
+    def _reset_action_timer(self, action_id):
+        """重置動作計時"""
+        if action_id in self._action_start_time:
+            del self._action_start_time[action_id]
                 self.logger(f"[分支] 跳轉至標籤: {target}, 重複{repeat_count}次")
                 return ('jump', target, repeat_count)
             
