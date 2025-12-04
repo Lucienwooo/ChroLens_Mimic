@@ -122,24 +122,53 @@ class UpdateManager:
             self._update_progress(30, "正在解析版本資訊...")
             
             # 解析版本資訊
-            latest_version = data.get('tag_name', '').lstrip('v')
+            latest_version = data.get('tag_name', '').lstrip('v').lstrip('V')
             release_notes = data.get('body', '無更新說明')
             
-            # 尋找 zip 檔案
+            # 尋找 zip 檔案（更強健的匹配邏輯）
             assets = data.get('assets', [])
             download_url = None
             asset_name = None
             
+            # 優先順序匹配策略
+            # 1. 精確匹配：ChroLens_Mimic_{version}.zip
+            # 2. 模糊匹配：包含 ChroLens_Mimic 和版本號
+            # 3. 寬鬆匹配：任何包含 ChroLens_Mimic 的 zip
+            
+            matching_assets = []
             for asset in assets:
                 name = asset.get('name', '')
                 if name.endswith('.zip') and 'ChroLens_Mimic' in name:
-                    download_url = asset.get('browser_download_url')
-                    asset_name = name
-                    break
+                    # 計算匹配優先級
+                    priority = 0
+                    
+                    # 精確匹配版本號
+                    expected_name = f"ChroLens_Mimic_{latest_version}.zip"
+                    if name == expected_name:
+                        priority = 100
+                    # 包含版本號
+                    elif latest_version in name:
+                        priority = 50
+                    # 基本匹配
+                    else:
+                        priority = 10
+                    
+                    matching_assets.append({
+                        'name': name,
+                        'url': asset.get('browser_download_url'),
+                        'priority': priority
+                    })
             
-            if not download_url:
+            # 按優先級排序，選擇最佳匹配
+            if matching_assets:
+                matching_assets.sort(key=lambda x: x['priority'], reverse=True)
+                best_match = matching_assets[0]
+                download_url = best_match['url']
+                asset_name = best_match['name']
+                self._logger(f"找到更新包: {asset_name} (優先級: {best_match['priority']})")
+            else:
                 self._logger("警告: 找不到更新包（.zip 檔案）")
-                # 即使沒有更新包，仍然返回版本資訊
+                self._logger(f"可用的資產檔案: {[a.get('name') for a in assets]}")
             
             self._update_progress(50, "正在比較版本...")
             
