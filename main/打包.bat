@@ -19,7 +19,7 @@ if %errorlevel% neq 0 (
 
 echo [2/3] 執行打包腳本...
 echo.
-python pack.py
+python pack_safe.py
 if %errorlevel% neq 0 (
     echo.
     echo ❌ 打包失敗！請檢查錯誤訊息

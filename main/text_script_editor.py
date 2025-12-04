@@ -219,6 +219,27 @@ class TextCommandEditor(tk.Toplevel):
             font=font_tuple(10, "bold")
         ).pack(anchor="w", pady=5)
         
+        # 新增：簡化軌跡顯示勾選框
+        trajectory_control = tk.Frame(left_frame)
+        trajectory_control.pack(fill="x", pady=(0, 5))
+        
+        self.simplify_display_var = tk.BooleanVar(value=True)
+        simplify_check = tk.Checkbutton(
+            trajectory_control,
+            text="簡化軌跡顯示",
+            variable=self.simplify_display_var,
+            command=self._toggle_trajectory_display,
+            font=font_tuple(9)
+        )
+        simplify_check.pack(side="left", padx=5)
+        
+        tk.Label(
+            trajectory_control,
+            text="(隱藏連續移動點，顯示軌跡摘要)",
+            font=font_tuple(8),
+            fg="#666666"
+        ).pack(side="left")
+        
         # 使用 LINE Seed 字體
         editor_font = ("LINE Seed TW", 10) if LINE_SEED_FONT_LOADED else font_tuple(10, monospace=True)
         
@@ -466,6 +487,100 @@ class TextCommandEditor(tk.Toplevel):
         
         colors = status_colors.get(status_type, status_colors["info"])
         self.status_label.config(text=text, bg=colors["bg"], fg=colors["fg"])
+    
+    def _toggle_trajectory_display(self):
+        """切換軌跡顯示模式（簡化/完整）"""
+        # 重新載入腳本以套用新的顯示模式
+        self._load_script()
+    
+    def _simplify_trajectory_display(self, lines: list) -> list:
+        """簡化軌跡顯示：將連續的移動指令折疊為摘要行
+        
+        Args:
+            lines: 原始文字指令列表
+            
+        Returns:
+            簡化後的文字指令列表
+        """
+        if not self.simplify_display_var.get():
+            return lines  # 不簡化，返回原始內容
+        
+        simplified = []
+        trajectory_buffer = []
+        trajectory_start_time = None
+        
+        for line in lines:
+            # 檢測移動指令
+            if line.startswith(">移動至(") and ", T=" in line:
+                if not trajectory_buffer:
+                    # 記錄軌跡開始
+                    match = re.search(r'T=(\d+s\d+)', line)
+                    if match:
+                        trajectory_start_time = match.group(1)
+                trajectory_buffer.append(line)
+            else:
+                # 非移動指令，處理累積的軌跡
+                if len(trajectory_buffer) > 3:  # 只簡化超過3個點的軌跡
+                    # 提取起點和終點座標
+                    start_match = re.search(r'>移動至\((\d+),(\d+)\)', trajectory_buffer[0])
+                    end_match = re.search(r'>移動至\((\d+),(\d+)\)', trajectory_buffer[-1])
+                    end_time_match = re.search(r'T=(\d+s\d+)', trajectory_buffer[-1])
+                    
+                    if start_match and end_match and end_time_match:
+                        start_pos = f"({start_match.group(1)},{start_match.group(2)})"
+                        end_pos = f"({end_match.group(1)},{end_match.group(2)})"
+                        end_time = end_time_match.group(1)
+                        point_count = len(trajectory_buffer)
+                        
+                        # 計算持續時間
+                        start_seconds = self._parse_time(trajectory_start_time)
+                        end_seconds = self._parse_time(end_time)
+                        duration = end_seconds - start_seconds
+                        
+                        # 生成摘要行
+                        summary = f"# [軌跡] {start_pos}→{end_pos} 共{point_count}點 {duration:.1f}秒 [展開]\n"
+                        simplified.append(summary)
+                        
+                        # 將原始軌跡存儲為隱藏註解（用於展開）
+                        simplified.append(f"# [軌跡開始]\n")
+                        for traj_line in trajectory_buffer:
+                            simplified.append(f"# {traj_line}")
+                        simplified.append(f"# [軌跡結束]\n")
+                else:
+                    # 軌跡太短，保留原樣
+                    simplified.extend(trajectory_buffer)
+                
+                trajectory_buffer = []
+                trajectory_start_time = None
+                simplified.append(line)
+        
+        # 處理結尾的軌跡
+        if len(trajectory_buffer) > 3:
+            start_match = re.search(r'>移動至\((\d+),(\d+)\)', trajectory_buffer[0])
+            end_match = re.search(r'>移動至\((\d+),(\d+)\)', trajectory_buffer[-1])
+            end_time_match = re.search(r'T=(\d+s\d+)', trajectory_buffer[-1])
+            
+            if start_match and end_match and end_time_match:
+                start_pos = f"({start_match.group(1)},{start_match.group(2)})"
+                end_pos = f"({end_match.group(1)},{end_match.group(2)})"
+                end_time = end_time_match.group(1)
+                point_count = len(trajectory_buffer)
+                
+                start_seconds = self._parse_time(trajectory_start_time)
+                end_seconds = self._parse_time(end_time)
+                duration = end_seconds - start_seconds
+                
+                summary = f"# [軌跡] {start_pos}→{end_pos} 共{point_count}點 {duration:.1f}秒 [展開]\n"
+                simplified.append(summary)
+                
+                simplified.append(f"# [軌跡開始]\n")
+                for traj_line in trajectory_buffer:
+                    simplified.append(f"# {traj_line}")
+                simplified.append(f"# [軌跡結束]\n")
+        else:
+            simplified.extend(trajectory_buffer)
+        
+        return simplified
     
     def _create_command_buttons(self):
         """創建底部指令按鈕區（三行佈局）"""
@@ -871,11 +986,35 @@ class TextCommandEditor(tk.Toplevel):
                     
                     elif event_name == "down":
                         button = event.get("button", "left")
-                        lines.append(f">按下{button}鍵({x},{y}), 延遲0ms, T={time_str}\n")
+                        # 檢查下一個事件是否為同一按鈕的 up（為了簡化指令）
+                        next_event = events[idx + 1] if idx + 1 < len(events) else None
+                        if (next_event and 
+                            next_event.get("type") == "mouse" and 
+                            next_event.get("event") == "up" and 
+                            next_event.get("button") == button and
+                            next_event.get("x") == x and 
+                            next_event.get("y") == y):
+                            # 這是一個完整的點擊動作，轉為點擊指令
+                            next_time = next_event.get("time", 0)
+                            duration_ms = int((next_time - event.get("time", 0)) * 1000)
+                            button_name = "左鍵" if button == "left" else "右鍵" if button == "right" else "中鍵"
+                            lines.append(f">{button_name}點擊({x},{y}), 延遲{duration_ms}ms, T={time_str}\n")
+                            # 標記下一個事件已處理（跳過）
+                            event["_skip_next"] = True
+                        else:
+                            # 僅按下，沒有對應的放開
+                            lines.append(f">按下{button}鍵({x},{y}), 延遲0ms, T={time_str}\n")
                     
                     elif event_name == "up":
-                        button = event.get("button", "left")
-                        lines.append(f">放開{button}鍵({x},{y}), 延遲0ms, T={time_str}\n")
+                        # 檢查前一個事件是否已處理過這個 up
+                        prev_event = events[idx - 1] if idx > 0 else None
+                        if prev_event and prev_event.get("_skip_next"):
+                            # 這個 up 已經被合併到 down 中，跳過
+                            continue
+                        else:
+                            # 獨立的放開動作
+                            button = event.get("button", "left")
+                            lines.append(f">放開{button}鍵({x},{y}), 延遲0ms, T={time_str}\n")
                 
                 # 圖片辨識指令
                 elif event_type == "recognize_image":
@@ -1004,6 +1143,9 @@ class TextCommandEditor(tk.Toplevel):
             for key, time in pressed_keys.items():
                 time_str = self._format_time(time)
                 lines.append(f"# >按下{key}, T={time_str} (未放開)\n")
+        
+        # 應用軌跡簡化
+        lines = self._simplify_trajectory_display(lines)
         
         return "".join(lines)
     
@@ -1162,9 +1304,10 @@ class TextCommandEditor(tk.Toplevel):
                                 })
                                 pending_label = None
                             events.append(event)
-                        # 如果解析失敗,繼續嘗試其他解析邏輯(可能是鍵盤/滑鼠指令)
-                        i += 1
-                        continue
+                            # ✅ 修正：只有成功解析時才跳過後續邏輯
+                            i += 1
+                            continue
+                        # ✅ 修正：如果解析失敗（event為None），不跳過，繼續執行下方的標準解析邏輯
                     
                     # 移除 ">" 並智能分割（保護括號內的逗號）
                     line_content = line[1:]
@@ -1220,13 +1363,31 @@ class TextCommandEditor(tk.Toplevel):
                                 
                                 # 判斷是點擊還是按下/放開
                                 if "點擊" in action:
-                                    # 點擊 = 按下 + 放開
+                                    # 點擊 = 按下 + 放開（使用 delay_s 作為按鍵持續時間）
                                     events.append({"type": "mouse", "event": "down", "button": button, "x": x, "y": y, "time": abs_time, "in_target": True, "_line_number": line_number})
-                                    events.append({"type": "mouse", "event": "up", "button": button, "x": x, "y": y, "time": abs_time + 0.05, "in_target": True, "_line_number": line_number})
+                                    events.append({"type": "mouse", "event": "up", "button": button, "x": x, "y": y, "time": abs_time + delay_s, "in_target": True, "_line_number": line_number})
                                 elif "按下" in action:
                                     events.append({"type": "mouse", "event": "down", "button": button, "x": x, "y": y, "time": abs_time, "in_target": True, "_line_number": line_number})
                                 elif "放開" in action:
                                     events.append({"type": "mouse", "event": "up", "button": button, "x": x, "y": y, "time": abs_time, "in_target": True, "_line_number": line_number})
+                        
+                        elif "滾輪" in action:
+                            # 滑鼠滾輪指令：>滾輪(1), 延遲0ms, T=0s000
+                            # 提取滾輪方向/數值
+                            wheel_match = re.search(r'滾輪\(([+-]?\d+)\)', action)
+                            if wheel_match:
+                                delta = int(wheel_match.group(1))
+                                # 獲取當前滑鼠位置（使用 0,0 作為預設）
+                                events.append({
+                                    "type": "mouse",
+                                    "event": "wheel",
+                                    "delta": delta,
+                                    "x": 0,
+                                    "y": 0,
+                                    "time": abs_time,
+                                    "in_target": True,
+                                    "_line_number": line_number
+                                })
                         
                         elif action.startswith("按") and "按下" not in action and "按鍵" not in action:
                             # 鍵盤操作（按 = 按下 + 放開）
@@ -2672,39 +2833,70 @@ class TextCommandEditor(tk.Toplevel):
     
     def _capture_and_recognize(self):
         """截圖並儲存，插入辨識指令"""
-        # 儲存視窗狀態和位置
-        self.editor_geometry = self.geometry()
-        if self.parent:
-            self.parent_geometry = self.parent.geometry()
-        
-        # 策略1: 將視窗移至螢幕外（防止白框遮擋）
-        # 獲取螢幕尺寸
-        screen_width = self.winfo_screenwidth()
-        screen_height = self.winfo_screenheight()
-        
-        # 將視窗移到螢幕外右下角
-        self.geometry(f"+{screen_width + 100}+{screen_height + 100}")
-        if self.parent:
-            self.parent.geometry(f"+{screen_width + 200}+{screen_height + 200}")
-        
-        # 強制更新位置
-        self.update_idletasks()
-        if self.parent:
-            self.parent.update_idletasks()
-        
-        # 策略2: 隱藏視窗 (withdraw 取代 iconify)
-        # 使用 withdraw 以避免 transient 視窗無法 iconify 的錯誤
-        self.withdraw()
-        if self.parent:
-            self.parent.withdraw()
-        
-        # 再次強制更新
-        self.update_idletasks()
-        if self.parent:
-            self.parent.update_idletasks()
-        
-        # 給系統時間完成隱藏(400ms，增加時間確保完全隱藏)
-        self.after(400, self._do_capture)
+        try:
+            # 獲取螢幕尺寸
+            screen_width = self.winfo_screenwidth()
+            screen_height = self.winfo_screenheight()
+            
+            # 步驟1: 先最小化到工作列（讓 Windows 移除視窗的視覺效果）
+            self.state('iconic')
+            if self.parent:
+                self.parent.state('iconic')
+            
+            self.update_idletasks()
+            if self.parent:
+                self.parent.update_idletasks()
+            
+            # ✅ 優化後的延遲：200ms 足以完成視窗最小化
+            self.after(200)
+            self.update()
+            if self.parent:
+                self.parent.update()
+            
+            # 步驟2: 完全隱藏視窗（withdraw）
+            self.withdraw()
+            if self.parent:
+                self.parent.withdraw()
+            
+            self.update_idletasks()
+            if self.parent:
+                self.parent.update_idletasks()
+            
+            # 步驟3: 移到螢幕外（三重保險）
+            self.geometry(f"1x1+{screen_width + 2000}+{screen_height + 2000}")
+            if self.parent:
+                self.parent.geometry(f"1x1+{screen_width + 3000}+{screen_height + 3000}")
+            
+            self.update_idletasks()
+            if self.parent:
+                self.parent.update_idletasks()
+            
+            # 步驟4: 強制更新並等待 Windows DWM 完成重繪
+            self.update()
+            if self.parent:
+                self.parent.update()
+            
+            # 步驟5: 使用 Windows API 強制重繪桌面（確保視窗消失）
+            try:
+                import ctypes
+                # InvalidateRect: 強制重繪整個桌面
+                ctypes.windll.user32.InvalidateRect(0, None, True)
+                # UpdateWindow: 立即更新桌面
+                ctypes.windll.user32.UpdateWindow(0)
+                # RedrawWindow: 強制重繪所有視窗
+                RDW_INVALIDATE = 0x0001
+                RDW_ALLCHILDREN = 0x0080
+                RDW_UPDATENOW = 0x0100
+                ctypes.windll.user32.RedrawWindow(0, None, None, RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_UPDATENOW)
+            except:
+                pass  # API 調用失敗不影響主流程
+            
+            # ✅ 優化後的總延遲：800ms 內完成截圖（200ms + 600ms = 800ms < 1秒）
+            self.after(600, self._do_capture)
+            
+        except Exception as e:
+            print(f"隱藏視窗失敗: {e}")
+            self._restore_windows()
     
     def _do_capture(self):
         """執行截圖"""
@@ -2718,51 +2910,56 @@ class TextCommandEditor(tk.Toplevel):
     
     def _restore_windows(self):
         """恢復視窗顯示"""
-        # 從隱藏狀態恢復 (deiconify 可以同時處理 withdraw 和 iconify)
-        self.deiconify()
-        self.lift()  # 提升到最上層
-        if self.parent:
-            self.parent.deiconify()
-            self.parent.lift()
-        
-        # 恢復位置
-        if hasattr(self, 'editor_geometry'):
-            self.geometry(self.editor_geometry)
-        
-        if self.parent and hasattr(self, 'parent_geometry'):
-            self.parent.geometry(self.parent_geometry)
-        
-        # 強制更新
-        self.update_idletasks()
-        if self.parent:
-            self.parent.update_idletasks()
-        
-        # 將視窗提升到最上層
-        self.lift()
-        if self.parent:
-            self.parent.lift()
-        
-        # 設定焦點
-        self.focus_force()
+        try:
+            # 步驟1: 從 withdraw 狀態恢復
+            self.deiconify()
+            if self.parent:
+                self.parent.deiconify()
+            
+            # 步驟2: 恢復正常狀態
+            self.state('normal')
+            if self.parent:
+                self.parent.state('normal')
+            
+            # 強制更新
+            self.update()
+            if self.parent:
+                self.parent.update()
+            
+            # 提升到最上層並設置焦點
+            self.lift()
+            self.focus_force()
+            
+            if self.parent:
+                self.parent.lift()
+            
+            # 設定焦點
+            self.focus_force()
+        except Exception as e:
+            print(f"恢復視窗失敗: {e}")
     
     def _on_capture_complete(self, image_region):
         """截圖完成回調"""
-        # 恢復視窗
-        self._restore_windows()
-        
+        # ✅ 修正：先檢查是否取消，如果取消才立即恢復視窗
         if image_region is None:
+            self._restore_windows()
             return
         
         try:
             x1, y1, x2, y2 = image_region
             
-            # 截取螢幕區域
+            # ✅ 修正：在視窗仍然隱藏的狀態下截圖
             screenshot = ImageGrab.grab(bbox=(x1, y1, x2, y2))
+            
+            # ✅ 修正：截圖完成後才恢復視窗
+            self._restore_windows()
             
             # 顯示合併的命名+預覽對話框
             self._show_name_and_preview_dialog(screenshot)
             
         except Exception as e:
+            # ✅ 確保即使發生錯誤也要恢復視窗
+            self._restore_windows()
             self._show_message("錯誤", f"儲存圖片失敗：{e}", "error")
     
     def _show_name_and_preview_dialog(self, screenshot):
@@ -2851,7 +3048,7 @@ class TextCommandEditor(tk.Toplevel):
         
         tk.Button(
             btn_frame,
-            text="✓ 確認儲存",
+            text="儲存",
             command=on_confirm,
             bg="#4caf50",
             fg="white",
@@ -2864,7 +3061,7 @@ class TextCommandEditor(tk.Toplevel):
         
         tk.Button(
             btn_frame,
-            text="✗ 取消",
+            text="取消",
             command=on_cancel,
             bg="#757575",
             fg="white",

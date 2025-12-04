@@ -210,6 +210,10 @@ class CoreRecorder:
         
         self.logger(f"[{time.ctime()}] 停止錄製（等待事件處理完成...）")
         
+        # ✅ 智能軌跡壓縮：停止錄製時自動簡化滑鼠軌跡
+        if hasattr(self, 'simplify_trajectory') and self.simplify_trajectory:
+            self._compress_mouse_trajectories()
+        
         # ✅ 穩定性增強：使用鎖保護 keyboard hook 清理，並添加重試機制
         try:
             # 只有在真正有啟動錄製時才嘗試停止
@@ -344,6 +348,9 @@ class CoreRecorder:
             self._recording_mouse = True
             self._record_start_time = time.time()
             self._paused_k_events = []
+            
+            # 追蹤滑鼠按鍵狀態（用於判斷是否為拖曳）
+            self._mouse_pressed = False
 
             # 嘗試啟動 keyboard 錄製（可能在打包後失敗）
             try:
@@ -359,6 +366,10 @@ class CoreRecorder:
 
             def on_click(x, y, button, pressed):
                 if self._recording_mouse and not self.paused:
+                    # 更新滑鼠按鍵狀態（用於拖曳判斷）
+                    if str(button).replace('Button.', '') == 'left':
+                        self._mouse_pressed = pressed
+                    
                     # 記錄所有點擊事件，但標記是否在目標視窗內
                     in_target = self._is_point_in_target_window(x, y)
                     event = {
@@ -405,18 +416,19 @@ class CoreRecorder:
                 self.logger(f"[警告] pynput.mouse.Listener 啟動失敗（可能需要管理員權限）: {e}")
                 # 如果 listener 失敗，仍然可以記錄移動
 
-            # 記錄初始位置
-            now = time.time()
-            in_target = self._is_point_in_target_window(last_pos[0], last_pos[1])
-            event = {
-                'type': 'mouse',
-                'event': 'move',
-                'x': last_pos[0],
-                'y': last_pos[1],
-                'time': now,
-                'in_target': in_target
-            }
-            self._mouse_events.append(event)
+            # 記錄初始位置（如果未隱藏軌跡）
+            if not (hasattr(self, 'hide_trajectory') and self.hide_trajectory):
+                now = time.time()
+                in_target = self._is_point_in_target_window(last_pos[0], last_pos[1])
+                event = {
+                    'type': 'mouse',
+                    'event': 'move',
+                    'x': last_pos[0],
+                    'y': last_pos[1],
+                    'time': now,
+                    'in_target': in_target
+                }
+                self._mouse_events.append(event)
 
             # 持續記錄滑鼠移動
             while self.recording:
@@ -424,6 +436,12 @@ class CoreRecorder:
                     now = time.time()
                     pos = mouse_ctrl.position
                     if pos != last_pos:
+                        # 如果啟用「隱藏軌跡」，完全跳過滑鼠移動記錄
+                        if hasattr(self, 'hide_trajectory') and self.hide_trajectory:
+                            last_pos = pos  # 更新位置但不記錄任何移動
+                            time.sleep(0.01)
+                            continue
+                        
                         # 記錄所有移動，但標記是否在目標視窗內
                         in_target = self._is_point_in_target_window(pos[0], pos[1])
                         event = {

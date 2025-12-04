@@ -159,22 +159,67 @@ Remove-Item main\TEST_*.txt -Force -ErrorAction SilentlyContinue
 """
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 【打包說明】
+# 【打包說明】⚠️ 重要：優先保證功能完整性
 # ═══════════════════════════════════════════════════════════════════════════
 
 PACKAGING_NOTES = """
-1. 執行 python pack.py 進行打包
-2. 或執行 打包.bat（如果存在）
-3. 打包後檔名統一為 "ChroLens_Mimic.exe"
-4. 版本號顯示於視窗標題
+【主要打包工具】
+1. 執行 打包.bat（推薦）
+2. 或直接執行 python pack_safe.py
 
-打包後目錄結構:
+⚠️ 重要規範：
+- pack_safe.py 是主要打包腳本（標準打包，不排除任何模組）
+- pack.py 是保守優化版本（僅排除確定不使用的大型模組）
+- 打包.bat 會調用 pack_safe.py 確保功能完整
+- 優先原則：功能完整 > 檔案大小
+
+【打包策略】
+pack_safe.py (推薦):
+- 標準 PyInstaller 打包
+- 不排除任何模組
+- 確保所有功能（錄製、播放、圖片辨識、OCR）正常
+- 檔案較大但穩定
+
+pack.py (進階):
+- 保守優化打包
+- 僅排除確定不使用的模組（torch, tensorflow, pandas 等）
+- 保留可能被間接使用的依賴
+- 檔案較小但需測試驗證
+
+【打包流程】(標準版 - 5 步驟)
+1. 清理舊檔案：刪除 build/、dist/、*.spec
+2. 標準打包：使用 PyInstaller 標準設定
+3. 計算大小：統計解壓縮後的檔案大小
+4. 創建 ZIP：使用最高壓縮等級 (compresslevel=9)
+5. 清理建置檔案：刪除 build/ 和 *.spec
+
+【打包參數】(標準版)
+pyinstaller \
+  --noconsole \           # 無控制台視窗
+  --onedir \              # 單資料夾模式
+  --clean \               # 清理暫存
+  --noconfirm \           # 不詢問覆蓋
+  --icon=../pic/umi_奶茶色.ico \
+  --add-data=../pic/umi_奶茶色.ico;. \
+  --version-file=version_info.txt \
+  ChroLens_Mimic.py
+
+【打包後目錄結構】
 dist/
   ChroLens_Mimic/
     ChroLens_Mimic.exe  ← 主程式
-    _internal/          ← Python 執行環境
+    _internal/          ← Python 執行環境（完整）
     TTF/                ← 字型資源
-    images/             ← 圖片資源（如果有）
+    images/             ← 圖片資源 (如果有)
+
+【驗證清單】
+打包完成後必須測試：
+✓ 錄製功能（滑鼠、鍵盤）
+✓ 播放功能（執行腳本）
+✓ 圖片辨識功能
+✓ OCR 文字辨識功能
+✓ 編輯器開啟和儲存
+✓ 設定功能
 """
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -264,6 +309,172 @@ A: 檢查 minsize() 和 geometry() 設定，確保足夠大
 """
 
 # ═══════════════════════════════════════════════════════════════════════════
+# 【UI 響應式設計規範】
+# ═══════════════════════════════════════════════════════════════════════════
+
+UI_RESPONSIVE_DESIGN_RULES = """
+所有視窗和對話框必須使用響應式/自適應框架設計，防止內容超出視窗範圍。
+
+【基本原則】
+1. 使用 grid 或 pack 的 expand=True, fill="both" 實現自適應
+2. 設定合理的 minsize() 確保最小可用尺寸
+3. 使用 Scrollbar 處理超長內容
+4. 按鈕使用 Frame 容器包裝，避免超出邊界
+5. 測試不同螢幕解析度下的顯示效果
+
+【標準視窗設定】
+```python
+# 設定最小尺寸（防止視窗太小）
+window.minsize(800, 600)
+
+# 主容器使用 grid
+main_frame = tk.Frame(window)
+main_frame.pack(fill="both", expand=True, padx=10, pady=10)
+main_frame.grid_rowconfigure(0, weight=1)
+main_frame.grid_columnconfigure(0, weight=1)
+
+# 可滾動內容
+canvas = tk.Canvas(main_frame)
+scrollbar = tk.Scrollbar(main_frame, command=canvas.yview)
+scrollable_frame = tk.Frame(canvas)
+
+scrollable_frame.bind(
+    "<Configure>",
+    lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+)
+
+canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+canvas.configure(yscrollcommand=scrollbar.set)
+
+canvas.pack(side="left", fill="both", expand=True)
+scrollbar.pack(side="right", fill="y")
+```
+
+【按鈕群組佈局】
+```python
+# 使用 Frame 包裝按鈕，自動換行
+button_container = tk.Frame(parent)
+button_container.pack(fill="both", expand=True)
+
+# 多行按鈕佈局
+for row_idx, button_row in enumerate(button_rows):
+    row_frame = tk.Frame(button_container)
+    row_frame.pack(fill="x", pady=2)
+    for btn_text, btn_color, btn_cmd in button_row:
+        btn = tk.Button(row_frame, text=btn_text, bg=btn_color, command=btn_cmd)
+        btn.pack(side="left", padx=2)
+```
+
+【視窗隱藏標準流程】（用於截圖等場景）
+```python
+def hide_windows_for_capture(self):
+    # 儲存原始狀態
+    self.editor_geometry = self.geometry()
+    if self.parent:
+        self.parent_geometry = self.parent.geometry()
+    
+    screen_width = self.winfo_screenwidth()
+    screen_height = self.winfo_screenheight()
+    
+    # 步驟1: 縮小至 1x1 像素
+    self.geometry("1x1")
+    if self.parent:
+        self.parent.geometry("1x1")
+    self.update_idletasks()
+    
+    # 步驟2: 移到螢幕外
+    self.geometry(f"1x1+{screen_width + 100}+{screen_height + 100}")
+    if self.parent:
+        self.parent.geometry(f"1x1+{screen_width + 200}+{screen_height + 200}")
+    self.update_idletasks()
+    
+    # 步驟3: 隱藏視窗
+    self.withdraw()
+    if self.parent:
+        self.parent.withdraw()
+    self.update_idletasks()
+    
+    # 步驟4: 延遲足夠時間（600ms）
+    self.after(600, callback_function)
+```
+"""
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 【字型使用規範】
+# ═══════════════════════════════════════════════════════════════════════════
+
+FONT_USAGE_RULES = """
+所有介面文字必須優先使用 LINESeedTW_TTF_Rg.ttf 字型。
+
+【字型設定方法】
+```python
+import os
+from tkinter import font as tkfont
+
+# 載入字型
+font_path = os.path.join(os.path.dirname(__file__), "TTF", "LINESeedTW_TTF_Rg.ttf")
+if os.path.exists(font_path):
+    try:
+        import tkinter as tk
+        # 註冊字型（僅需一次）
+        tk.Tk().withdraw()  # 臨時視窗
+        from tkinter.font import Font
+        # 使用 pyglet 或 PIL 載入字型（打包後仍可用）
+    except Exception as e:
+        print(f"字型載入失敗: {e}")
+
+# 使用字型的標準方法
+def font_tuple(size=10, weight="normal", monospace=False):
+    if monospace:
+        return ("Consolas", size, weight)
+    return ("LINESeedTW_TTF_Rg", size, weight)
+```
+
+【適用範圍】
+- 所有 Label、Button、Entry、Text 元件
+- 訊息對話框
+- 提示文字
+- 日誌輸出（除了需要等寬字型的程式碼區域）
+
+【例外情況】
+- 程式碼編輯器：使用 Consolas 等寬字型
+- 座標顯示：使用 Consolas 等寬字型
+- 時間顯示：使用 Consolas 等寬字型
+"""
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 【Emoji 使用規範】
+# ═══════════════════════════════════════════════════════════════════════════
+
+EMOJI_USAGE_RULES = """
+僅在特定文件中使用 Emoji，其他地方一律禁用。
+
+【允許使用 Emoji 的文件】
+1. AI_AGENT_NOTES.py（本文件）- 用於分類和標記
+2. docs/index.html - 用於增加可讀性
+3. README.md - 用於 GitHub 展示
+
+【禁止使用 Emoji 的地方】
+1. 所有 Python 程式碼中的 print() 輸出
+2. 日誌系統（logger）的任何輸出
+3. 使用者介面的按鈕文字
+4. 對話框訊息
+5. 狀態列顯示
+6. 錯誤訊息
+7. 提示訊息
+
+【正確示範】
+❌ 錯誤：self.log("圖片辨識成功")
+✅ 正確：self.log("圖片辨識成功")
+
+❌ 錯誤：messagebox.showinfo("完成", "操作完成")
+✅ 正確：messagebox.showinfo("完成", "操作完成")
+
+❌ 錯誤：btn = Button(text="開啟")
+✅ 正確：btn = Button(text="開啟")
+"""
+
+# ═══════════════════════════════════════════════════════════════════════════
 # 【開發注意事項】
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -274,8 +485,11 @@ DEVELOPMENT_NOTES = """
 4. 新增功能後更新本檔案和 docs/index.html
 5. 測試完成後清理臨時檔案
 6. 提交前確認版本號已更新
-7. 禁止在動態日誌中使用任何 emoji（除了技術文檔中用於 AI 閱讀的分類標記）
+7. 禁止在動態日誌和介面中使用任何 emoji（僅限文檔中用於分類標記）
 8. 只有在版本更新時才產生 .md 文件來比對版本差異，其他情況一律不產生 .md 文件
+9. 所有視窗必須使用響應式設計，確保內容不會超出邊界
+10. 優先使用 LINESeedTW_TTF_Rg.ttf 字型（程式碼區域除外）
+11. 視窗隱藏時必須先縮小至 1x1，再移至螢幕外，最後 withdraw
 """
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -295,6 +509,9 @@ if __name__ == "__main__":
     print("  - 專案文件清理規則")
     print("  - 打包說明")
     print("  - 圖片辨識功能擴展規範 (v2.6.7+)")
+    print("  - UI 響應式設計規範 (NEW)")
+    print("  - 字型使用規範 (NEW)")
+    print("  - Emoji 使用規範 (NEW)")
     print("  - 版本歷史記錄")
     print("  - 常見問題和解決方案")
     print("  - 開發注意事項")

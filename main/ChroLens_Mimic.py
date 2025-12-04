@@ -607,6 +607,14 @@ class RecorderApp(tb.Window):
         )
         self.mouse_mode_check.grid(row=0, column=5, padx=4)
         Tooltip(self.mouse_mode_check, lang_map["勾選時以控制真實滑鼠的模式回放"])
+        
+        # ====== 隱藏軌跡勾選框（預設不勾選）======
+        self.hide_trajectory_var = tk.BooleanVar(value=self.user_config.get("hide_trajectory", False))
+        self.hide_trajectory_check = tb.Checkbutton(
+            frm_script, text="隱藏軌跡", variable=self.hide_trajectory_var, style="My.TCheckbutton"
+        )
+        self.hide_trajectory_check.grid(row=0, column=6, padx=4)
+        Tooltip(self.hide_trajectory_check, "勾選時錄製時不記錄一般滑鼠移動\n僅記錄拖曳動作（按住左鍵移動）\n可大幅減少指令數量，編輯更清晰")
 
         self.script_combo.bind("<<ComboboxSelected>>", self.on_script_selected)
         # 綁定點擊事件，在展開下拉選單前自動刷新列表
@@ -895,6 +903,9 @@ class RecorderApp(tb.Window):
     def _delayed_init(self):
         # 初始化 core_recorder（需要在 self.log 可用之後）
         self.core_recorder = CoreRecorder(logger=self.log)
+        
+        # 設定軌跡隱藏選項
+        self.core_recorder.hide_trajectory = self.hide_trajectory_var.get()
         
         # ✅ v2.6.5: 強化焦點獲取和快捷鍵註冊時序
         self.after(50, self._force_focus)   # 主動獲得焦點
@@ -2516,6 +2527,14 @@ class RecorderApp(tb.Window):
                 settings["random_interval"] = bool(self.random_interval_var.get())
             except:
                 settings["random_interval"] = False
+            
+            # 隱藏軌跡選項（儲存到 user_config）
+            try:
+                hide_val = bool(self.hide_trajectory_var.get())
+                self.user_config["hide_trajectory"] = hide_val
+                save_user_config(self.user_config)
+            except:
+                pass
             
             # 使用 script_io 儲存
             sio_save_script_settings(path, settings)
