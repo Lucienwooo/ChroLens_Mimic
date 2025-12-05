@@ -25,6 +25,7 @@ import shutil
 import subprocess
 import threading
 import datetime
+import ctypes
 from pathlib import Path
 from typing import Optional, Dict, Callable
 
@@ -58,11 +59,81 @@ class UpdateManager:
         self._release_notes = ""
         self._download_url = None
         self._asset_name = None
+        self._update_script_path = None  # 批次腳本路徑
         
         # 回調函數
         self._on_progress = None  # 進度回調 (progress: float, message: str)
         self._on_complete = None  # 完成回調
         self._on_error = None     # 錯誤回調 (error: str)
+        
+        # 檢查環境權限
+        self._check_environment()
+    
+    def _check_environment(self):
+        """
+        檢查執行環境與權限
+        
+        檢查項目：
+        1. 是否在受保護的目錄（如 C:\\Program Files）
+        2. 是否有管理員權限
+        3. 目標目錄是否有寫入權限
+        """
+        try:
+            if getattr(sys, 'frozen', False):
+                # 打包環境
+                current_dir = os.path.dirname(sys.executable)
+            else:
+                # 開發環境
+                current_dir = os.path.dirname(os.path.abspath(__file__))
+            
+            # 檢查是否在受保護目錄
+            protected_paths = [
+                os.path.expandvars(r'%ProgramFiles%'),
+                os.path.expandvars(r'%ProgramFiles(x86)%'),
+                os.path.expandvars(r'%SystemRoot%'),
+            ]
+            
+            is_protected = any(
+                current_dir.lower().startswith(path.lower()) 
+                for path in protected_paths if path
+            )
+            
+            # 檢查管理員權限（僅 Windows）
+            is_admin = False
+            try:
+                is_admin = ctypes.windll.shell32.IsUserAnAdmin() != 0
+            except:
+                pass
+            
+            # 檢查寫入權限
+            test_file = os.path.join(current_dir, f".write_test_{os.getpid()}.tmp")
+            has_write_permission = False
+            try:
+                with open(test_file, 'w') as f:
+                    f.write("test")
+                os.remove(test_file)
+                has_write_permission = True
+            except:
+                pass
+            
+            # 記錄環境資訊
+            self._logger(f"環境檢查:")
+            self._logger(f"  目錄: {current_dir}")
+            self._logger(f"  受保護目錄: {'是' if is_protected else '否'}")
+            self._logger(f"  管理員權限: {'是' if is_admin else '否'}")
+            self._logger(f"  寫入權限: {'是' if has_write_permission else '否'}")
+            
+            # 警告：需要權限但沒有
+            if is_protected and not is_admin:
+                self._logger("⚠️  警告: 程式安裝在受保護目錄，但未以管理員身分執行")
+                self._logger("   更新可能會失敗，請考慮以管理員身分執行")
+            
+            if not has_write_permission:
+                self._logger("⚠️  警告: 目標目錄沒有寫入權限")
+                self._logger("   更新將無法完成，請檢查權限設定")
+                
+        except Exception as e:
+            self._logger(f"環境檢查失敗: {e}")
     
     def set_progress_callback(self, callback: Callable[[float, str], None]):
         """設定進度回調"""
@@ -77,18 +148,41 @@ class UpdateManager:
         self._on_error = callback
     
     def _update_progress(self, progress: float, message: str):
-        """更新進度"""
+        """
+        更新進度
+        
+        ⚠️ 執行緒安全警告：
+        此方法會從背景執行緒呼叫 _on_progress 回調函數。
+        如果回調函數需要更新 GUI（如 Tkinter/PyQt），請確保使用適當的執行緒安全機制：
+        - Tkinter: 使用 root.after() 或 queue
+        - PyQt: 使用 QMetaObject.invokeMethod() 或 signals/slots
+        - 否則可能導致程式崩潰
+        """
         self._progress = progress
         self._status_message = message
         self._logger(f"[{progress:.1f}%] {message}")
+        
         if self._on_progress:
-            self._on_progress(progress, message)
+            try:
+                self._on_progress(progress, message)
+            except Exception as e:
+                self._logger(f"⚠️ 進度回調函數錯誤: {e}")
     
     def _report_error(self, error: str):
-        """報告錯誤"""
+        """
+        報告錯誤
+        
+        ⚠️ 執行緒安全警告：
+        此方法會從背景執行緒呼叫 _on_error 回調函數。
+        請參考 _update_progress 的警告。
+        """
         self._logger(f"錯誤: {error}")
+        
         if self._on_error:
-            self._on_error(error)
+            try:
+                self._on_error(error)
+            except Exception as e:
+                self._logger(f"⚠️ 錯誤回調函數錯誤: {e}")
     
     def check_for_updates(self) -> Optional[Dict]:
         """
@@ -206,26 +300,78 @@ class UpdateManager:
     
     def _compare_versions(self, current: str, latest: str) -> bool:
         """
-        比較版本號
+        比較版本號（支援語意化版本）
         
         Args:
-            current: 當前版本（如 "2.6.3"）
-            latest: 最新版本（如 "2.6.4"）
+            current: 當前版本（如 "2.6.3" 或 "2.7.0-beta"）
+            latest: 最新版本（如 "2.6.4" 或 "2.7.0"）
         
         Returns:
             如果 latest > current 返回 True
+        
+        支援格式：
+        - 標準版本: "2.6.3"
+        - 預發布版本: "2.7.0-beta", "3.0.0-rc.1"
+        - 非數字部分會被視為 0
         """
+        def parse_version(version_str: str) -> list:
+            """解析版本字串為可比較的列表"""
+            # 移除 'v' 前綴（如果有）
+            version_str = version_str.lstrip('vV')
+            
+            # 分離主版本號和預發布標籤
+            if '-' in version_str:
+                main_version, prerelease = version_str.split('-', 1)
+            else:
+                main_version, prerelease = version_str, ''
+            
+            # 解析主版本號
+            parts = []
+            for part in main_version.split('.'):
+                try:
+                    parts.append(int(part))
+                except ValueError:
+                    # 非數字部分視為 0
+                    parts.append(0)
+            
+            # 預發布版本比正式版本低
+            # 例如: 2.7.0-beta < 2.7.0
+            has_prerelease = 1 if prerelease else 0
+            
+            return parts + [has_prerelease]
+        
         try:
-            current_parts = [int(x) for x in current.split('.')]
-            latest_parts = [int(x) for x in latest.split('.')]
+            current_parts = parse_version(current)
+            latest_parts = parse_version(latest)
             
-            # 補齊長度
-            max_len = max(len(current_parts), len(latest_parts))
-            current_parts += [0] * (max_len - len(current_parts))
-            latest_parts += [0] * (max_len - len(latest_parts))
+            # 補齊長度（不包含預發布標記）
+            max_len = max(len(current_parts) - 1, len(latest_parts) - 1)
             
-            return latest_parts > current_parts
-        except:
+            # 補齊主版本號部分
+            while len(current_parts) - 1 < max_len:
+                current_parts.insert(-1, 0)
+            while len(latest_parts) - 1 < max_len:
+                latest_parts.insert(-1, 0)
+            
+            # 比較版本
+            # 先比較主版本號（不包含預發布標記）
+            for i in range(max_len):
+                if latest_parts[i] > current_parts[i]:
+                    return True
+                elif latest_parts[i] < current_parts[i]:
+                    return False
+            
+            # 主版本號相同，比較預發布標記
+            # has_prerelease=0 表示正式版，has_prerelease=1 表示預發布版
+            # 正式版（0）> 預發布版（1）
+            current_prerelease = current_parts[-1]
+            latest_prerelease = latest_parts[-1]
+            
+            return latest_prerelease < current_prerelease
+            
+        except Exception as e:
+            self._logger(f"版本比較錯誤: {e}")
+            # 發生錯誤時，保守地返回 False（不更新）
             return False
     
     def download_and_install(self):
@@ -371,10 +517,20 @@ class UpdateManager:
                 shutil.rmtree(temp_extract_dir)
             os.makedirs(temp_extract_dir)
             
+            # 🔒 Zip Slip 安全防護：防止目錄遍歷攻擊
             with zipfile.ZipFile(temp_zip, 'r') as zip_ref:
-                zip_ref.extractall(temp_extract_dir)
+                for member in zip_ref.namelist():
+                    # 解析目標路徑
+                    member_path = os.path.join(temp_extract_dir, member)
+                    # 正規化路徑並檢查是否在目標目錄內
+                    normalized_path = os.path.normpath(member_path)
+                    if not normalized_path.startswith(os.path.normpath(temp_extract_dir)):
+                        raise Exception(f"安全警告：檢測到潛在的 Zip Slip 攻擊 - {member}")
+                    # 安全解壓
+                    zip_ref.extract(member, temp_extract_dir)
             
             self._update_progress(60, "解壓完成")
+            self._logger(f"✅ ZIP 解壓完成：{len(os.listdir(temp_extract_dir))} 個檔案/資料夾")
             
             # === 步驟 3: 準備安裝腳本 ===
             self._update_progress(65, "準備安裝...")
@@ -394,6 +550,7 @@ class UpdateManager:
             if not update_source:
                 raise Exception("更新包結構錯誤：找不到可執行檔")
             
+            self._logger(f"✅ 找到更新來源：{update_source}")
             self._update_progress(70, "正在生成安裝腳本...")
             
             # 建立更新腳本
@@ -403,10 +560,11 @@ class UpdateManager:
                 current_exe
             )
             
+            self._logger(f"✅ 批次腳本已生成：{update_script}")
             self._update_progress(90, "安裝腳本已準備")
             
-            # === 步驟 4: 執行安裝 ===
-            self._update_progress(95, "準備重啟程式...")
+            # === 步驟 4: 準備安裝（不啟動批次腳本） ===
+            self._update_progress(95, "更新已準備完成")
             
             # 更新日誌：添加批次腳本信息
             if log_written and initial_log_path:
@@ -415,28 +573,23 @@ class UpdateManager:
                         f.write(f"\n下載完成時間: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
                         f.write(f"批次腳本路徑: {update_script}\n")
                         f.write(f"更新來源: {update_source}\n")
-                        f.write("\n批次腳本已準備，即將啟動...\n\n")
+                        f.write("\n批次腳本已準備，等待使用者確認...\n\n")
                     self._logger(f"已更新日誌: {initial_log_path}")
                 except Exception as e:
                     self._logger(f"無法更新日誌: {e}")
             
-            # 啟動更新腳本（使用簡單的命令）
-            try:
-                # 使用 CREATE_NEW_CONSOLE 讓腳本在新視窗中執行
-                process = subprocess.Popen(
-                    update_script,
-                    shell=True,
-                    creationflags=subprocess.CREATE_NEW_CONSOLE,
-                    cwd=current_dir
-                )
-                self._logger(f"批次腳本已啟動，PID: {process.pid}")
-            except Exception as e:
-                self._logger(f"啟動批次腳本失敗: {e}")
-                raise
+            # 儲存批次腳本路徑，供後續使用
+            self._update_script_path = update_script
             
-            self._update_progress(100, "更新準備完成，即將重啟...")
+            self._update_progress(100, "更新準備完成")
+            self._logger("=" * 60)
+            self._logger("✅ 更新已準備完成，等待使用者確認執行")
+            self._logger(f"   批次腳本：{update_script}")
+            self._logger(f"   更新來源：{update_source}")
+            self._logger(f"   目標目錄：{current_dir}")
+            self._logger("=" * 60)
             
-            # 通知完成
+            # 通知完成（但不啟動批次腳本）
             if self._on_complete:
                 self._on_complete()
             
@@ -444,12 +597,21 @@ class UpdateManager:
             error = f"更新失敗: {str(e)}"
             self._report_error(error)
             
-            # 清理失敗的下載
-            if temp_zip and os.path.exists(temp_zip):
-                try:
+            # 清理失敗的下載資源
+            try:
+                if temp_zip and os.path.exists(temp_zip):
                     os.remove(temp_zip)
-                except:
-                    pass
+                    self._logger(f"已清理臨時檔案: {temp_zip}")
+            except Exception as cleanup_error:
+                self._logger(f"清理臨時檔案失敗: {cleanup_error}")
+            
+            try:
+                if temp_extract_dir and os.path.exists(temp_extract_dir):
+                    shutil.rmtree(temp_extract_dir)
+                    self._logger(f"已清理解壓目錄: {temp_extract_dir}")
+            except Exception as cleanup_error:
+                self._logger(f"清理解壓目錄失敗: {cleanup_error}")
+                
         finally:
             self._downloading = False
     
@@ -463,10 +625,12 @@ class UpdateManager:
             start_progress: 起始進度（0-100）
             end_progress: 結束進度（0-100）
         """
-        req = urllib.request.Request(url)
-        req.add_header('User-Agent', 'ChroLens_Mimic')
-        
-        with urllib.request.urlopen(req, timeout=30) as response:
+        response = None
+        try:
+            req = urllib.request.Request(url)
+            req.add_header('User-Agent', 'ChroLens_Mimic')
+            
+            response = urllib.request.urlopen(req, timeout=30)
             total_size = int(response.headers.get('content-length', 0))
             downloaded = 0
             
@@ -492,6 +656,13 @@ class UpdateManager:
                             current_progress,
                             f"下載中: {size_mb:.1f} MB / {total_mb:.1f} MB"
                         )
+        finally:
+            # 確保資源正確關閉
+            if response:
+                try:
+                    response.close()
+                except:
+                    pass
     
     def _find_update_source(self, extract_dir: str) -> Optional[str]:
         """
@@ -539,14 +710,16 @@ class UpdateManager:
         """
         script_path = os.path.join(tempfile.gettempdir(), "ChroLens_Update.bat")
         
-        # 生成備份檔案名稱和 GitHub 連結
+        # ✅ 2.7.1 成功邏輯：使用 _latest_version（新版本）生成連結檔案
+        # 備份檔案使用當前版本，連結檔案使用新版本
         backup_version_txt = f"version{self.current_version}.txt"
-        github_link_txt = f"{self.current_version}.txt"
-        github_url = f"https://github.com/{self.GITHUB_REPO}/releases/tag/v{self.current_version}"
+        github_link_txt = f"{self._latest_version}.txt"  # 關鍵：必須用新版本
+        github_url = f"https://github.com/{self.GITHUB_REPO}/releases/tag/v{self._latest_version}"
         
         # 生成日誌檔案路徑
         log_file = os.path.join(target_dir, "update_log.txt")
         
+        # ✅ 採用 2.7.1 簡化版批次腳本 + 增強檔案鎖定處理
         script_content = f"""@echo off
 chcp 65001 >nul
 
@@ -563,7 +736,7 @@ echo ChroLens_Mimic 更新程式
 echo ========================================
 echo.
 
-REM 等待主程式關閉（最多 30 秒，增加等待時間）
+REM 等待主程式關閉（最多 30 秒）
 echo 正在等待程式關閉...
 echo 正在等待程式關閉... >> %LOG_FILE%
 set /a count=0
@@ -582,6 +755,10 @@ if "%ERRORLEVEL%"=="0" (
 ) else (
     echo 程式已關閉 >> %LOG_FILE%
 )
+
+REM ✅ 關鍵修復：額外等待 5 秒確保檔案鎖定完全釋放
+echo 等待檔案鎖定釋放... >> %LOG_FILE%
+timeout /t 5 /nobreak >nul
 
 echo 開始更新檔案...
 echo 開始更新檔案... >> %LOG_FILE%
@@ -682,6 +859,39 @@ REM 刪除自己
     def get_current_progress(self) -> tuple:
         """獲取當前進度"""
         return (self._progress, self._status_message)
+    
+    def execute_update_script(self) -> bool:
+        """
+        執行更新腳本
+        
+        Returns:
+            是否成功啟動腳本
+        """
+        if not self._update_script_path or not os.path.exists(self._update_script_path):
+            self._logger("錯誤: 找不到更新腳本")
+            return False
+        
+        try:
+            # 確定當前目錄
+            if getattr(sys, 'frozen', False):
+                current_dir = os.path.dirname(sys.executable)
+            else:
+                current_dir = os.path.dirname(os.path.abspath(__file__))
+            
+            # 啟動批次腳本
+            process = subprocess.Popen(
+                self._update_script_path,
+                shell=True,
+                creationflags=subprocess.CREATE_NEW_CONSOLE,
+                cwd=current_dir
+            )
+            self._logger(f"✅ 批次腳本已啟動，PID: {process.pid}")
+            self._logger(f"   腳本路徑: {self._update_script_path}")
+            return True
+            
+        except Exception as e:
+            self._logger(f"❌ 啟動批次腳本失敗: {e}")
+            return False
 
 
 # ============================================

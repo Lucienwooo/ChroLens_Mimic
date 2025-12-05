@@ -42,7 +42,7 @@ class SafePacker:
                         return version
         except Exception as e:
             print(f"無法讀取版本號: {e}")
-            return "2.7.1"
+            return "2.7.2"
     
     def clean_old_files(self):
         """清理舊的打包檔案"""

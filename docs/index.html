@@ -574,7 +574,14 @@
                 </tr>
             </table>
 
-            <p><strong>圖片命名規則：</strong>使用 pic + 數字（pic01, pic02, pic03...），支援 pic01 到 pic999</p>
+            <p><strong>圖片命名規則：</strong>使用 pic 開頭的任意命名方式，例如：</p>
+            <ul>
+                <li>純數字編號：pic01, pic02, pic999</li>
+                <li>中文描述：pic血量警告, pic怪物目標, pic確定按鈕</li>
+                <li>中文+數字：pic王01, pic王02, pic小怪03</li>
+                <li>英文描述：pic右上角, pic_button, pic_monster</li>
+            </ul>
+            <p>編輯器會自動搜尋資料夾內相同名稱的圖片檔（支援 .png, .jpg, .jpeg 等格式），無需寫完整副檔名</p>
 
             <h4>📝 OCR 文字辨識操作</h4>
             <p><strong>系統需求：</strong>Windows 10/11 內建 OCR 引擎（免安裝），或安裝 Tesseract OCR</p>
@@ -691,7 +698,7 @@
                 <li>在腳本編輯器中點擊「📷 圖片辨識」按鈕</li>
                 <li>編輯器會最小化，螢幕變暗並顯示十字游標</li>
                 <li>按住滑鼠左鍵拖曳，選取要辨識的區域</li>
-                <li>放開滑鼠後，圖片會自動儲存並命名（pic01, pic02...）</li>
+                <li>放開滑鼠後，圖片會自動儲存並命名（預設為 pic01, pic02...，您也可以自行重新命名為 pic血條、pic怪物 等有意義的名稱）</li>
                 <li>編輯器恢復，可以使用該圖片編寫指令</li>
             </ol>
 
@@ -707,11 +714,11 @@
             <h4>範例1：自動打怪</h4>
             <pre><span class="syntax-comment"># === 初始化與迴圈起點 ===</span>
 <span class="syntax-keyword">#主循環</span>
-<span class="syntax-operator">&gt;</span>if&gt;hp_low_warning.png<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s000
+<span class="syntax-operator">&gt;</span>if&gt;pic血量警告<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s000
 <span class="syntax-operator">&gt;&gt;</span><span class="syntax-keyword">#緊急補血</span>
 <span class="syntax-comment"># (若血量健康，繼續往下檢查 Buff)</span>
 
-<span class="syntax-operator">&gt;</span>if&gt;buff_icon.png<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s200
+<span class="syntax-operator">&gt;</span>if&gt;pic增益圖示<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s200
 <span class="syntax-operator">&gt;&gt;</span><span class="syntax-keyword">#搜尋怪物</span>
 <span class="syntax-comment"># (若找不到 Buff 圖示，代表 Buff 消失，執行補 Buff)</span>
 
@@ -730,7 +737,7 @@
 <span class="syntax-comment"># === 索敵區塊 ===</span>
 <span class="syntax-keyword">#搜尋怪物</span>
 <span class="syntax-comment"># 判斷畫面上是否有怪物血條或特定特徵</span>
-<span class="syntax-operator">&gt;</span>if&gt;monster_target.png<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s000
+<span class="syntax-operator">&gt;</span>if&gt;pic怪物目標<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s000
 <span class="syntax-operator">&gt;&gt;</span><span class="syntax-keyword">#攻擊流程</span>
 
 <span class="syntax-comment"># (若沒找到怪物，模擬玩家旋轉視角尋找)</span>
@@ -742,7 +749,7 @@
 <span class="syntax-comment"># === 戰鬥區塊 ===</span>
 <span class="syntax-keyword">#攻擊流程</span>
 <span class="syntax-comment"># 點擊怪物 (啟動自動攻擊或鎖定)</span>
-<span class="syntax-operator">&gt;</span>左鍵點擊&gt;monster_target.png<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s000
+<span class="syntax-operator">&gt;</span>左鍵點擊&gt;pic怪物目標<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s000
 
 <span class="syntax-comment"># 施放攻擊技能連招 (模擬人類手速，稍微有間隔)</span>
 <span class="syntax-operator">&gt;</span>按Q<span class="syntax-operator">,</span> 延遲50ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s500
@@ -784,26 +791,26 @@
 <span class="syntax-comment"># === 步驟 3: 網頁操作 ===</span>
 <span class="syntax-comment"># 確保網頁輸入框已出現</span>
 <span class="syntax-keyword">#等待輸入框</span>
-<span class="syntax-operator">&gt;</span>if&gt;web_input_box.png<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>1s000
+<span class="syntax-operator">&gt;</span>if&gt;pic輸入框<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>1s000
 <span class="syntax-operator">&gt;&gt;</span><span class="syntax-keyword">#填寫資料</span>
 <span class="syntax-operator">&gt;</span>延遲500ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>1s500
 <span class="syntax-operator">&gt;&gt;&gt;</span><span class="syntax-keyword">#等待輸入框</span>
 
 <span class="syntax-keyword">#填寫資料</span>
-<span class="syntax-operator">&gt;</span>左鍵點擊&gt;web_input_box.png<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s000
+<span class="syntax-operator">&gt;</span>左鍵點擊&gt;pic輸入框<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s000
 <span class="syntax-operator">&gt;</span>按下Ctrl<span class="syntax-operator">,</span> 延遲0ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s200
 <span class="syntax-operator">&gt;</span>按V<span class="syntax-operator">,</span> 延遲50ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s250
 <span class="syntax-operator">&gt;</span>放開Ctrl<span class="syntax-operator">,</span> 延遲0ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s300
 
 <span class="syntax-comment"># 點擊送出按鈕</span>
-<span class="syntax-operator">&gt;</span>左鍵點擊&gt;submit_btn.png<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s800
+<span class="syntax-operator">&gt;</span>左鍵點擊&gt;pic提交按鈕<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s800
 
 <span class="syntax-comment"># === 步驟 4: 結果判斷 (例外處理) ===</span>
 <span class="syntax-keyword">#等待結果</span>
-<span class="syntax-operator">&gt;</span>if&gt;success_msg.png<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s000
+<span class="syntax-operator">&gt;</span>if&gt;pic成功訊息<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s000
 <span class="syntax-operator">&gt;&gt;</span><span class="syntax-keyword">#成功處理</span>
 
-<span class="syntax-operator">&gt;</span>if&gt;error_popup.png<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s100
+<span class="syntax-operator">&gt;</span>if&gt;pic錯誤彈窗<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s100
 <span class="syntax-operator">&gt;&gt;</span><span class="syntax-keyword">#錯誤處理</span>
 
 <span class="syntax-comment"># 若兩者都沒出現，等待並重試</span>
@@ -827,7 +834,7 @@
 <span class="syntax-comment"># === 分支 B: 失敗 ===</span>
 <span class="syntax-keyword">#錯誤處理</span>
 <span class="syntax-comment"># 這裡可以加入截圖指令或是警報</span>
-<span class="syntax-operator">&gt;</span>左鍵點擊&gt;close_error_btn.png<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s000
+<span class="syntax-operator">&gt;</span>左鍵點擊&gt;pic關閉錯誤<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s000
 <span class="syntax-operator">&gt;</span>停止</pre>
 
             <h4>範例3：OCR 智慧等待與點擊（簡單）</h4>
@@ -835,7 +842,7 @@
 <span class="syntax-keyword">#開始</span>
 
 <span class="syntax-comment"># 點擊某個按鈕開啟網頁</span>
-<span class="syntax-operator">&gt;</span>左鍵點擊&gt;open_btn.png<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s000
+<span class="syntax-operator">&gt;</span>左鍵點擊&gt;pic開啟按鈕<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s000
 
 <span class="syntax-comment"># 等待頁面載入完成（OCR 偵測「載入完成」或「Complete」文字）</span>
 <span class="syntax-operator">&gt;</span>等待文字&gt;載入完成<span class="syntax-operator">,</span> 最長15s<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>1s000
@@ -862,7 +869,7 @@
 <span class="syntax-keyword">#確認邀請視窗</span>
 
 <span class="syntax-comment"># 方法2: 用圖片辨識確認特定的邀請按鈕圖示（精確判斷）</span>
-<span class="syntax-operator">&gt;</span>if&gt;accept_btn.png<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s000
+<span class="syntax-operator">&gt;</span>if&gt;pic接受按鈕<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s000
 <span class="syntax-operator">&gt;&gt;</span><span class="syntax-keyword">#接受邀請</span>
 
 <span class="syntax-comment"># 若圖片辨識失敗，使用 OCR 點擊文字「接受」（備用方案）</span>
@@ -874,7 +881,7 @@
 
 <span class="syntax-comment"># === 方法 A: 圖片點擊 ===</span>
 <span class="syntax-keyword">#接受邀請</span>
-<span class="syntax-operator">&gt;</span>左鍵點擊&gt;accept_btn.png<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s000
+<span class="syntax-operator">&gt;</span>左鍵點擊&gt;pic接受按鈕<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s000
 <span class="syntax-operator">&gt;</span>延遲1000ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>1s000
 <span class="syntax-operator">&gt;&gt;&gt;</span><span class="syntax-keyword">#檢測邀請</span>
 
@@ -889,13 +896,13 @@
 <span class="syntax-keyword">#執行任務*10</span>
 
 <span class="syntax-comment"># 點擊任務圖示</span>
-<span class="syntax-operator">&gt;</span>左鍵點擊&gt;task_icon.png<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s000
+<span class="syntax-operator">&gt;</span>左鍵點擊&gt;pic任務圖示<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>0s000
 
 <span class="syntax-comment"># 等待任務完成（OCR 偵測「完成」文字）</span>
 <span class="syntax-operator">&gt;</span>等待文字&gt;完成<span class="syntax-operator">,</span> 最長30s<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>1s000
 
 <span class="syntax-comment"># 領取獎勵</span>
-<span class="syntax-operator">&gt;</span>左鍵點擊&gt;reward_btn.png<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>31s000
+<span class="syntax-operator">&gt;</span>左鍵點擊&gt;pic獎勵按鈕<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>31s000
 <span class="syntax-operator">&gt;</span>延遲1000ms<span class="syntax-operator">,</span> <span class="syntax-operator">T=</span>32s000
 
 <span class="syntax-comment"># 跳回開始（重複 10 次後自動停止）</span>
@@ -931,7 +938,7 @@
                 <p>感謝各位使用 ChroLens Mimic！這裡會記錄每個版本的更新內容。</p>
                 <p>如果您有任何建議、問題或發現 Bug，歡迎透過 <strong><a href="https://discord.gg/your-discord-link" target="_blank" style="color: #5865F2;">🎮 Discord 社群</a></strong> 反饋給我們。您的每一個意見都是我們進步的動力！</p>
                 <p>如果這個工具對您有幫助，歡迎 <strong><a href="https://your-sponsor-link.com" target="_blank" style="color: #ff6b6b;">☕ 贊助支持開發</a></strong>，讓我們能持續為您帶來更好的功能！</p>
-                <p><strong>🎉 最新消息：</strong>v2.7.1 版本已發布，邏輯系統大幅增強！支援變數、循環、多條件、隨機、計數器、計時器，讓腳本更智能！</p>
+                <p><strong>🎉 最新消息：</strong>v2.7.2 版本發布！圖片命名超強化，現在 pic 開頭隨便取名都可以（pic血條、pic王01、pic怪物...），編輯器不用寫副檔名超方便！</p>
             </div>
 
             <!-- 版本更新列表 -->
@@ -973,132 +980,154 @@
         // 版本資料（從新到舊排序）
         const versionData = [
             {
-                version: "v2.7.1",
+                version: "v2.7.2",
                 date: "2025-12-05",
                 changes: [
-                    "🎯 邏輯系統大幅增強：新增多種進階邏輯控制指令，讓腳本更智能",
-                    "📊 變數系統：支援設定變數、變數加減運算、變數條件判斷",
-                    "🔁 循環控制：支援重複N次、條件循環（當圖片存在時持續執行）",
-                    "🔀 多條件判斷：支援全部圖片存在（AND）、任一圖片存在（OR）邏輯",
-                    "🎲 隨機功能：支援隨機延遲、隨機分支，模擬真人操作避免檢測",
-                    "⏱️ 計數器系統：重複N次後自動觸發跳轉，完美解決重試限制需求",
-                    "⏰ 計時器系統：超過N秒後自動觸發跳轉，提供超時保護機制",
-                    "📝 進階指令面板：新增可展開/收合的進階指令區域，16種新指令快速插入",
-                    "🔧 修復轉換問題：圖片名稱和OCR文字支援逗號，負數座標支援多螢幕",
-                    "✅ 完整性保證：修復所有解析正則表示式，確保資料不截斷",
-                    "📖 完整文檔：提供進階指令範例文檔和計數器/計時器詳細使用指南",
-                    "✨ 雙向轉換：所有進階功能完整支援文字編輯器和JSON互相轉換"
+                    "🖼️ 圖片命名辨識強化",
+                    "　　原本限制：只能 pic01~pic999（純數字）、只支援 .png",
+                    "　　現在支援：任何 pic 開頭都可以！",
+                    "　　　　✅ 純數字：pic01, pic02, pic999",
+                    "　　　　✅ 中文：pic血條, pic怪物, pic確定按鈕",
+                    "　　　　✅ 中文+數字：pic王01, pic王02, pic小怪03",
+                    "　　　　✅ 英文：pic右上角, pic_button, pic_monster",
+                    "　　　　✅ 多種格式：.png, .jpg, .jpeg, .bmp, .gif",
+                    "",
+                    "📝 編輯器超方便：不用寫副檔名了",
+                    ">辨識>pic血條, T=0s000",
+                    ">移動至>pic怪物, T=0s000",
+                    ">左鍵點擊>pic確定按鈕, T=0s000",
+                    "　　（系統自動找 .png 或 .jpg）",
+                    "",
+                    "🔧 修復版本更新__改善更新流程，等待時間加到 60 秒"
+                ]
+            },
+            {
+                version: "v2.7.1",
+                date: "2025-12-04",
+                changes: [
+                    "🎯 邏輯系統大幅增強__新增多種進階邏輯控制指令，讓腳本更智能",
+                    "📊 變數系統__支援設定變數、變數加減運算、變數條件判斷",
+                    "🔁 循環控制__支援重複N次、條件循環（當圖片存在時持續執行）",
+                    "🔀 多條件判斷__支援全部圖片存在（AND）、任一圖片存在（OR）邏輯",
+                    "🎲 隨機功能__支援隨機延遲、隨機分支，模擬真人操作避免檢測",
+                    "⏱️ 計數器系統__重複N次後自動觸發跳轉，完美解決重試限制需求",
+                    "⏰ 計時器系統__超過N秒後自動觸發跳轉，提供超時保護機制",
+                    "📝 進階指令面板__新增可展開/收合的進階指令區域，16種新指令快速插入",
+                    "🔧 修復轉換問題__圖片名稱和OCR文字支援逗號，負數座標支援多螢幕",
+                    "✅ 完整性保證__修復所有解析正則表示式，確保資料不截斷",
+                    "📖 完整文檔__提供進階指令範例文檔和計數器/計時器詳細使用指南",
+                    "✨ 雙向轉換__所有進階功能完整支援文字編輯器和JSON互相轉換"
                 ]
             },
             {
                 version: "v2.7.0",
                 date: "2025-12-04",
                 changes: [
-                    "✨ 全新腳本編輯器系統：實作真正的軌跡摺疊功能",
-                    "🖱️ 軌跡摺疊：點擊軌跡摘要行即可展開/收合，使用 elide 標籤實現真正隱藏",
-                    "⚡ 效能優化：語法高亮僅處理可見區域，大幅提升大文件編輯效能",
-                    "🔧 修復輸入卡頓：新增防抖動機制，# 符號和其他字符輸入更流暢",
-                    "📊 智能高亮：延遲時間調整為150ms，避免連續輸入時重複觸發",
-                    "🎯 自動摺疊：載入腳本時自動摺疊所有軌跡，介面更簡潔",
-                    "🔄 恢復正常錄製：移除「取消滑鼠軌跡」功能，保持完整錄製能力"
+                    "✨ 全新腳本編輯器系統__實作真正的軌跡摺疊功能",
+                    "🖱️ 軌跡摺疊__點擊軌跡摘要行即可展開/收合，使用 elide 標籤實現真正隱藏",
+                    "⚡ 效能優化__語法高亮僅處理可見區域，大幅提升大文件編輯效能",
+                    "🔧 修復輸入卡頓__新增防抖動機制，# 符號和其他字符輸入更流暢",
+                    "📊 智能高亮__延遲時間調整為150ms，避免連續輸入時重複觸發",
+                    "🎯 自動摺疊__載入腳本時自動摺疊所有軌跡，介面更簡潔",
+                    "🔄 恢復正常錄製__移除「取消滑鼠軌跡」功能，保持完整錄製能力"
                 ]
             },
             {
                 version: "v2.6.7",
                 date: "2025-12-03",
                 changes: [
-                    "🖼️ 新增圖片辨識邊框顯示功能，辨識成功時顯示綠色半透明邊框（1.5秒）",
-                    "📍 新增範圍辨識功能，可指定螢幕區域限定圖片搜尋範圍",
-                    "🎯 支援組合使用「邊框」和「範圍」參數，提升辨識準確度",
-                    "📝 新增 OCR 文字辨識功能，支援 if文字、等待文字、點擊文字指令",
-                    "✨ 腳本編輯器新增「文字辨識」按鈕，可截圖並進行 OCR 文字辨識",
-                    "🔧 增強 OCR 圖片預處理，支援多種辨識模式（灰階、二值化、對比度增強等）",
-                    "🔧 修復文字編輯器視窗高度問題，確保所有按鈕完整顯示",
-                    "🎨 統一所有視窗圖標為主程式圖標，提升介面一致性",
-                    "🧹 建立 AI_AGENT_NOTES.py，統一管理開發規範和流程文件",
-                    "🐛 修復循環引用問題，移除 visual_script_editor.py 舊版編輯器"
+                    "🖼️ 圖片辨識邊框顯示__辨識成功時顯示綠色半透明邊框（1.5秒）",
+                    "📍 範圍辨識功能__可指定螢幕區域限定圖片搜尋範圍",
+                    "🎯 組合參數支援__支援組合使用「邊框」和「範圍」參數，提升辨識準確度",
+                    "📝 OCR 文字辨識__支援 if文字、等待文字、點擊文字指令",
+                    "✨ 文字辨識按鈕__腳本編輯器新增「文字辨識」按鈕，可截圖並進行 OCR 文字辨識",
+                    "🔧 OCR 圖片預處理__支援多種辨識模式（灰階、二值化、對比度增強等）",
+                    "🔧 視窗高度修復__修復文字編輯器視窗高度問題，確保所有按鈕完整顯示",
+                    "🎨 圖標統一__統一所有視窗圖標為主程式圖標，提升介面一致性",
+                    "🧹 文件整理__建立 AI_AGENT_NOTES.py，統一管理開發規範和流程文件",
+                    "🐛 修復循環引用__移除 visual_script_editor.py 舊版編輯器"
                 ]
             },
             {
                 version: "v2.6.6",
                 date: "2025-11-30",
                 changes: [
-                    "🔧 修復標籤顯示問題，確保標籤不再重疊或錯位",
-                    "💾 優化腳本編輯器儲存機制，提升儲存穩定性",
-                    "🖼️ 強化圖片辨識功能，提高匹配準確度",
-                    "🧹 清理專案檔案，移除冗餘代碼",
-                    "📝 統一編輯器命名為「腳本編輯器」",
-                    "🎨 新增語法高亮功能，指令符號以橘色/青綠色顯示"
+                    "🔧 標籤顯示修復__確保標籤不再重疊或錯位",
+                    "💾 儲存機制優化__優化腳本編輯器儲存機制，提升儲存穩定性",
+                    "🖼️ 圖片辨識強化__提高匹配準確度",
+                    "🧹 專案清理__移除冗餘代碼",
+                    "📝 編輯器命名統一__統一為「腳本編輯器」",
+                    "🎨 語法高亮__指令符號以橘色/青綠色顯示"
                 ]
             },
             {
                 version: "v2.6.5",
                 date: "2025-11-25",
                 changes: [
-                    "✨ 新增自訂模組功能，可儲存常用指令片段",
-                    "🐛 修復滑鼠拖曳座標記錄錯誤",
-                    "⚡ 提升腳本執行效能",
-                    "📖 完善使用說明文件"
+                    "✨ 自訂模組功能__可儲存常用指令片段",
+                    "🐛 拖曳座標修復__修復滑鼠拖曳座標記錄錯誤",
+                    "⚡ 效能提升__提升腳本執行效能",
+                    "📖 文件完善__完善使用說明文件"
                 ]
             },
             {
                 version: "v2.6.0",
                 date: "2025-11-20",
                 changes: [
-                    "🎉 重大更新：新增文字指令編輯器",
-                    "🖼️ 實現圖片辨識截圖功能",
-                    "🔀 支援 if/else 條件判斷",
-                    "🏷️ 新增標籤跳轉功能"
+                    "🎉 重大更新__新增文字指令編輯器",
+                    "🖼️ 圖片辨識截圖__實現圖片辨識截圖功能",
+                    "🔀 條件判斷__支援 if/else 條件判斷",
+                    "🏷️ 標籤跳轉__新增標籤跳轉功能"
                 ]
             },
             {
                 version: "v2.5.0",
                 date: "2025-11-10",
                 changes: [
-                    "🎮 優化錄製回放功能",
-                    "⚙️ 新增速度調整功能",
-                    "🔄 支援重複次數設定",
-                    "🪟 新增視窗選擇功能"
+                    "🎮 錄製回放優化__優化錄製回放功能",
+                    "⚙️ 速度調整__新增速度調整功能",
+                    "🔄 重複次數__支援重複次數設定",
+                    "🪟 視窗選擇__新增視窗選擇功能"
                 ]
             },
             {
                 version: "v2.4.0",
                 date: "2025-11-01",
                 changes: [
-                    "🖱️ 改進滑鼠操作記錄精確度",
-                    "⌨️ 支援更多快捷鍵組合",
-                    "💾 優化腳本儲存格式",
-                    "🐛 修復多項已知問題"
+                    "🖱️ 滑鼠精確度改進__改進滑鼠操作記錄精確度",
+                    "⌨️ 快捷鍵支援__支援更多快捷鍵組合",
+                    "💾 儲存格式優化__優化腳本儲存格式",
+                    "🐛 問題修復__修復多項已知問題"
                 ]
             },
             {
                 version: "v2.3.0",
                 date: "2025-10-25",
                 changes: [
-                    "🔧 重構核心引擎",
-                    "📊 改善效能表現",
-                    "🎨 優化使用者介面",
-                    "📝 更新操作說明"
+                    "🔧 核心引擎重構__重構核心引擎",
+                    "📊 效能改善__改善效能表現",
+                    "🎨 介面優化__優化使用者介面",
+                    "📝 操作說明更新__更新操作說明"
                 ]
             },
             {
                 version: "v2.2.0",
                 date: "2025-10-15",
                 changes: [
-                    "✨ 新增快捷鍵設定功能",
-                    "🔊 加入音效提示",
-                    "🌙 支援深色模式",
-                    "🐛 修復啟動錯誤"
+                    "✨ 快捷鍵設定__新增快捷鍵設定功能",
+                    "🔊 音效提示__加入音效提示",
+                    "🌙 深色模式__支援深色模式",
+                    "🐛 啟動錯誤修復__修復啟動錯誤"
                 ]
             },
             {
                 version: "v2.1.0",
                 date: "2025-10-05",
                 changes: [
-                    "📦 優化安裝程式",
-                    "🔐 加強安全性檢查",
-                    "📱 改善系統相容性",
-                    "📖 補充說明文件"
+                    "📦 安裝程式優化__優化安裝程式",
+                    "🔐 安全性加強__加強安全性檢查",
+                    "📱 相容性改善__改善系統相容性",
+                    "📖 說明文件補充__補充說明文件"
                 ]
             },
             {
@@ -1106,19 +1135,19 @@
                 date: "2025-09-28",
                 changes: [
                     "🎊 全新 2.0 版本發布",
-                    "🎨 全新使用者介面",
-                    "⚡ 大幅提升效能",
-                    "🔄 重新設計架構"
+                    "🎨 全新介面__全新使用者介面",
+                    "⚡ 效能大幅提升__大幅提升效能",
+                    "🔄 架構重新設計__重新設計架構"
                 ]
             },
             {
                 version: "v1.5.0",
                 date: "2025-09-15",
                 changes: [
-                    "🖼️ 新增基礎圖片辨識",
-                    "📊 改善記錄功能",
-                    "🐛 修復穩定性問題",
-                    "📝 更新文件內容"
+                    "🖼️ 基礎圖片辨識__新增基礎圖片辨識",
+                    "📊 記錄功能改善__改善記錄功能",
+                    "🐛 穩定性修復__修復穩定性問題",
+                    "📝 文件內容更新__更新文件內容"
                 ]
             }
         ];
@@ -1141,9 +1170,40 @@
                 const versionDiv = document.createElement('div');
                 versionDiv.className = 'version-item';
                 
-                let changesHTML = '<ul>';
+                let changesHTML = '<ul style="list-style: none; padding-left: 0;">';
                 version.changes.forEach(change => {
-                    changesHTML += `<li>${change}</li>`;
+                    // 空行
+                    if (change.trim() === '') {
+                        changesHTML += `<li style="height: 8px;"></li>`;
+                        return;
+                    }
+                    
+                    // 檢查是否包含指令語法（以 > 開頭的行）
+                    if (change.trim().startsWith('>')) {
+                        // 渲染為程式碼區塊
+                        changesHTML += `<li style="margin-left: 20px;"><pre style="background: #2d2d2d; color: #dcdcdc; padding: 8px 12px; border-radius: 4px; margin: 4px 0; font-family: 'Consolas', 'Monaco', monospace; font-size: 13px; line-height: 1.5; overflow-x: auto;"><code>${change}</code></pre></li>`;
+                        return;
+                    }
+                    
+                    // 檢查是否包含 __ 分隔符（單行格式：標題__說明）
+                    if (change.includes('__')) {
+                        const parts = change.split('__');
+                        const title = parts[0];
+                        const description = parts.slice(1).join('__'); // 處理說明中可能包含 __ 的情況
+                        changesHTML += `<li style="list-style: disc; margin-left: 20px;">${title}__${description}</li>`;
+                        return;
+                    }
+                    
+                    // 檢查是否為標題（沒有全形空格開頭）
+                    const isTitle = !change.startsWith('　');
+                    
+                    if (isTitle) {
+                        // 標題：顯示項目符號
+                        changesHTML += `<li style="list-style: disc; margin-left: 20px;">${change}</li>`;
+                    } else {
+                        // 縮排內容：不顯示項目符號
+                        changesHTML += `<li>${change}</li>`;
+                    }
                 });
                 changesHTML += '</ul>';
 

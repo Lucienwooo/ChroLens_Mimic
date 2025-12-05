@@ -144,20 +144,36 @@ class TextCommandEditor(tk.Toplevel):
         return os.path.join(os.getcwd(), "scripts", "modules")
     
     def _get_next_pic_number(self):
-        """獲取下一個可用的圖片編號（pic01, pic02...）"""
+        """獲取下一個可用的圖片編號（pic01, pic02...）
+        
+        注意：這個函數只用於自動生成純數字編號的圖片名稱
+        使用者可以自由命名圖片（pic王01、pic小怪等），不受此限制
+        """
         if not os.path.exists(self.images_dir):
             return 1
         
         # 掃描現有圖片檔案，找出最大編號
         max_num = 0
         try:
+            # 支援的圖片副檔名
+            image_extensions = ['.png', '.jpg', '.jpeg', '.bmp', '.gif']
+            
             for filename in os.listdir(self.images_dir):
-                if filename.startswith("pic") and filename.endswith(".png"):
-                    # 提取編號部分，例如 pic01.png -> 01
+                # 取得副檔名
+                ext = os.path.splitext(filename)[1].lower()
+                
+                # 只處理圖片檔案且以 "pic" 開頭、後面直接接數字的檔案
+                if ext in image_extensions and filename.startswith("pic"):
+                    # 提取 "pic" 後面的部分
                     try:
-                        num_str = filename[3:-4]  # 移除 "pic" 和 ".png"
-                        num = int(num_str)
-                        max_num = max(max_num, num)
+                        # 例如 pic01.png -> 01, pic999.jpg -> 999
+                        name_without_ext = os.path.splitext(filename)[0]
+                        num_str = name_without_ext[3:]  # 移除 "pic" 前綴
+                        
+                        # 只處理純數字的情況（排除 pic王01、pic小怪 等）
+                        if num_str.isdigit():
+                            num = int(num_str)
+                            max_num = max(max_num, num)
                     except:
                         continue
         except:
@@ -3495,40 +3511,46 @@ class TextCommandEditor(tk.Toplevel):
 1. 點擊「圖片辨識」按鈕
 2. 框選螢幕上要辨識的目標區域
 3. 系統自動命名為 pic01, pic02... 並插入指令
+4. 您可以手動將圖片重新命名為有意義的名稱
 
 【方法2: 自行放入圖片（進階用戶）】
 1. 準備圖片檔案（建議使用去背景或純淨的圖片）
-   - 支援格式: .png
+   - 支援格式: .png, .jpg, .jpeg, .bmp, .gif
    - 建議大小: 50x50 ~ 200x200 px
    - 圖片越純淨,辨識越準確
 
-2. 圖片命名規則:
-   - 必須以 "pic" 開頭
-   - 後接數字或名稱
-   - 例如: pic01.png, pic_button.png, pic_monster.png
+2. 圖片命名規則（任何以 pic 開頭的命名都可以）:
+   ✓ 純數字: pic01, pic02, pic999
+   ✓ 中文描述: pic血條, pic怪物, pic確定按鈕
+   ✓ 中文+數字: pic王01, pic王02, pic小怪03
+   ✓ 英文描述: pic右上角, pic_button, pic_monster
+   
+   注意: 必須以 "pic" 開頭才能被辨識
 
 3. 放入圖片資料夾:
    📁 {images_path}
 
-4. 在編輯器中輸入指令:
+4. 在編輯器中輸入指令（無需寫副檔名）:
    >辨識>pic01, T=0s000
-   >移動至>pic_button, T=0s000
-   >左鍵點擊>pic_monster, T=0s000
+   >移動至>pic血條, T=0s000
+   >左鍵點擊>pic怪物, T=0s000
+   >if>pic王01, T=0s000
 
 【注意事項】
 ✓ 圖片名稱必須以 "pic" 開頭才能被辨識
+✓ 編輯器會自動搜尋對應的圖片檔案（任何副檔名）
+✓ 指令中不需要寫副檔名（例如寫 pic血條 即可，不用寫 pic血條.png）
 ✓ 使用去背景或高對比圖片可提升辨識準確度
 ✓ 避免過小的圖片（建議 > 30x30 px）
-✓ 系統會自動搜尋 images 資料夾中的圖片
 
 【範例】
-假設你放入了 pic_login.png
+假設你放入了 pic登入按鈕.png
 在編輯器中輸入:
-  >辨識>pic_login, T=0s000
+  >辨識>pic登入按鈕, T=0s000
   >>=點擊
-  >>>=找
+  >>>=找不到
 
-系統會自動找到並使用 pic_login.png 進行辨識
+系統會自動找到並使用 pic登入按鈕.png 進行辨識
 """
         
         help_text = help_text.replace("{images_path}", self.images_dir)
@@ -4398,24 +4420,37 @@ class TextCommandEditor(tk.Toplevel):
         """根據pic名稱查找對應的圖片檔案
         
         Args:
-            pic_name: pic名稱（例如：pic01）
+            pic_name: pic名稱（例如：pic01、pic王01、pic小怪、pic確定）
         
         Returns:
-            圖片檔名（例如：img_001.png），如果找不到則返回 pic_name.png
+            圖片檔名（例如：pic01.png、pic王01.png），如果找不到則返回 pic_name.png
+            
+        支援格式：
+            - pic01, pic02, pic999 (傳統數字編號)
+            - pic王01, pic王02 (中文+數字)
+            - pic小怪, pic確定, pic右上角 (純中文描述)
+            - 任何以 pic 開頭的命名
         """
         if not os.path.exists(self.images_dir):
             return f"{pic_name}.png"
         
         # 查找該pic名稱對應的圖片檔案
         try:
+            # 支援的圖片副檔名
+            image_extensions = ['.png', '.jpg', '.jpeg', '.bmp', '.gif']
+            
             for filename in os.listdir(self.images_dir):
-                # pic01.png 或 pic01_xxx.png 等格式
-                if filename.startswith(pic_name) and filename.endswith('.png'):
+                # 取得檔案名稱（不含副檔名）
+                name_without_ext = os.path.splitext(filename)[0]
+                ext = os.path.splitext(filename)[1].lower()
+                
+                # 檢查是否為圖片檔案且名稱匹配
+                if ext in image_extensions and name_without_ext == pic_name:
                     return filename
         except:
             pass
         
-        # 找不到時返回預設檔名
+        # 找不到時返回預設檔名（優先使用 .png）
         return f"{pic_name}.png"
 
 

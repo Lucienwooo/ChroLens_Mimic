@@ -328,14 +328,28 @@ class UpdateDialog:
         
         if result:
             # 使用者選擇立即重啟
-            self._restart_app()
+            # 啟動批次腳本
+            if self.update_manager.execute_update_script():
+                # 批次腳本啟動成功，重啟應用程式
+                self._restart_app()
+            else:
+                # 批次腳本啟動失敗
+                messagebox.showerror(
+                    "錯誤",
+                    "無法啟動更新程式。\n請稍後手動重新下載。",
+                    parent=self.dialog
+                )
+                self.dialog.destroy()
         else:
             # 使用者選擇稍後重啟
             messagebox.showinfo(
                 "提示",
-                "更新將在下次啟動程式時生效。",
+                "更新將在下次啟動程式時生效。\n請記得關閉程式後再重新開啟。",
                 parent=self.dialog
             )
+            # 也啟動批次腳本，但不關閉主程式
+            # 批次腳本會等待主程式關閉
+            self.update_manager.execute_update_script()
             self.dialog.destroy()
     
     def _restart_app(self):

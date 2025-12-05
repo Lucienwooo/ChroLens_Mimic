@@ -1,6 +1,6 @@
 @echo off
 chcp 65001 >nul
-title ChroLens_Mimic 打包工具 v2.7.1
+title ChroLens_Mimic 打包工具 v2.7.2
 color 0A
 
 echo.
